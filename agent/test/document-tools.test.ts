@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { copyFile, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { AttachmentRegistry } from '../src/services/attachmentRegistry.ts'
 import { EVIDENCE_IR_ARTIFACT } from '../src/contracts/artifactTypes.ts'
@@ -74,6 +77,56 @@ test('attachment registry rejects directories and unknown file IDs', async () =>
   await assert.rejects(parse.execute({ fileId: 'file-unknown' }, testAgentContext()), /Unknown attachment: file-unknown/)
 })
 
+test('parse rejects an attachment whose bytes change after registration', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'ise-attachment-change-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'report.docx')
+  await copyFile(fixturePath, path)
+  const attachments = new AttachmentRegistry()
+  const attachment = await attachments.register(path)
+  await writeFile(path, 'replacement bytes')
+  const parse = createDocumentTools(attachments).find(tool => tool.name === 'parse_battle_report')!
+
+  await assert.rejects(
+    parse.execute({ fileId: attachment.fileId }, testAgentContext()),
+    /Attachment changed|fingerprint mismatch/i,
+  )
+})
+
+test('verified attachment reads reject bytes changed after registration', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'ise-attachment-read-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'report.docx')
+  await copyFile(fixturePath, path)
+  const attachments = new AttachmentRegistry()
+  const attachment = await attachments.register(path)
+  await writeFile(path, 'replacement bytes')
+
+  await assert.rejects(
+    attachments.readVerified(attachment.fileId),
+    /Attachment changed|fingerprint mismatch/i,
+  )
+})
+
+test('attachment registry rejects symbolic links', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'ise-attachment-link-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const target = join(directory, 'target.docx')
+  const link = join(directory, 'link.docx')
+  await copyFile(fixturePath, target)
+  try {
+    await symlink(target, link, 'file')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+      t.skip('Windows did not grant symbolic-link creation permission')
+      return
+    }
+    throw error
+  }
+
+  await assert.rejects(new AttachmentRegistry().register(link), /symbolic link/i)
+})
+
 test('document tools expose constrained risk and input contracts', () => {
   const tools = createDocumentTools(new AttachmentRegistry())
   const parse = tools.find(tool => tool.name === 'parse_battle_report')!
@@ -95,6 +148,67 @@ test('inspect_report_evidence requires active evidence', async () => {
     .find(tool => tool.name === 'inspect_report_evidence')!
 
   await assert.rejects(inspect.execute({}, testAgentContext()), /No active EvidenceIR artifact/)
+})
+
+test('inspect_report_evidence excludes superseded evidence records', async () => {
+  const context = testAgentContext()
+  context.artifacts.create({
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:doc-active',
+    data: evidenceData('doc-active', 'ev-old', 'Old superseded claim'),
+  })
+  context.artifacts.create({
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:doc-active',
+    data: evidenceData('doc-active', 'ev-new', 'New active claim'),
+  })
+  const inspect = createDocumentTools(new AttachmentRegistry())
+    .find(tool => tool.name === 'inspect_report_evidence')!
+
+  const result = await inspect.execute({}, context)
+
+  assert.deepEqual(
+    JSON.parse(result.content).records.map((record: { evidenceId: string }) => record.evidenceId),
+    ['ev-new'],
+  )
+})
+
+test('inspect_report_evidence combines document, query, and evidence ID filters', async () => {
+  const context = testAgentContext()
+  context.artifacts.create({
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:doc-selected',
+    data: {
+      schemaVersion: 'evidence-ir/v1',
+      documentId: 'doc-selected',
+      records: [
+        evidenceRecord('ev-selected', 'Alpha selected claim'),
+        evidenceRecord('ev-wrong-id', 'Alpha wrong ID claim'),
+      ],
+    },
+  })
+  context.artifacts.create({
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:doc-other',
+    data: evidenceData('doc-other', 'ev-selected', 'Alpha wrong document claim'),
+  })
+  const inspect = createDocumentTools(new AttachmentRegistry())
+    .find(tool => tool.name === 'inspect_report_evidence')!
+
+  const result = await inspect.execute({
+    documentId: 'doc-selected',
+    query: 'alpha selected',
+    evidenceIds: ['ev-selected'],
+  }, context)
+
+  assert.deepEqual(
+    JSON.parse(result.content).records.map((record: { evidenceId: string }) => record.evidenceId),
+    ['ev-selected'],
+  )
 })
 
 test('inspect_report_evidence filters case-insensitively and clamps limits', async () => {
@@ -128,8 +242,29 @@ test('inspect_report_evidence filters case-insensitively and clamps limits', asy
 
   const maximum = await inspect.execute({ limit: 99 }, context)
   assert.equal(JSON.parse(maximum.content).records.length, 20)
-  const minimum = await inspect.execute({ limit: 0 }, context)
+  const minimum = await inspect.execute({ limit: -99 }, context)
   assert.equal(JSON.parse(minimum.content).records.length, 1)
+  await assert.rejects(inspect.execute({ limit: 1.5 }, context), /expected int/i)
   const selected = await inspect.execute({ evidenceIds: ['ev-24'] }, context)
   assert.deepEqual(JSON.parse(selected.content).records.map((record: { evidenceId: string }) => record.evidenceId), ['ev-24'])
 })
+
+function evidenceData(documentId: string, evidenceId: string, claim: string) {
+  return {
+    schemaVersion: 'evidence-ir/v1' as const,
+    documentId,
+    records: [evidenceRecord(evidenceId, claim)],
+  }
+}
+
+function evidenceRecord(evidenceId: string, claim: string) {
+  return {
+    evidenceId,
+    sourceRef: `doc:test:paragraph:${evidenceId}`,
+    claim,
+    kind: 'explicit_fact' as const,
+    entities: [],
+    confidence: 1,
+    ambiguities: [],
+  }
+}

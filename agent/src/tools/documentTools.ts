@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import type { AgentTool, ArtifactInput } from '@ise/agent-core'
 import {
@@ -50,8 +49,7 @@ export function createDocumentTools(registry: AttachmentRegistry): AgentTool[] {
     risk: 'derive',
     async execute(input) {
       const { fileId } = parseInputSchema.parse(input)
-      const attachment = registry.require(fileId)
-      const { document, evidence } = await parseBattleReport(await readFile(attachment.path))
+      const { document, evidence } = await parseBattleReport(await registry.readVerified(fileId))
       const artifacts: [ArtifactInput<DocumentIR>, ArtifactInput<EvidenceIR>] = [
         {
           type: DOCUMENT_IR_ARTIFACT,
