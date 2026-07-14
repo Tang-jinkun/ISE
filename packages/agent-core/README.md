@@ -1,6 +1,6 @@
 # Clean-room Agent
 
-A provider-neutral autonomous agent runtime built around `@gsms/skills-core`.
+A provider-neutral autonomous agent runtime built around `@ise/skills-core`.
 The model chooses relevant skills and tools; the runtime enforces workspace,
 permission, turn-budget, and completion rules.
 
@@ -14,8 +14,8 @@ $env:OPENAI_BASE_URL = "https://api.openai.com/v1" # optional
 npm start -- "Review this project and write a findings report"
 ```
 
-Read and search tools execute automatically. File writes and shell commands
-require interactive approval. Project skills require approval the first time
+Read and search tools execute automatically. File writes require interactive
+approval. Project skills require approval the first time
 their current content is invoked.
 
 ## Architecture

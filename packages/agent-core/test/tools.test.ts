@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import {
   ArtifactStore,
+  builtinActionTools,
   DomainStateStore,
   PermissionManager,
   updateTodoListState,
@@ -14,6 +15,10 @@ import {
   type AgentContext,
   type GoalState,
 } from '../src/index.ts'
+
+test('default builtin action tools do not expose arbitrary shell execution', () => {
+  assert.equal(builtinActionTools.some(tool => tool.name === 'shell'), false)
+})
 
 function context(workspace: string): AgentContext {
   const goal: GoalState = {
@@ -52,7 +57,7 @@ test('write tool writes inside workspace after approval policy', async () => {
   assert.equal(await readFile(join(workspace, 'sub/result.txt'), 'utf8'), 'ok')
 })
 
-test('write and execute tools are denied without explicit approval', async () => {
+test('write tools are denied without explicit approval', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'clean-agent-deny-'))
   const permissions = new PermissionManager()
   assert.equal(await permissions.check(writeFileTool, {}, context(workspace)), 'deny')

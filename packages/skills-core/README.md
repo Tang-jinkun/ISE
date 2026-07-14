@@ -39,7 +39,7 @@ import {
   SkillRegistry,
   SkillTool,
   SkillWatcher,
-} from '@gsms/skills-core'
+} from '@ise/skills-core'
 
 const loader = new SkillLoader()
 const registry = new SkillRegistry()

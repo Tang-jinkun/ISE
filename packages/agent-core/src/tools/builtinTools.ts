@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { relative } from 'node:path'
-import { promisify } from 'node:util'
 import { z } from 'zod'
 import type { AgentTool } from '../types.ts'
 import {
@@ -9,7 +7,6 @@ import {
   resolveWritableWorkspacePath,
 } from './workspace.ts'
 
-const execFileAsync = promisify(execFile)
 const MAX_OUTPUT_CHARS = 40_000
 
 export const readFileTool: AgentTool = {
@@ -88,34 +85,11 @@ export const writeFileTool: AgentTool = {
   },
 }
 
-export const shellTool: AgentTool = {
-  name: 'shell',
-  description: 'Run a shell command inside the workspace',
-  risk: 'execute',
-  inputSchema: objectSchema({ command: { type: 'string' } }, ['command']),
-  async execute(input, context) {
-    const { command } = z.object({ command: z.string().min(1) }).parse(input)
-    const executable = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh'
-    const args =
-      process.platform === 'win32'
-        ? ['-NoProfile', '-NonInteractive', '-Command', command]
-        : ['-lc', command]
-    const { stdout, stderr } = await execFileAsync(executable, args, {
-      cwd: context.workspace,
-      timeout: 30_000,
-      maxBuffer: 1_000_000,
-      signal: context.signal,
-    })
-    return { content: truncate([stdout, stderr].filter(Boolean).join('\n')) }
-  },
-}
-
 export const builtinActionTools = [
   readFileTool,
   listFilesTool,
   searchFilesTool,
   writeFileTool,
-  shellTool,
 ] as const
 
 async function walk(

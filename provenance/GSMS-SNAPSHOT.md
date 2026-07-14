@@ -11,6 +11,8 @@
 - Renamed `@gsms/agent-core` to `@ise/agent-core`.
 - Renamed `@gsms/skills-core` to `@ise/skills-core`.
 - Internalized the minimal `TurnOutcome` contract.
+- Removed the inherited unrestricted shell capability.
+- Removed stale package-level lockfiles; the root lockfile is authoritative.
 
 ## Sync Policy
 
