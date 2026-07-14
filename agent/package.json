@@ -7,7 +7,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "tsx --test test/runtime.test.ts test/contracts.test.ts test/document-parser.test.ts test/document-tools.test.ts",
+    "test": "tsx --test test/runtime.test.ts test/contracts.test.ts test/document-parser.test.ts test/document-tools.test.ts test/event-plan-tools.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
