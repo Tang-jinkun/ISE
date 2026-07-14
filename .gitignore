@@ -19,6 +19,8 @@ venv/
 
 # Runtime state
 .ise/
+.superpowers/
+.worktrees/
 data/runtime/
 logs/
 *.log
