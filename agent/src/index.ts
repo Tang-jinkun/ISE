@@ -1,2 +1,6 @@
+export * from './contracts/artifactTypes.ts'
+export * from './contracts/document.ts'
+export * from './contracts/evidence.ts'
+export * from './contracts/eventPlan.ts'
 export * from './runtime/IseAgentHost.ts'
 export * from './runtime/IseAgentProfile.ts'
