@@ -2,7 +2,7 @@
 
 日期：2026-07-15
 
-状态：设计已完成讨论，等待书面规格审阅
+状态：设计与书面规格已获用户批准，进入实施
 
 关联设计：`docs/superpowers/specs/2026-07-14-ise-agent-design.md`
 
@@ -241,6 +241,55 @@ model.set_state
 model.hide
 ```
 
+`SceneTrack` 是按 `type` 判别的联合类型，共同字段固定为：
+
+```ts
+interface SceneTrackBase {
+  trackId: string
+  type: 'subtitle' | 'image' | 'video' | 'marker' | 'geojson' | 'camera' | 'model'
+  label: string
+  visible: boolean
+  items: SceneTrackItem[]
+}
+```
+
+场景实体固定为：
+
+```ts
+interface SceneEntity {
+  entityId: string
+  displayName: string
+  kind: 'aircraft' | 'missile' | 'location' | 'other'
+  modelAssetId?: string
+  defaultTrajectoryAssetId?: string
+  initialState: 'normal' | 'warning' | 'disabled' | 'hidden'
+}
+```
+
+图片和视频的共享布局为百分比坐标：
+
+```ts
+interface OverlayLayout {
+  xPct: number
+  yPct: number
+  widthPct: number
+  heightPct: number
+  zIndex: number
+  opacity: number
+  fit: 'contain' | 'cover'
+}
+```
+
+各轨道 params 固定为：
+
+- subtitle：`text`、`position: top | bottom`、`maxWidthPct`；
+- image：`layout`、`enter: none | fade`、`exit: none | fade`；
+- video：`layout`、`volume`、`playbackRate`、`loop`；
+- marker：`coordinates: [longitude, latitude]`、`label`、`color`；
+- geojson：线、面、点的颜色与尺寸以及 `keepAfterEnd`；
+- camera：`center`、`zoom`、`pitch`、`bearing`、`easing: linear | easeInOut`；
+- model：带 `entityId` 的 `model.spawn`、带 `trajectoryAssetId` 的 `model.follow_path`、带状态的 `model.set_state` 或 `model.hide`。
+
 图片参数包括位置、尺寸、透明度、层级、适配方式、全屏和进出场效果。视频复用这些布局参数，并增加音量、播放速度、循环和媒体时间。
 
 前端时间轴、属性编辑、保存和播放器消费同一份 SceneProjectConfig。旧 mock JSON、临时 NormandyData 和与保存状态分离的 `mappedTracks` 不再作为运行数据源。
@@ -258,19 +307,34 @@ model:su30mki
 model:pl15e
 trajectory:ambala-rafale-1
 video:missile-impact
-image:ooda-overview
+image:ground-radar
 ```
 
 每项资源记录：
 
 - kind、displayName、aliases 和 fingerprint；
 - MinIO object key；
-- format、size 和 availability；
-- 模型 scale、rotationOffset、altitudeOffset 和 entityTypes；
+- format、size、`availability: available | missing | invalid` 和 `criticality: required | optional`；
+- 模型 scale、rotationOffsetDeg、altitudeOffsetM 和 entityTypes；
 - 航迹时间单位、坐标顺序、时间范围和单调性；
 - 视频时长、编解码信息和 poster；
 - 图片尺寸和适配方式；
 - fallbackAssetIds 和是否允许降级。
+
+Web 解析资源时获得短期访问结果 `ResolvedAssetAccess`：除签名 URL、过期时间和 fingerprint 外，还包含运行时需要的 model、trajectory、video 或 image 元数据，但不暴露 MinIO object key。短期 URL不得写入 SceneProjectConfig 或 Artifact。元数据字段固定为：
+
+- model：无单位 `scale`、角度制 `rotationOffsetDeg`、米制 `altitudeOffsetM` 和 `entityTypes`；
+- trajectory：`format: ise-trajectory/v1`、`timeUnit: ms`、`coordinateOrder: lng-lat-alt`、`startTimeMs`、`endTimeMs`、`monotonic: true`；
+- video：`durationMs` 和 `codec`；
+- image：`width`、`height` 和 `fit`。
+
+当前航迹源中的 `timestamp`、`latitude`、`longitude` 和 `altitude` 对象数组在种子导入阶段确定性转换为：
+
+```text
+{ schemaVersion: ise-trajectory/v1, points: [{ timeMs, longitude, latitude, altitudeM }] }
+```
+
+Runtime 只读取这一规范格式，不在浏览器中解释无时区的原始日期字符串。原始秒级时间戳重复时，导入器保持点顺序，并在当前时间到下一个不同时间之间均匀分配重复点；最后一组使用前一个有效间隔。原始不同时间戳发生倒序时不得排序修复，必须将航迹标记为 invalid。规范输出的 `timeMs` 必须严格递增。
 
 JF-17、J-10CE 等报告、航迹和模型命名冲突必须显式记录，不允许 Agent 猜测映射。
 
@@ -357,7 +421,7 @@ OverlayRuntime
 
 `PlaybackClock` 使用 `requestAnimationFrame`，是唯一业务时间源。各轨道不得创建独立播放计时器。
 
-`ResourceManager` 使用当前 Bearer token 和 `assetId` 调用 NestJS 资源解析接口，获得短期签名 URL；随后预加载资源、缓存 GLB 模板、管理引用计数并释放 Object URL。SceneProjectConfig 本身不保存签名 URL。
+`ResourceManager` 使用当前 Bearer token 和 `assetId` 调用 NestJS 资源解析接口，获得 `ResolvedAssetAccess`，其中包含短期签名 URL、指纹和模型校准或航迹格式元数据；随后预加载资源、缓存 GLB 模板、管理引用计数并释放 Object URL。SceneProjectConfig 本身不保存签名 URL，必需校准元数据缺失时不得使用猜测默认值。
 
 `MapRuntime` 管理 Marker、GeoJSON 点线面、动态航迹线、相机、图层生命周期和清理。
 
@@ -433,6 +497,7 @@ interface Diagnostic {
 
 - Agent 只能读取当前用户授权的文件 ID或短期签名 URL；
 - 文件按 magic、MIME、扩展名、大小和指纹联合校验；
+- NestJS 文件记录分别保存业务分类和原始 MIME，并在授权字节响应中返回 `X-Content-SHA256`；Agent 仍需重新计算字节指纹并校验响应头；
 - Agent 不得读取任意本机路径、请求任意外部 URL 或执行 shell；
 - 模型密钥仅存在于 Agent 服务；
 - `.env`、数据库密码、Mapbox token 和 MinIO 密钥不得进入 Git；
