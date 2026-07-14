@@ -49,6 +49,7 @@ export async function executeToolCall(options: ExecuteToolCallOptions): Promise<
   let call = options.call
   const messages: AgentMessage[] = []
   const startedAt = Date.now()
+  let trustedConfirmationId: string | undefined
 
   try {
     if (options.prepareInput) {
@@ -123,6 +124,8 @@ export async function executeToolCall(options: ExecuteToolCallOptions): Promise<
         })
         return { messages, deferred: false, outcome: 'denied' }
       }
+      const confirmationId = decision.confirmationId?.trim()
+      if (confirmationId) trustedConfirmationId = confirmationId
     }
 
     const onProgress = (event: ToolProgressEvent) => {
@@ -142,13 +145,30 @@ export async function executeToolCall(options: ExecuteToolCallOptions): Promise<
         timestamp: new Date().toISOString(),
       })
     }
-    const result = await tool.execute(call.input, context, onProgress)
-    const content = await applyToolResult({
-      ...options,
-      tool,
-      call,
-      result,
-    })
+    const previousConfirmationId = context.lastConsumedConfirmationId
+    if (trustedConfirmationId) {
+      context.lastConsumedConfirmationId = trustedConfirmationId
+    } else {
+      delete context.lastConsumedConfirmationId
+    }
+    const { result, content } = await (async () => {
+      try {
+        const result = await tool.execute(call.input, context, onProgress)
+        const content = await applyToolResult({
+          ...options,
+          tool,
+          call,
+          result,
+        })
+        return { result, content }
+      } finally {
+        if (previousConfirmationId === undefined) {
+          delete context.lastConsumedConfirmationId
+        } else {
+          context.lastConsumedConfirmationId = previousConfirmationId
+        }
+      }
+    })()
     messages.push({
       role: 'tool',
       toolCallId: call.id,
@@ -354,10 +374,13 @@ export async function applyToolResult(options: ToolExecutionHostOptions & {
     for (const artifact of result.artifacts) {
       if (artifact.createdBy === 'user') {
         const isWriteOrExecute = tool.risk === 'write' || tool.risk === 'execute'
+        const trustedConfirmationId = context.lastConsumedConfirmationId
         const hasConfirmationBinding =
           isWriteOrExecute &&
+          typeof trustedConfirmationId === 'string' &&
+          trustedConfirmationId.trim().length > 0 &&
           typeof artifact.metadata?.confirmationId === 'string' &&
-          artifact.metadata.confirmationId.length > 0
+          artifact.metadata.confirmationId === trustedConfirmationId
         if (!hasConfirmationBinding) {
           artifact.createdBy = 'tool'
         }

@@ -7,6 +7,7 @@ import {
   type AgentRunResult,
   type ModelAdapter,
   type PermissionDecision,
+  type ToolGuardDecision,
   type ToolRegistry,
 } from '@ise/agent-core'
 import type { SkillRegistry } from '@ise/skills-core'
@@ -19,7 +20,10 @@ export interface IseAgentHostOptions {
   workspace: string
   maxTurns?: number
   eventSink?: AgentEventSink
-  approve?: (toolName: string, input: unknown) => PermissionDecision | Promise<PermissionDecision>
+  approve?: (
+    toolName: string,
+    input: unknown,
+  ) => PermissionDecision | ToolGuardDecision | Promise<PermissionDecision | ToolGuardDecision>
   artifacts?: ArtifactStore
   domainState?: DomainStateStore
 }

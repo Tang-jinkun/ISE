@@ -23,6 +23,23 @@ test('propose_event_plan rejects an unknown evidence reference', async () => {
   )
 })
 
+test('propose_event_plan rejects non-factual records used as evidence refs', async () => {
+  const context = testAgentContext()
+  seedEvidence(context.artifacts.create.bind(context.artifacts), [
+    evidenceRecord('ev-fact'),
+    evidenceRecord('ev-model', 'model_inference'),
+    evidenceRecord('ev-illustrative', 'illustrative'),
+  ])
+  const propose = eventPlanTool('propose_event_plan')
+
+  for (const evidenceRef of ['ev-model', 'ev-illustrative']) {
+    await assert.rejects(
+      propose.execute(eventPlan({ evidenceRefs: [evidenceRef] }), context),
+      new RegExp(`Evidence reference is not factual: ${evidenceRef}`),
+    )
+  }
+})
+
 test('propose_event_plan creates a fingerprinted draft and supersedes the prior version', async () => {
   const context = testAgentContext()
   seedEvidence(context.artifacts.create.bind(context.artifacts), [evidenceRecord('ev-known')])
@@ -37,6 +54,12 @@ test('propose_event_plan creates a fingerprinted draft and supersedes the prior 
   assert.ok(first)
   assert.ok(second)
   assert.equal(second.type, EVENT_PLAN_DRAFT_ARTIFACT)
+  assert.equal(first.version, 1)
+  assert.equal(eventPlanSchema.parse(first.data).version, 1)
+  assert.equal(first.metadata?.version, 1)
+  assert.equal(second.version, 2)
+  assert.equal(eventPlanSchema.parse(second.data).version, 2)
+  assert.equal(second.metadata?.version, 2)
   assert.equal(second.createdBy, 'agent')
   assert.equal(second.logicalKey, 'event-plan:plan-1')
   assert.equal(second.metadata?.fingerprint, fingerprint(secondPlan))
@@ -55,14 +78,28 @@ test('propose_event_plan only accepts EvidenceIR model inferences as plain infer
   const propose = eventPlanTool('propose_event_plan')
 
   await assert.rejects(
-    propose.execute(eventPlan({ evidenceRefs: [], inferenceRefs: ['ev-fact'] }), context),
+    propose.execute(eventPlan({
+      evidenceRefs: [],
+      inferenceRefs: ['ev-fact'],
+      uncertainties: ['The inference source remains uncertain'],
+    }), context),
     /Invalid inference reference: ev-fact/,
   )
 
-  const result = await propose.execute(
-    eventPlan({ evidenceRefs: [], inferenceRefs: ['ev-model'] }),
-    context,
+  await assert.rejects(
+    propose.execute(eventPlan({
+      evidenceRefs: [],
+      inferenceRefs: ['ev-model'],
+      uncertainties: [],
+    }), context),
+    /EventUnit with inference references requires uncertainty: event-1/,
   )
+
+  const result = await propose.execute(eventPlan({
+    evidenceRefs: [],
+    inferenceRefs: ['ev-model'],
+    uncertainties: ['Aircraft identity is not confirmed'],
+  }), context)
   assert.equal(result.artifacts?.[0]?.type, EVENT_PLAN_DRAFT_ARTIFACT)
 })
 
@@ -77,7 +114,7 @@ test('propose_event_plan requires uncertainty for every unit using a synthetic i
       inferenceRefs: ['inference:aircraft-identity'],
       uncertainties: [],
     }), context),
-    /Inference reference requires uncertainty: inference:aircraft-identity/,
+    /EventUnit with inference references requires uncertainty: event-1/,
   )
 
   const result = await propose.execute(eventPlan({
@@ -102,8 +139,55 @@ test('propose_event_plan requires active EvidenceIR for the same document', asyn
   )
 })
 
+test('propose_event_plan requires version one for the first draft', async () => {
+  const context = testAgentContext()
+  seedEvidence(context.artifacts.create.bind(context.artifacts), [evidenceRecord('ev-known')])
+
+  await assert.rejects(
+    eventPlanTool('propose_event_plan').execute(eventPlan({ version: 2 }), context),
+    /First EventPlan draft version must be 1: plan-1/,
+  )
+})
+
+test('propose_event_plan rejects repeated, lower, and skipped versions', async () => {
+  const repeatedContext = testAgentContext()
+  seedEvidence(
+    repeatedContext.artifacts.create.bind(repeatedContext.artifacts),
+    [evidenceRecord('ev-known')],
+  )
+  await proposeAndStore(repeatedContext, eventPlan({ version: 1 }))
+  await assert.rejects(
+    eventPlanTool('propose_event_plan').execute(eventPlan({ version: 1 }), repeatedContext),
+    /EventPlan version must follow active version 1 with version 2: plan-1/,
+  )
+
+  const skippedContext = testAgentContext()
+  seedEvidence(
+    skippedContext.artifacts.create.bind(skippedContext.artifacts),
+    [evidenceRecord('ev-known')],
+  )
+  await proposeAndStore(skippedContext, eventPlan({ version: 1 }))
+  await assert.rejects(
+    eventPlanTool('propose_event_plan').execute(eventPlan({ version: 3 }), skippedContext),
+    /EventPlan version must follow active version 1 with version 2: plan-1/,
+  )
+
+  const lowerContext = testAgentContext()
+  seedEvidence(
+    lowerContext.artifacts.create.bind(lowerContext.artifacts),
+    [evidenceRecord('ev-known')],
+  )
+  await proposeAndStore(lowerContext, eventPlan({ version: 1 }))
+  await proposeAndStore(lowerContext, eventPlan({ version: 2 }))
+  await assert.rejects(
+    eventPlanTool('propose_event_plan').execute(eventPlan({ version: 1 }), lowerContext),
+    /EventPlan version must follow active version 2 with version 3: plan-1/,
+  )
+})
+
 test('accept_event_plan rejects version and requested fingerprint mismatches', async () => {
   const context = testAgentContext()
+  context.lastConsumedConfirmationId = 'confirm-version-mismatch-test'
   seedEvidence(context.artifacts.create.bind(context.artifacts), [evidenceRecord('ev-known')])
   const draft = await proposeAndStore(context, eventPlan())
   const accept = eventPlanTool('accept_event_plan')
@@ -121,6 +205,7 @@ test('accept_event_plan rejects version and requested fingerprint mismatches', a
 
 test('accept_event_plan rejects a stored fingerprint that does not match draft data', async () => {
   const context = testAgentContext()
+  context.lastConsumedConfirmationId = 'confirm-stored-fingerprint-test'
   const plan = eventPlan()
   const draft = context.artifacts.create<EventPlan>({
     type: EVENT_PLAN_DRAFT_ARTIFACT,
@@ -148,6 +233,7 @@ test('accept_event_plan rejects a stored fingerprint that does not match draft d
 
 test('accept_event_plan accepts the exact draft tuple without mutating the draft', async () => {
   const context = testAgentContext()
+  context.lastConsumedConfirmationId = 'confirm-direct-accept'
   seedEvidence(context.artifacts.create.bind(context.artifacts), [evidenceRecord('ev-known')])
   const firstDraft = await proposeAndStore(context, eventPlan({ version: 1 }))
   await proposeAndStore(context, eventPlan({ version: 2 }))
@@ -164,6 +250,7 @@ test('accept_event_plan accepts the exact draft tuple without mutating the draft
   const [acceptedInput] = result.artifacts ?? []
   assert.ok(acceptedInput)
   assert.equal(acceptedInput.type, EVENT_PLAN_ACCEPTED_ARTIFACT)
+  assert.equal(acceptedInput.version, 1)
   assert.equal(acceptedInput.createdBy, 'user')
   assert.equal(acceptedInput.logicalKey, 'accepted-event-plan:plan-1')
   assert.deepEqual(eventPlanSchema.parse(acceptedInput.data), firstDraft.data)
@@ -173,17 +260,20 @@ test('accept_event_plan accepts the exact draft tuple without mutating the draft
     version: 1,
     fingerprint: requiredFingerprint(firstDraft),
     acceptedDraftArtifactId: firstDraft.id,
+    confirmationId: 'confirm-direct-accept',
     status: 'accepted',
   })
 })
 
 test('accept_event_plan requires the exact draft artifact ID', async () => {
+  const context = testAgentContext()
+  context.lastConsumedConfirmationId = 'confirm-missing-draft-test'
   await assert.rejects(
     eventPlanTool('accept_event_plan').execute({
       draftArtifactId: 'missing-draft',
       version: 1,
       fingerprint: fingerprint(eventPlan()),
-    }, testAgentContext()),
+    }, context),
     /EventPlan draft not found: missing-draft/,
   )
 })

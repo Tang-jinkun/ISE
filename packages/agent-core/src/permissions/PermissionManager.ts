@@ -12,7 +12,7 @@ export interface PermissionManagerOptions {
     tool: AgentTool,
     input: unknown,
     context: AgentContext,
-  ) => PermissionDecision | Promise<PermissionDecision>
+  ) => PermissionDecision | ToolGuardDecision | Promise<PermissionDecision | ToolGuardDecision>
 }
 
 export class PermissionManager {
@@ -24,7 +24,8 @@ export class PermissionManager {
     context: AgentContext,
   ): Promise<PermissionDecision> {
     if (tool.risk === 'control' || tool.risk === 'read' || tool.risk === 'derive') return 'allow'
-    return (await this.options.approve?.(tool, input, context)) ?? 'deny'
+    const decision = (await this.options.approve?.(tool, input, context)) ?? 'deny'
+    return typeof decision === 'string' ? decision : decision.decision
   }
 
   async guard(
@@ -36,6 +37,7 @@ export class PermissionManager {
       return { decision: 'allow' }
     }
     const decision = (await this.options.approve?.(tool, input, context)) ?? 'deny'
+    if (typeof decision !== 'string') return decision
     if (decision === 'allow') return { decision: 'allow' }
     if (decision === 'defer') {
       return {

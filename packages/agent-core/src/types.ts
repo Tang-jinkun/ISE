@@ -46,6 +46,8 @@ export interface ToolVisibilityDecision {
 
 export interface ToolGuardDecision {
   decision: 'allow' | 'deny' | 'defer'
+  /** Trusted host-side binding for this exact allowed tool call. */
+  confirmationId?: string
   reason?: ToolGuardDenialReason
   message?: string
   recoveryHint?: string

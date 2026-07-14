@@ -303,7 +303,6 @@ test('direct tool executor applies the same tool result contract as runtime', as
     },
     artifacts,
     domainState,
-    lastConsumedConfirmationId: 'confirm-1',
   }
   const tool: AgentTool = {
     name: 'direct_contract_tool',
@@ -335,6 +334,9 @@ test('direct tool executor applies the same tool result contract as runtime', as
     context,
     runId: 'run-direct',
     turn: 1,
+    guard: {
+      check: async () => ({ decision: 'allow', confirmationId: 'confirm-1' }),
+    },
     eventSink: { emit: async event => { events.push(event.eventType) } },
   })
 
@@ -344,6 +346,7 @@ test('direct tool executor applies the same tool result contract as runtime', as
   assert.equal(artifacts.list('tool-result').length, 1)
   assert.equal(domainState.snapshot().phase, 'after')
   assert.equal(context.goal.progress, 'direct progress')
+  assert.equal(context.lastConsumedConfirmationId, undefined)
   assert.ok(events.includes('tool.started'))
   assert.ok(events.includes('tool.progress'))
   assert.ok(events.includes('artifact.created'))

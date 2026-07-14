@@ -102,15 +102,24 @@ function activeEvidenceRecords(context: AgentContext, documentId: string): Evide
   return evidence.flatMap(item => item.records)
 }
 
-function activeEvidenceIds(context: AgentContext, documentId: string): Set<string> {
-  return new Set(activeEvidenceRecords(context, documentId).map(record => record.evidenceId))
-}
-
 function requireDraft(context: AgentContext, artifactId: string): Artifact<EventPlan> {
   const draft = context.artifacts.get(artifactId)
   if (!draft || draft.type !== EVENT_PLAN_DRAFT_ARTIFACT) {
     throw new Error(`EventPlan draft not found: ${artifactId}`)
   }
+
+  return {
+    ...draft,
+    data: eventPlanSchema.parse(draft.data),
+  }
+}
+
+function activeDraftForPlan(context: AgentContext, planId: string): Artifact<EventPlan> | undefined {
+  const logicalKey = `event-plan:${planId}`
+  const draft = context.artifacts
+    .list(EVENT_PLAN_DRAFT_ARTIFACT)
+    .find(artifact => artifact.logicalKey === logicalKey)
+  if (!draft) return undefined
 
   return {
     ...draft,
@@ -126,27 +135,48 @@ export function createEventPlanTools(): AgentTool[] {
     risk: 'derive',
     async execute(input, context) {
       const plan = eventPlanSchema.parse(input)
-      const evidenceIds = activeEvidenceIds(context, plan.documentId)
+      const predecessor = activeDraftForPlan(context, plan.planId)
+      if (!predecessor && plan.version !== 1) {
+        throw new Error(`First EventPlan draft version must be 1: ${plan.planId}`)
+      }
+      if (predecessor && plan.version !== predecessor.data.version + 1) {
+        throw new Error(
+          `EventPlan version must follow active version ${predecessor.data.version} ` +
+          `with version ${predecessor.data.version + 1}: ${plan.planId}`,
+        )
+      }
+
+      const evidenceRecords = activeEvidenceRecords(context, plan.documentId)
+      const recordsById = new Map(evidenceRecords.map(record => [record.evidenceId, record]))
       const modelInferenceIds = new Set(
-        activeEvidenceRecords(context, plan.documentId)
+        evidenceRecords
           .filter(record => record.kind === 'model_inference')
           .map(record => record.evidenceId),
       )
 
       for (const unit of plan.eventUnits) {
         for (const evidenceRef of unit.evidenceRefs) {
-          if (!evidenceIds.has(evidenceRef)) {
+          const evidence = recordsById.get(evidenceRef)
+          if (!evidence) {
             throw new Error(`Unknown evidence reference: ${evidenceRef}`)
+          }
+          if (
+            evidence.kind !== 'explicit_fact' &&
+            evidence.kind !== 'deterministic_derivation'
+          ) {
+            throw new Error(`Evidence reference is not factual: ${evidenceRef}`)
           }
         }
 
         const hasUncertainty = unit.uncertainties.some(value => value.trim().length > 0)
+        if (unit.inferenceRefs.length > 0 && !hasUncertainty) {
+          throw new Error(
+            `EventUnit with inference references requires uncertainty: ${unit.eventUnitId}`,
+          )
+        }
         for (const inferenceRef of unit.inferenceRefs) {
           if (modelInferenceIds.has(inferenceRef)) continue
           if (inferenceRef.startsWith('inference:')) {
-            if (!hasUncertainty) {
-              throw new Error(`Inference reference requires uncertainty: ${inferenceRef}`)
-            }
             continue
           }
           throw new Error(`Invalid inference reference: ${inferenceRef}`)
@@ -156,6 +186,7 @@ export function createEventPlanTools(): AgentTool[] {
       const planFingerprint = fingerprint(plan)
       const artifact: ArtifactInput<EventPlan> = {
         type: EVENT_PLAN_DRAFT_ARTIFACT,
+        version: plan.version,
         createdBy: 'agent',
         logicalKey: `event-plan:${plan.planId}`,
         data: plan,
@@ -186,6 +217,10 @@ export function createEventPlanTools(): AgentTool[] {
     risk: 'write',
     async execute(input, context) {
       const requested = acceptInputSchema.parse(input)
+      const confirmationId = context.lastConsumedConfirmationId?.trim()
+      if (!confirmationId) {
+        throw new Error('accept_event_plan requires a trusted user confirmation binding')
+      }
       const draft = requireDraft(context, requested.draftArtifactId)
 
       if (requested.version !== draft.data.version) {
@@ -204,6 +239,7 @@ export function createEventPlanTools(): AgentTool[] {
 
       const artifact: ArtifactInput<EventPlan> = {
         type: EVENT_PLAN_ACCEPTED_ARTIFACT,
+        version: draft.data.version,
         createdBy: 'user',
         logicalKey: `accepted-event-plan:${draft.data.planId}`,
         data: draft.data,
@@ -213,6 +249,7 @@ export function createEventPlanTools(): AgentTool[] {
           version: draft.data.version,
           fingerprint: requested.fingerprint,
           acceptedDraftArtifactId: draft.id,
+          confirmationId,
           status: 'accepted',
         },
       }

@@ -7,12 +7,14 @@ import {
   ArtifactStore,
   builtinActionTools,
   DomainStateStore,
+  executeToolCall,
   PermissionManager,
   updateTodoListState,
   updateTodoListTool,
   readFileTool,
   writeFileTool,
   type AgentContext,
+  type AgentTool,
   type GoalState,
 } from '../src/index.ts'
 
@@ -61,6 +63,121 @@ test('write tools are denied without explicit approval', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'clean-agent-deny-'))
   const permissions = new PermissionManager()
   assert.equal(await permissions.check(writeFileTool, {}, context(workspace)), 'deny')
+})
+
+test('structured allow exposes a trusted confirmation only during execute and apply', async () => {
+  const ctx = context(process.cwd())
+  let confirmationSeenByTool: string | undefined
+  const tool: AgentTool = {
+    name: 'create_user_record',
+    description: 'Create a user-confirmed record',
+    risk: 'write',
+    inputSchema: { type: 'object' },
+    async execute(_input, toolContext) {
+      confirmationSeenByTool = toolContext.lastConsumedConfirmationId
+      return {
+        content: 'created',
+        artifacts: [{
+          id: 'confirmed-record',
+          type: 'confirmed-record',
+          createdBy: 'user',
+          data: {},
+          metadata: { confirmationId: toolContext.lastConsumedConfirmationId },
+        }],
+      }
+    },
+  }
+  const permissions = new PermissionManager({
+    approve: () => ({ decision: 'allow', confirmationId: 'confirm-call-1' }),
+  })
+
+  const execution = await executeToolCall({
+    tool,
+    call: { id: 'call-1', name: tool.name, input: { recordId: 'record-1' } },
+    context: ctx,
+    runId: 'run-1',
+    turn: 1,
+    guard: { check: (guardedTool, input, guardedContext) =>
+      permissions.guard(guardedTool, input, guardedContext) },
+  })
+
+  assert.equal(execution.outcome, 'completed')
+  assert.equal(confirmationSeenByTool, 'confirm-call-1')
+  assert.equal(ctx.artifacts.get('confirmed-record')?.createdBy, 'user')
+  assert.equal(ctx.artifacts.get('confirmed-record')?.metadata?.confirmationId, 'confirm-call-1')
+  assert.equal(ctx.lastConsumedConfirmationId, undefined)
+})
+
+test('plain allow creates no trusted confirmation binding', async () => {
+  const ctx = context(process.cwd())
+  let confirmationSeenByTool: string | undefined
+  const tool: AgentTool = {
+    name: 'create_unbound_record',
+    description: 'Attempt to create an unbound user record',
+    risk: 'write',
+    inputSchema: { type: 'object' },
+    async execute(_input, toolContext) {
+      confirmationSeenByTool = toolContext.lastConsumedConfirmationId
+      return {
+        content: 'created',
+        artifacts: [{
+          id: 'unbound-record',
+          type: 'unbound-record',
+          createdBy: 'user',
+          data: {},
+          metadata: { confirmationId: 'untrusted-self-assertion' },
+        }],
+      }
+    },
+  }
+  const permissions = new PermissionManager({ approve: () => 'allow' })
+
+  const execution = await executeToolCall({
+    tool,
+    call: { id: 'call-plain', name: tool.name, input: {} },
+    context: ctx,
+    runId: 'run-plain',
+    turn: 1,
+    guard: { check: (guardedTool, input, guardedContext) =>
+      permissions.guard(guardedTool, input, guardedContext) },
+  })
+
+  assert.equal(execution.outcome, 'completed')
+  assert.equal(confirmationSeenByTool, undefined)
+  assert.equal(ctx.artifacts.get('unbound-record')?.createdBy, 'tool')
+  assert.equal(ctx.lastConsumedConfirmationId, undefined)
+})
+
+test('trusted confirmation binding is cleared when tool execution fails', async () => {
+  const ctx = context(process.cwd())
+  let confirmationSeenByTool: string | undefined
+  const tool: AgentTool = {
+    name: 'failing_confirmed_write',
+    description: 'Fail after observing confirmation',
+    risk: 'write',
+    inputSchema: { type: 'object' },
+    async execute(_input, toolContext) {
+      confirmationSeenByTool = toolContext.lastConsumedConfirmationId
+      throw new Error('write failed')
+    },
+  }
+  const permissions = new PermissionManager({
+    approve: () => ({ decision: 'allow', confirmationId: 'confirm-failure' }),
+  })
+
+  const execution = await executeToolCall({
+    tool,
+    call: { id: 'call-failure', name: tool.name, input: {} },
+    context: ctx,
+    runId: 'run-failure',
+    turn: 1,
+    guard: { check: (guardedTool, input, guardedContext) =>
+      permissions.guard(guardedTool, input, guardedContext) },
+  })
+
+  assert.equal(execution.outcome, 'failed')
+  assert.equal(confirmationSeenByTool, 'confirm-failure')
+  assert.equal(ctx.lastConsumedConfirmationId, undefined)
 })
 
 test('todo state normalizes items and enforces one in-progress item', () => {
