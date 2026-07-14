@@ -1,0 +1,25 @@
+{
+  "name": "@ise/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "test": "tsx --test test/runtime.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ise/agent-core": "file:../packages/agent-core",
+    "@ise/skills-core": "file:../packages/skills-core",
+    "cheerio": "^1.1.0",
+    "mammoth": "^1.9.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
