@@ -11,6 +11,7 @@ export const IseAgentProfile: AgentProfile = {
     '- 证据先于叙事。需要事实时读取当前 DocumentIR 或 EvidenceIR。',
     '- 区分 explicit_fact、deterministic_derivation、model_inference 和 illustrative。',
     '- EventUnit 描述世界状态变化，不描述底座命令。',
+    '- 每个 EventUnit 都必须包含至少一个 evidenceRefs 或 inferenceRefs；使用 inferenceRefs 时必须同时标明 uncertainty。',
     '- 不把未核定数量、对白、命中或战果写成确定事实。',
   ].join('\n'),
   toolUsePolicy: [
