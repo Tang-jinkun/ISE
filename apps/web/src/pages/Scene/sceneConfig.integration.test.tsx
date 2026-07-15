@@ -47,6 +47,7 @@ vi.mock('./components/Timeline', () => ({
       itemId: string,
       startMs: number,
       durationMs: number,
+      targetTrackId?: string,
     ) => void;
   }) => (
     <div data-testid="timeline">
@@ -58,6 +59,20 @@ vi.mock('./components/Timeline', () => ({
         onClick={() => onClipChange?.('track-model', 'model-jf17-flight', 12_000, 8_000)}
       >
         Move canonical clip
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onClipChange?.(
+            'track-model',
+            'model-jf17-flight',
+            5_000,
+            7_000,
+            'track-model-secondary',
+          )
+        }
+      >
+        Move across canonical tracks
       </button>
     </div>
   ),
@@ -94,6 +109,13 @@ const config: SceneProjectConfig = {
           params: { action: 'model.spawn', entityId: 'jf17' },
         },
       ],
+    },
+    {
+      trackId: 'track-model-secondary',
+      type: 'model',
+      label: 'Secondary model track',
+      visible: true,
+      items: [],
     },
   ],
   diagnostics: [],
@@ -159,6 +181,31 @@ describe('SceneProjectConfig editor integration', () => {
         }),
       ),
     );
+  });
+
+  it('moves an item between compatible canonical tracks', async () => {
+    vi.mocked(getScene).mockResolvedValue({ data: scene(config) } as never);
+
+    renderScene();
+
+    expect(await screen.findByText('Canonical model track')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Move across canonical tracks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save scene' }));
+
+    await waitFor(() => {
+      const saved = vi.mocked(updateScene).mock.calls.at(-1)?.[1].config;
+      if (!saved) throw new Error('Scene config was not saved');
+      expect(saved.tracks.find((track) => track.trackId === 'track-model')?.items).toEqual([]);
+      expect(
+        saved.tracks.find((track) => track.trackId === 'track-model-secondary')?.items,
+      ).toEqual([
+        expect.objectContaining({
+          id: 'model-jf17-flight',
+          startMs: 5_000,
+          durationMs: 7_000,
+        }),
+      ]);
+    });
   });
 
   it('blocks the editor when the API config is invalid', async () => {

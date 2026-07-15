@@ -148,6 +148,35 @@ export default function Scene() {
       const sourceType = trackTypes.get(trackId);
       const targetType = trackTypes.get(targetTrackId);
       if (sourceType !== targetType) return;
+      if (!config) return;
+      const sourceTrack = config.tracks.find((track) => track.trackId === trackId);
+      const item = sourceTrack?.items.find((candidate) => candidate.id === itemId);
+      if (!item) return;
+      const movedItem = { ...item, startMs, durationMs };
+      const movedConfig = sceneProjectConfigSchema.parse({
+        ...config,
+        tracks: config.tracks.map((track) => {
+          if (track.trackId === trackId) {
+            return { ...track, items: track.items.filter((candidate) => candidate.id !== itemId) };
+          }
+          if (track.trackId === targetTrackId) {
+            return { ...track, items: [...track.items, movedItem] };
+          }
+          return track;
+        }),
+      });
+      setConfig(movedConfig);
+      if (selectedClip?.id === itemId) {
+        setSelectedClip({
+          ...selectedClip,
+          trackId: targetTrackId,
+          start: startMs,
+          width: durationMs,
+          startMs,
+          durationMs,
+        });
+      }
+      return;
     }
     updateTrackItem(trackId, itemId, { startMs, durationMs });
     if (selectedClip?.id === itemId) {
