@@ -144,6 +144,31 @@ test('compiled artifact contains its self-referencing validated config and exact
   assert.deepEqual(progress, ['narrative:10', 'assets:30', 'schedule:60', 'validate:85', 'adapt:100'])
 })
 
+test('compile_replay_runtime validates the complete artifact before returning it', async () => {
+  for (const variant of ['schema', 'self-reference'] as const) {
+    const context = compilerContext({ lastValid: true })
+    const tool = createCompilerTools({
+      adaptRuntimePlan(runtimePlan, artifactId) {
+        const config = new BaseRuntimeAdapter().adapt(runtimePlan, artifactId)
+        return variant === 'schema'
+          ? { ...config, tracks: 'malformed-scene-tracks' }
+          : { ...config, runtimePlanArtifactId: 'malformed-runtime-artifact' }
+      },
+    })[0]!
+
+    await assert.rejects(
+      tool.execute(compileInput, context),
+      (error: unknown) => error instanceof Error && error.message === 'COMPILED_ARTIFACT_INVALID',
+      variant,
+    )
+    assert.deepEqual(
+      context.artifacts.list(COMPILED_RUNTIME_ARTIFACT).map(item => item.id),
+      ['last-valid'],
+      variant,
+    )
+  }
+})
+
 test('validate_replay_runtime reparses both stored values without repairing', async () => {
   const context = compilerContext()
   const compiled = await createCompilerTools()[0]!.execute(compileInput, context)

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
-import type { ModelAdapter, ModelRequest, ModelResponse } from '@ise/agent-core'
+import type { AgentTool, ModelAdapter, ModelRequest, ModelResponse } from '@ise/agent-core'
 import { SkillRegistry } from '@ise/skills-core'
 import type { AuthorizedFile, NestGateway } from '../src/adapters/nestGateway.ts'
 import { BaseRuntimeAdapter } from '../src/adapters/baseRuntimeAdapter.ts'
@@ -13,13 +13,18 @@ import { AgentRepositories } from '../src/persistence/repositories.ts'
 import { PersistentArtifactStore } from '../src/persistence/persistentArtifactStore.ts'
 import {
   COMPILED_RUNTIME_ARTIFACT,
+  ASSET_REGISTRY_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
+  type CompiledRuntimeArtifactData,
 } from '../src/contracts/artifactTypes.ts'
 import { canonicalRuntimePlanSchema } from '../src/contracts/runtimePlan.ts'
+import { capabilityManifest } from '../src/compiler/capabilityManifest.ts'
+import { createAssetRegistrySnapshot } from '../src/services/assetRegistry.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
 import { EventBroker } from '../src/session/eventBroker.ts'
 import { SessionAgentRunner } from '../src/session/sessionAgentRunner.ts'
+import { createCompilerTools, type CompilerToolOptions } from '../src/tools/compilerTools.ts'
 
 class TestNestGateway implements NestGateway {
   readonly file: AuthorizedFile = {
@@ -80,6 +85,22 @@ class ControllableModel implements ModelAdapter {
   fail(): void { this.#reject?.(new Error('model failed')) }
 }
 
+class CompilerCallingModel implements ModelAdapter {
+  input: Record<string, unknown> | undefined
+  #step = 0
+
+  async complete(): Promise<ModelResponse> {
+    if (this.#step++ === 0) {
+      assert.ok(this.input)
+      return {
+        content: '',
+        toolCalls: [{ id: 'compile-invalid', name: 'compile_replay_runtime', input: this.input }],
+      }
+    }
+    return { content: 'Compiler attempt finished.' }
+  }
+}
+
 async function fixture(model: ModelAdapter = { complete: async () => ({ content: 'done' }) }) {
   const database = await AgentDatabase.open(':memory:', 'sql.js')
   const repositories = new AgentRepositories(database)
@@ -114,7 +135,12 @@ async function waitFor(predicate: () => boolean, message: string): Promise<void>
   throw new Error(message)
 }
 
-async function terminalFixture(t: TestContext, model: ControllableModel, persisted: boolean) {
+async function terminalFixture(
+  t: TestContext,
+  model: ModelAdapter,
+  persisted: boolean,
+  options: { compilerToolsFactory?: typeof createCompilerTools } = {},
+) {
   let failNextFlush = false
   let flushFaults = 0
   const path = persisted
@@ -139,6 +165,7 @@ async function terminalFixture(t: TestContext, model: ControllableModel, persist
     skills: new SkillRegistry(),
     workspace: process.cwd(),
     events,
+    compilerToolsFactory: options.compilerToolsFactory,
   })
   return {
     database, repositories, session, events, runner,
@@ -249,6 +276,93 @@ function persistCompiled(
     )
   }
   return compiled.id
+}
+
+function persistNarrative(
+  f: Awaited<ReturnType<typeof terminalFixture>>,
+  acceptedArtifactId: string,
+  runId?: string,
+): string {
+  const accepted = f.repositories.artifacts.get(f.session.id, acceptedArtifactId)!
+  const narrative = new PersistentArtifactStore(f.session.id, f.repositories.artifacts, runId).create({
+    id: `terminal-narrative-${runId ?? 'tool-call'}`,
+    type: NARRATIVE_PLAN_ARTIFACT,
+    createdBy: 'agent',
+    logicalKey: `narrative-plan:${acceptedArtifactId}`,
+    data: {
+      schemaVersion: 'narrative-plan/v1',
+      narrativePlanId: 'terminal-narrative-plan',
+      sourceEventPlan: {
+        artifactId: acceptedArtifactId,
+        planId: 'terminal-plan',
+        version: 1,
+        fingerprint: accepted.metadata!.fingerprint,
+      },
+      targetDurationMs: 180_000,
+      subtitles: [{
+        subtitleId: 'terminal-subtitle',
+        eventUnitId: 'terminal-unit',
+        text: 'Terminal state',
+        evidenceRefs: ['terminal-evidence'],
+        importance: 'low',
+      }],
+      sceneRequirements: [{
+        requirementId: 'terminal-requirement',
+        eventUnitId: 'terminal-unit',
+        focusEntities: ['Unit'],
+        spatialRelations: [],
+        stateChanges: ['status explanation'],
+        motionRequirements: [],
+        attentionRequirements: ['show status'],
+        requiredFacts: ['Terminal state'],
+        forbiddenClaims: [],
+        preferredTemplate: 'status_explanation',
+      }],
+    },
+  })
+  return narrative.id
+}
+
+function persistAssetRegistry(
+  f: Awaited<ReturnType<typeof terminalFixture>>,
+): { artifactId: string; registryVersion: string } {
+  const snapshot = createAssetRegistrySnapshot([])
+  const artifact = new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
+    id: 'terminal-asset-registry',
+    type: ASSET_REGISTRY_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: `asset-registry:${snapshot.registryVersion}`,
+    data: snapshot,
+  })
+  return { artifactId: artifact.id, registryVersion: snapshot.registryVersion }
+}
+
+function corruptingCompilerToolsFactory(options: CompilerToolOptions = {}): AgentTool[] {
+  const tools = createCompilerTools(options)
+  const compile = tools[0]!
+  return [{
+    ...compile,
+    async execute(input, context, onProgress) {
+      const result = await compile.execute(input, context, onProgress)
+      const artifact = result.artifacts?.[0]
+      assert.ok(artifact)
+      const data = artifact.data as CompiledRuntimeArtifactData
+      data.sceneProjectConfig.runtimePlanArtifactId = 'malformed-after-tool-validation'
+      return result
+    },
+  }, ...tools.slice(1)]
+}
+
+function invalidAdapterCompilerToolsFactory(options: CompilerToolOptions = {}): AgentTool[] {
+  return createCompilerTools({
+    ...options,
+    adaptRuntimePlan(runtimePlan, artifactId) {
+      return {
+        ...new BaseRuntimeAdapter().adapt(runtimePlan, artifactId),
+        runtimePlanArtifactId: 'malformed-before-tool-return',
+      }
+    },
+  })
 }
 
 function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
@@ -466,6 +580,85 @@ test('invalid current-run compiled artifacts fail structurally and preserve the 
     assert.equal(f.repositories.artifacts.get(f.session.id, 'last-valid')?.superseded, false, current.name)
     f.database.close()
   }
+})
+
+test('malformed compiler output fails before compiled persistence or publication', async (t) => {
+  for (const current of [
+    { name: 'invalid adapter output', factory: invalidAdapterCompilerToolsFactory },
+    { name: 'corrupted tool return', factory: corruptingCompilerToolsFactory },
+  ]) {
+    const model = new ControllableModel()
+    const f = await terminalFixture(t, model, false, {
+      compilerToolsFactory: current.factory,
+    })
+    const acceptedArtifactId = prepareAcceptedRun(f)
+    persistCompiled(f, acceptedArtifactId, { artifactId: 'last-valid' })
+    const queued = f.repositories.transaction(() => f.runner.createAfterApproval({
+      sessionId: f.session.id, subject: 'user-1', acceptedArtifactId,
+    }))
+    persistNarrative(f, acceptedArtifactId, queued.id)
+    f.runner.startQueued(queued.id, 'Bearer user-1')
+    await model.started
+
+    model.succeed()
+    await waitForTerminal(f.repositories, f.session.id)
+
+    const run = f.repositories.runs.get(queued.id)!
+    const events = f.repositories.events.after(f.session.id, '0')
+    assert.equal(run.status, 'failed', current.name)
+    assert.equal(run.error?.code, 'COMPILED_ARTIFACT_INVALID', current.name)
+    assert.equal(run.error?.message, 'Replay compilation failed', current.name)
+    assert.equal(events.some(event => event.type === 'run.completed'), false, current.name)
+    assert.equal(events.some(event => event.type === 'artifact.created'
+      && event.data.artifactType === COMPILED_RUNTIME_ARTIFACT), false, current.name)
+    assert.deepEqual(f.repositories.artifacts.listByRun(f.session.id, queued.id)
+      .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT), [], current.name)
+    assert.deepEqual(f.repositories.artifacts.listLedger(f.session.id)
+      .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT && !item.superseded)
+      .map(item => item.id), ['last-valid'], current.name)
+    f.database.close()
+  }
+})
+
+test('model-invoked malformed compiler output retains its stable failure code', async (t) => {
+  const model = new CompilerCallingModel()
+  const f = await terminalFixture(t, model, false, {
+    compilerToolsFactory: invalidAdapterCompilerToolsFactory,
+  })
+  const acceptedArtifactId = prepareAcceptedRun(f)
+  persistCompiled(f, acceptedArtifactId, { artifactId: 'last-valid' })
+  const narrativePlanArtifactId = persistNarrative(f, acceptedArtifactId)
+  const registry = persistAssetRegistry(f)
+  model.input = {
+    eventPlanArtifactId: acceptedArtifactId,
+    narrativePlanArtifactId,
+    assetRegistryArtifactId: registry.artifactId,
+    capabilityManifestVersion: capabilityManifest.version,
+    assetRegistryVersion: registry.registryVersion,
+  }
+  const queued = f.runner.enqueueAfterApproval({
+    sessionId: f.session.id,
+    subject: 'user-1',
+    authorization: 'Bearer user-1',
+    acceptedArtifactId,
+  })
+
+  await waitForTerminal(f.repositories, f.session.id)
+
+  const run = f.repositories.runs.get(queued.runId)!
+  const events = f.repositories.events.after(f.session.id, '0')
+  assert.equal(run.status, 'failed')
+  assert.equal(run.error?.code, 'COMPILED_ARTIFACT_INVALID')
+  assert.equal(run.error?.message, 'Replay compilation failed')
+  assert.equal(events.some(event => event.type === 'run.completed'), false)
+  assert.equal(events.some(event => event.type === 'artifact.created'
+    && event.data.artifactType === COMPILED_RUNTIME_ARTIFACT), false)
+  assert.deepEqual(f.repositories.artifacts.listByRun(f.session.id, queued.runId)
+    .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT), [])
+  assert.deepEqual(f.repositories.artifacts.listLedger(f.session.id)
+    .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT && !item.superseded)
+    .map(item => item.id), ['last-valid'])
+  f.database.close()
 })
 
 test('terminal flush failures publish no completed, failed, or interrupt event', async (t) => {

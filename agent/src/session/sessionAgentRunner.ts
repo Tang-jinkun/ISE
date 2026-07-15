@@ -18,6 +18,7 @@ import { createSessionToolRegistry } from '../runtime/toolAssembly.ts'
 import { createAssetRegistrySnapshot } from '../services/assetRegistry.ts'
 import {
   CompiledArtifactInvalidError,
+  type CompiledRuntimeArtifactCandidate,
   validateCompiledRuntimeArtifact,
 } from '../services/compiledRuntimeArtifact.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
@@ -38,6 +39,7 @@ export interface SessionAgentRunnerOptions {
   skills: SkillRegistry
   workspace: string
   events?: EventBroker
+  compilerToolsFactory?: typeof createCompilerTools
 }
 
 export class SessionAgentRunner {
@@ -146,6 +148,7 @@ export class SessionAgentRunner {
         this.options.repositories.sessions.transition(run.sessionId, ['queued'], 'running', run.id)
       }
       const artifacts = new PersistentArtifactStore(run.sessionId, this.options.repositories.artifacts, run.id)
+      let compiledArtifactInvalid = false
       const result = await new IseAgentHost({
         model: this.options.modelFactory(run.sessionId),
         tools: createSessionToolRegistry({
@@ -163,6 +166,8 @@ export class SessionAgentRunner {
             stage: payload.stage,
             percentage: payload.percentage,
           }),
+          compilerToolsFactory: this.options.compilerToolsFactory,
+          onCompiledArtifactInvalid: () => { compiledArtifactInvalid = true },
           skills: this.options.skills,
         }),
         skills: this.options.skills,
@@ -172,6 +177,7 @@ export class SessionAgentRunner {
         eventSink: new PublicEventSink(run.sessionId, this.events, run.id, false),
         signal: controller.signal,
       }).run(run.objective)
+      if (compiledArtifactInvalid) throw new CompiledArtifactInvalidError()
       if (result.goal.status !== 'completed') {
         await this.finishFromThrownError(run.id, new Error(result.goal.remainingIssues.join('; ') || 'Agent run failed'), false)
         return
@@ -241,7 +247,11 @@ export class SessionAgentRunner {
   private async finishFromThrownError(runId: string, error: unknown, aborted: boolean): Promise<void> {
     const run = this.options.repositories.runs.get(runId)
     if (!run || ['completed', 'failed', 'cancelled'].includes(run.status)) return
-    const compilationDiagnostics = error instanceof CompilationError ? error.diagnostics : undefined
+    const compilationDiagnostics = error instanceof CompilationError
+      ? error.diagnostics
+      : error instanceof CompiledArtifactInvalidError
+        ? [diagnostic(error.code, 'Compiled runtime artifact failed validation')]
+        : undefined
     const code = publicFailureCode(aborted ? 'RUN_CANCELLED' : compilationDiagnostics?.[0]?.code ?? 'AGENT_RUN_FAILED')
     const message = publicFailureMessage(code)
     const diagnostics = publicFailureDiagnostics(compilationDiagnostics ?? [{ code, severity: 'error' }])
@@ -291,7 +301,7 @@ export class SessionAgentRunner {
         logicalKey: registryArtifact.logicalKey,
       })
     }
-    const compileTool = createCompilerTools({
+    const compileTool = (this.options.compilerToolsFactory ?? createCompilerTools)({
       onCompileProgress: payload => this.events.append(run.sessionId, run.id, 'compile.progress', {
         runId: run.id,
         stage: payload.stage,
@@ -315,6 +325,7 @@ export class SessionAgentRunner {
     if (result.artifacts?.length !== 1 || result.artifacts[0]!.type !== COMPILED_RUNTIME_ARTIFACT) {
       throw new CompilationError([diagnostic('COMPILED_ARTIFACT_MISSING', 'Compiler returned no playable artifact')])
     }
+    this.validatedCompiledData(run, result.artifacts[0] as CompiledRuntimeArtifactCandidate)
     const compiled = artifacts.create(result.artifacts[0]!)
     this.events.append(run.sessionId, run.id, 'artifact.created', {
       runId: run.id,
@@ -390,7 +401,7 @@ export class SessionAgentRunner {
     return candidate
   }
 
-  private validatedCompiledData(run: RunRecord, artifact: Artifact) {
+  private validatedCompiledData(run: RunRecord, artifact: CompiledRuntimeArtifactCandidate) {
     try {
       return validateCompiledRuntimeArtifact(artifact, run.expectedAccepted?.artifactId)
     } catch (error) {

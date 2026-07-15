@@ -6,6 +6,8 @@ import {
 } from '../contracts/artifactTypes.ts'
 import { canonicalRuntimePlanSchema } from '../contracts/runtimePlan.ts'
 
+export type CompiledRuntimeArtifactCandidate = Pick<Artifact, 'id' | 'type' | 'data' | 'metadata'>
+
 export class CompiledArtifactInvalidError extends Error {
   readonly code = 'COMPILED_ARTIFACT_INVALID'
 
@@ -20,7 +22,7 @@ function invalid(): never {
 }
 
 export function validateCompiledRuntimeArtifact(
-  artifact: Artifact,
+  artifact: CompiledRuntimeArtifactCandidate,
   expectedAcceptedArtifactId?: string,
 ): CompiledRuntimeArtifactData {
   if (artifact.type !== COMPILED_RUNTIME_ARTIFACT || !artifact.data || typeof artifact.data !== 'object') invalid()

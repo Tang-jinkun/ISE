@@ -13,6 +13,8 @@ export interface ToolAssemblyOptions {
   extraTools?: readonly AgentTool[]
   loadAssetSnapshot?: () => Promise<AssetRegistrySnapshot>
   onCompileProgress?: (payload: CompileProgressPayload) => void
+  compilerToolsFactory?: typeof createCompilerTools
+  onCompiledArtifactInvalid?: () => void
   skills?: SkillRegistry
 }
 
@@ -22,7 +24,10 @@ export function createSessionToolRegistry(options: ToolAssemblyOptions): ToolReg
     ...createEventPlanTools(),
     ...createScenePlanTools(),
     ...(options.loadAssetSnapshot ? createAssetTools(options.loadAssetSnapshot) : []),
-    ...createCompilerTools({ onCompileProgress: options.onCompileProgress }),
+    ...(options.compilerToolsFactory ?? createCompilerTools)({
+      onCompileProgress: options.onCompileProgress,
+      onCompiledArtifactInvalid: options.onCompiledArtifactInvalid,
+    }),
     ...(options.extraTools ?? []),
   ]
   const registry = new ToolRegistry(tools)

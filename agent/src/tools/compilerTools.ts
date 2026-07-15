@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { AgentContext, AgentTool, Artifact } from '@ise/agent-core'
-import { sceneProjectConfigSchema } from '@ise/runtime-contracts'
+import type { AgentContext, AgentTool, Artifact, ArtifactInput } from '@ise/agent-core'
 import { BaseRuntimeAdapter } from '../adapters/baseRuntimeAdapter.ts'
 import { capabilityManifest } from '../compiler/capabilityManifest.ts'
 import { compileScene } from '../compiler/sceneCompiler.ts'
@@ -15,9 +14,12 @@ import {
 import { assetRegistrySnapshotSchema } from '../contracts/assetRegistry.ts'
 import { eventPlanSchema } from '../contracts/eventPlan.ts'
 import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
-import { canonicalRuntimePlanSchema } from '../contracts/runtimePlan.ts'
+import { canonicalRuntimePlanSchema, type CanonicalRuntimePlan } from '../contracts/runtimePlan.ts'
 import { fingerprint } from '../services/fingerprint.ts'
-import { validateCompiledRuntimeArtifact } from '../services/compiledRuntimeArtifact.ts'
+import {
+  CompiledArtifactInvalidError,
+  validateCompiledRuntimeArtifact,
+} from '../services/compiledRuntimeArtifact.ts'
 
 export interface CompileProgressPayload {
   stage: 'narrative' | 'assets' | 'schedule' | 'validate' | 'adapt'
@@ -26,6 +28,8 @@ export interface CompileProgressPayload {
 
 export interface CompilerToolOptions {
   onCompileProgress?: (payload: CompileProgressPayload) => void
+  adaptRuntimePlan?: (runtimePlan: CanonicalRuntimePlan, artifactId: string) => unknown
+  onCompiledArtifactInvalid?: () => void
 }
 
 const compileInputSchema = z.strictObject({
@@ -82,25 +86,35 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
       }))
       options.onCompileProgress?.({ stage: 'validate', percentage: 85 })
       const artifactId = randomUUID()
-      const sceneProjectConfig = sceneProjectConfigSchema.parse(new BaseRuntimeAdapter().adapt(runtimePlan, artifactId))
+      const adapted = options.adaptRuntimePlan
+        ? options.adaptRuntimePlan(runtimePlan, artifactId)
+        : new BaseRuntimeAdapter().adapt(runtimePlan, artifactId)
+      const candidate = {
+        id: artifactId,
+        type: COMPILED_RUNTIME_ARTIFACT,
+        createdBy: 'tool' as const,
+        logicalKey: `compiled-runtime:${acceptedArtifact.id}`,
+        data: { runtimePlan, sceneProjectConfig: adapted },
+        metadata: {
+          eventPlanArtifactId: acceptedArtifact.id,
+          narrativePlanArtifactId: narrativeArtifact.id,
+          assetRegistryArtifactId: registryArtifact.id,
+          capabilityManifestVersion: capabilityManifest.version,
+          assetRegistryVersion: assetRegistry.registryVersion,
+        },
+      }
+      let data: CompiledRuntimeArtifactData
+      try {
+        data = validateCompiledRuntimeArtifact(candidate, acceptedArtifact.id)
+      } catch (error) {
+        if (error instanceof CompiledArtifactInvalidError) options.onCompiledArtifactInvalid?.()
+        throw error
+      }
+      const artifact = { ...candidate, data } satisfies ArtifactInput<CompiledRuntimeArtifactData> & { id: string }
       options.onCompileProgress?.({ stage: 'adapt', percentage: 100 })
-      const data: CompiledRuntimeArtifactData = { runtimePlan, sceneProjectConfig }
       return {
         content: JSON.stringify({ artifactId, valid: true, diagnostics: runtimePlan.diagnostics }),
-        artifacts: [{
-          id: artifactId,
-          type: COMPILED_RUNTIME_ARTIFACT,
-          createdBy: 'tool',
-          logicalKey: `compiled-runtime:${acceptedArtifact.id}`,
-          data,
-          metadata: {
-            eventPlanArtifactId: acceptedArtifact.id,
-            narrativePlanArtifactId: narrativeArtifact.id,
-            assetRegistryArtifactId: registryArtifact.id,
-            capabilityManifestVersion: capabilityManifest.version,
-            assetRegistryVersion: assetRegistry.registryVersion,
-          },
-        }],
+        artifacts: [artifact],
       }
     },
   }
