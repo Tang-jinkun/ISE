@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ise/runtime-contracts": "file:../../packages/runtime-contracts",
     "@nestjs-modules/mailer": "2.0.2",
     "@nestjs/common": "10.4.22",
     "@nestjs/config": "4.0.2",

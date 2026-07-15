@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ise/agent-core": "file:../packages/agent-core",
+    "@ise/runtime-contracts": "file:../packages/runtime-contracts",
     "@ise/skills-core": "file:../packages/skills-core",
     "cheerio": "^1.1.0",
     "mammoth": "^1.9.1",

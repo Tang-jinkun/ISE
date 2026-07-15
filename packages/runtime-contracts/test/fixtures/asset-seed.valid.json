@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "ise-assets/v1",
+  "assets": [
+    {
+      "assetId": "geojson:contract-fixture",
+      "kind": "geojson",
+      "displayName": "Contract fixture",
+      "aliases": [],
+      "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "sourceRelativePath": "fixtures/contract.geojson",
+      "objectName": "test/fixtures/contract.geojson",
+      "mediaType": "application/geo+json",
+      "size": 0,
+      "availability": "missing",
+      "criticality": "optional",
+      "fallbackAssetIds": [],
+      "allowFallback": false
+    }
+  ],
+  "nameMappings": []
+}
