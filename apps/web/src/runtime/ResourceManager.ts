@@ -36,11 +36,17 @@ interface PendingEntry {
   key: string;
   assetId: string;
   role: AssetRole;
-  refCount: number;
+  reservationCount: number;
   controller: AbortController;
-  detachCallerSignal(): void;
+  waiters: Set<PendingWaiter>;
   cancelled: boolean;
+  settled: boolean;
+  entry?: CacheEntry;
   promise: Promise<LoadedAsset>;
+}
+
+interface PendingWaiter {
+  cancel(reason: unknown): void;
 }
 
 interface GltfTemplateEntry {
@@ -67,6 +73,9 @@ export class ResourceManager {
 
   async acquire(assetId: string, role: AssetRole, signal?: AbortSignal): Promise<LoadedAsset> {
     this.assertUsable();
+    if (signal?.aborted) {
+      throw signalAbortReason(signal);
+    }
     const key = cacheKey(assetId, role);
     const cached = this.entries.get(key);
     if (cached) {
@@ -76,20 +85,19 @@ export class ResourceManager {
 
     const inFlight = this.pending.get(key);
     if (inFlight) {
-      inFlight.refCount += 1;
-      return inFlight.promise;
+      return this.joinPending(inFlight, signal);
     }
 
     const controller = new AbortController();
-    const detachCallerSignal = forwardAbort(signal, controller);
     const pending: PendingEntry = {
       key,
       assetId,
       role,
-      refCount: 1,
+      reservationCount: 0,
       controller,
-      detachCallerSignal,
+      waiters: new Set(),
       cancelled: false,
+      settled: false,
       promise: Promise.resolve(undefined as unknown as LoadedAsset),
     };
     this.pending.set(key, pending);
@@ -104,18 +112,32 @@ export class ResourceManager {
           this.disposeEntry(entry);
           throw abortError(`Asset acquisition released: ${assetId}`);
         }
-        entry.refCount = pending.refCount;
+        pending.settled = true;
+        entry.refCount = pending.reservationCount;
+        pending.entry = entry;
         this.entries.set(key, entry);
         return entry.loaded;
       })
+      .catch((error) => {
+        pending.settled = true;
+        if (this.disposed) {
+          if (error instanceof SceneRuntimeError && error.code === 'RUNTIME_DISPOSED') {
+            throw error;
+          }
+          throw new SceneRuntimeError('RUNTIME_DISPOSED', 'Resource manager is disposed', undefined, {
+            cause: error,
+          });
+        }
+        throw error;
+      })
       .finally(() => {
-        pending.detachCallerSignal();
         if (this.pending.get(key) === pending) {
           this.pending.delete(key);
         }
       });
+    void pending.promise.catch(() => undefined);
 
-    return pending.promise;
+    return this.joinPending(pending, signal);
   }
 
   release(assetId: string) {
@@ -123,12 +145,9 @@ export class ResourceManager {
       if (pending.assetId !== assetId) {
         continue;
       }
-      pending.refCount -= 1;
-      if (pending.refCount <= 0) {
-        pending.cancelled = true;
-        this.pending.delete(pending.key);
-        pending.controller.abort(abortError(`Asset acquisition released: ${assetId}`));
-      }
+      pending.waiters.values().next().value?.cancel(
+        abortError(`Asset acquisition released: ${assetId}`),
+      );
       return;
     }
 
@@ -154,11 +173,81 @@ export class ResourceManager {
     for (const pending of [...this.pending.values()]) {
       pending.cancelled = true;
       this.pending.delete(pending.key);
+      const disposedError = new SceneRuntimeError('RUNTIME_DISPOSED', 'Resource manager is disposed');
+      for (const waiter of [...pending.waiters]) {
+        waiter.cancel(disposedError);
+      }
       pending.controller.abort(abortError('Resource manager disposed'));
     }
     for (const entry of [...this.entries.values()]) {
       this.entries.delete(entry.key);
       this.disposeEntry(entry);
+    }
+  }
+
+  private joinPending(pending: PendingEntry, signal?: AbortSignal) {
+    pending.reservationCount += 1;
+    return new Promise<LoadedAsset>((resolve, reject) => {
+      let waiting = true;
+      let waiter: PendingWaiter;
+      const abort = () => waiter.cancel(signal ? signalAbortReason(signal) : abortError('Cancelled'));
+      const detach = () => signal?.removeEventListener('abort', abort);
+      const finish = (transferReservation: boolean) => {
+        if (!waiting) {
+          return false;
+        }
+        waiting = false;
+        detach();
+        pending.waiters.delete(waiter);
+        if (!transferReservation) {
+          this.cancelReservation(pending);
+        }
+        return true;
+      };
+      waiter = {
+        cancel: (reason) => {
+          if (finish(false)) {
+            reject(reason);
+          }
+        },
+      };
+      pending.waiters.add(waiter);
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) {
+        waiter.cancel(signalAbortReason(signal));
+        return;
+      }
+      pending.promise.then(
+        (loaded) => {
+          if (finish(true)) {
+            resolve(loaded);
+          }
+        },
+        (error) => {
+          if (finish(false)) {
+            reject(error);
+          }
+        },
+      );
+    });
+  }
+
+  private cancelReservation(pending: PendingEntry) {
+    pending.reservationCount = Math.max(0, pending.reservationCount - 1);
+    if (pending.entry) {
+      pending.entry.refCount -= 1;
+      if (pending.entry.refCount <= 0) {
+        this.entries.delete(pending.entry.key);
+        this.disposeEntry(pending.entry);
+      }
+      return;
+    }
+    if (pending.reservationCount === 0 && !pending.settled && !pending.cancelled) {
+      pending.cancelled = true;
+      if (this.pending.get(pending.key) === pending) {
+        this.pending.delete(pending.key);
+      }
+      pending.controller.abort(abortError(`All asset waiters cancelled: ${pending.assetId}`));
     }
   }
 
@@ -394,19 +483,10 @@ function contentSignature(access: ResolvedAssetAccess) {
   }
 }
 
-function forwardAbort(signal: AbortSignal | undefined, controller: AbortController) {
-  if (!signal) {
-    return () => undefined;
-  }
-  if (signal.aborted) {
-    controller.abort(signal.reason);
-    return () => undefined;
-  }
-  const abort = () => controller.abort(signal.reason);
-  signal.addEventListener('abort', abort, { once: true });
-  return () => signal.removeEventListener('abort', abort);
-}
-
 function abortError(message: string) {
   return new DOMException(message, 'AbortError');
+}
+
+function signalAbortReason(signal: AbortSignal) {
+  return signal.reason ?? abortError('Asset acquisition aborted');
 }

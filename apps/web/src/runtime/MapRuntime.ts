@@ -510,8 +510,8 @@ const geometryUnionSchema = z.discriminatedUnion('type', [
 const featureSchema = z
   .object({
     type: z.literal('Feature'),
-    properties: z.record(z.string(), z.unknown()).nullable().optional(),
-    geometry: geometrySchema,
+    properties: z.record(z.string(), z.unknown()).nullable(),
+    geometry: geometrySchema.nullable(),
     id: z.union([z.string(), z.number()]).optional(),
   })
   .passthrough();

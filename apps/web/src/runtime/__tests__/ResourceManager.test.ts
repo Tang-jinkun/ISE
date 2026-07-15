@@ -42,6 +42,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function abortError(message: string) {
+  return new DOMException(message, 'AbortError');
+}
+
 describe('ResourceManager', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(glbBytes())));
@@ -125,6 +129,95 @@ describe('ResourceManager', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
   });
 
+  it('lets a joiner survive when the first in-flight caller aborts', async () => {
+    const responseGate = deferred<Response>();
+    vi.mocked(fetch).mockImplementation(() => responseGate.promise);
+    const manager = new ResourceManager({
+      resolveAsset: async () => modelAccess(),
+      now: () => 0,
+    });
+    const firstController = new AbortController();
+    const joinerController = new AbortController();
+    const firstRemove = vi.spyOn(firstController.signal, 'removeEventListener');
+    const joinerRemove = vi.spyOn(joinerController.signal, 'removeEventListener');
+    const first = manager.acquire('model:rafale', 'model', firstController.signal);
+    const joiner = manager.acquire('model:rafale', 'model', joinerController.signal);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const internalSignal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal;
+
+    firstController.abort(abortError('first cancelled'));
+    responseGate.resolve(new Response(glbBytes()));
+    const [firstResult, joinerResult] = await Promise.allSettled([first, joiner]);
+
+    expect(firstResult).toMatchObject({ status: 'rejected', reason: { name: 'AbortError' } });
+    expect(joinerResult.status).toBe('fulfilled');
+    expect(internalSignal?.aborted).toBe(false);
+    expect(firstRemove).toHaveBeenCalled();
+    expect(joinerRemove).toHaveBeenCalled();
+    manager.release('model:rafale');
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the first caller survive when an in-flight joiner aborts', async () => {
+    const responseGate = deferred<Response>();
+    vi.mocked(fetch).mockImplementation(() => responseGate.promise);
+    const manager = new ResourceManager({
+      resolveAsset: async () => modelAccess(),
+      now: () => 0,
+    });
+    const firstController = new AbortController();
+    const joinerController = new AbortController();
+    const firstRemove = vi.spyOn(firstController.signal, 'removeEventListener');
+    const joinerRemove = vi.spyOn(joinerController.signal, 'removeEventListener');
+    const first = manager.acquire('model:rafale', 'model', firstController.signal);
+    const joiner = manager.acquire('model:rafale', 'model', joinerController.signal);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const internalSignal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal;
+
+    joinerController.abort(abortError('joiner cancelled'));
+    responseGate.resolve(new Response(glbBytes()));
+    const [firstResult, joinerResult] = await Promise.allSettled([first, joiner]);
+
+    expect(firstResult.status).toBe('fulfilled');
+    expect(joinerResult).toMatchObject({ status: 'rejected', reason: { name: 'AbortError' } });
+    expect(internalSignal?.aborted).toBe(false);
+    expect(firstRemove).toHaveBeenCalled();
+    expect(joinerRemove).toHaveBeenCalled();
+    manager.release('model:rafale');
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts shared work only after every in-flight waiter cancels', async () => {
+    const responseGate = deferred<Response>();
+    vi.mocked(fetch).mockImplementation(() => responseGate.promise);
+    const manager = new ResourceManager({
+      resolveAsset: async () => modelAccess(),
+      now: () => 0,
+    });
+    const firstController = new AbortController();
+    const joinerController = new AbortController();
+    const first = manager.acquire('model:rafale', 'model', firstController.signal);
+    const joiner = manager.acquire('model:rafale', 'model', joinerController.signal);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const internalSignal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal;
+
+    firstController.abort(abortError('first cancelled'));
+    const abortedAfterFirst = internalSignal?.aborted;
+    joinerController.abort(abortError('joiner cancelled'));
+    const abortedAfterJoiner = internalSignal?.aborted;
+    responseGate.resolve(new Response(glbBytes()));
+    const results = await Promise.allSettled([first, joiner]);
+
+    expect(abortedAfterFirst).toBe(false);
+    expect(abortedAfterJoiner).toBe(true);
+    expect(results.every((result) => result.status === 'rejected')).toBe(true);
+    await vi.waitFor(() =>
+      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(
+        vi.mocked(URL.createObjectURL).mock.calls.length,
+      ),
+    );
+  });
+
   it('memoizes one GLTF template promise for aliases with the same fingerprint', async () => {
     const gltf = { scene: new THREE.Group() };
     const loadAsync = vi.fn(async () => gltf as never);
@@ -204,7 +297,12 @@ describe('ResourceManager', () => {
       resolveAsset: async () => modelAccess(),
       now: () => 0,
     });
-    const pending = manager.acquire('model:rafale', 'model');
+    const firstController = new AbortController();
+    const joinerController = new AbortController();
+    const firstRemove = vi.spyOn(firstController.signal, 'removeEventListener');
+    const joinerRemove = vi.spyOn(joinerController.signal, 'removeEventListener');
+    const pending = manager.acquire('model:rafale', 'model', firstController.signal);
+    const joiner = manager.acquire('model:rafale', 'model', joinerController.signal);
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     const fetchSignal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal;
 
@@ -212,6 +310,9 @@ describe('ResourceManager', () => {
     expect(fetchSignal?.aborted).toBe(true);
     responseGate.resolve(new Response(glbBytes()));
     await expect(pending).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+    await expect(joiner).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+    expect(firstRemove).toHaveBeenCalled();
+    expect(joinerRemove).toHaveBeenCalled();
 
     vi.mocked(fetch).mockResolvedValue(new Response(glbBytes()));
     const secondManager = new ResourceManager({

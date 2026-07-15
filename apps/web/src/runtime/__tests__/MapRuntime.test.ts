@@ -25,6 +25,10 @@ const featureCollection = {
   ],
 } as const;
 const malformedGeojsonCases: Array<[string, unknown]> = [
+  [
+    'Feature properties',
+    { type: 'Feature', geometry: { type: 'Point', coordinates: [76, 30] } },
+  ],
   ['Feature geometry', { type: 'Feature', properties: {} }],
   ['FeatureCollection features', { type: 'FeatureCollection' }],
   ['GeometryCollection geometries', { type: 'GeometryCollection' }],
@@ -267,5 +271,28 @@ it('wraps GeoJSON JSON parse failures at load time', async () => {
 
   await expect(runtime.load([geojsonTrack('geo:border', 0, 100, true)])).rejects.toMatchObject({
     code: 'GEOJSON_INVALID',
+  });
+});
+
+it('accepts an RFC 7946 Feature with explicit null geometry', async () => {
+  const map = new FakeMap();
+  const nullGeometryFeature = {
+    type: 'Feature',
+    properties: null,
+    geometry: null,
+  };
+  const runtime = new MapRuntime(
+    map as never,
+    fakeResources({ 'geo:border': nullGeometryFeature }) as never,
+    markerDependencies(map),
+  );
+
+  await runtime.load([geojsonTrack('geo:border', 0, 100, true)]);
+  runtime.applyBase(50);
+
+  expect(map.sourceData('ise:geo:geo:geo-item')).toMatchObject({
+    type: 'Feature',
+    properties: null,
+    geometry: null,
   });
 });
