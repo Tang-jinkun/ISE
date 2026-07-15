@@ -4,9 +4,12 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
   ArrowLeft,
+  Clock,
   Loader2,
   Map as MapIcon,
+  Pause,
   Play,
+  RotateCcw,
   Save,
   Settings
 } from 'lucide-react';
@@ -19,6 +22,11 @@ interface SceneHeaderProps {
   currentTime?: number;
   onTitleChange?: (title: string) => void;
   onSave?: () => Promise<void>;
+  onPlay?: () => void;
+  onPause?: () => void;
+  onReplay?: () => void;
+  runtimeReady?: boolean;
+  projectId?: string | null;
   mode?: 'edit' | 'preview';
 }
 
@@ -34,6 +42,11 @@ export function SceneHeader({
   currentTime = 0,
   onTitleChange,
   onSave,
+  onPlay,
+  onPause,
+  onReplay,
+  runtimeReady = false,
+  projectId,
   mode = 'edit'
 }: SceneHeaderProps) {
   const navigate = useNavigate();
@@ -80,13 +93,45 @@ export function SceneHeader({
       </div>
 
       <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-xl"
+            aria-label="播放"
+            onClick={onPlay}
+            disabled={!runtimeReady}
+          >
+            <Play className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-xl"
+            aria-label="暂停"
+            onClick={onPause}
+            disabled={!runtimeReady}
+          >
+            <Pause className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-xl"
+            aria-label="重播"
+            onClick={onReplay}
+            disabled={!runtimeReady}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+          <div className="hidden items-center gap-1 rounded-xl border border-border bg-card px-2 py-1 text-xs text-muted-foreground md:flex">
+            <Clock className="h-3 w-3" />
+            <span>
+              {formatTime(currentTime)} / {formatTime(totalDuration)}
+            </span>
+          </div>
+        </div>
         <ThemeToggle />
-        {/* <div className="hidden md:flex items-center gap-1 rounded-xl border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
-          <Clock className="w-3 h-3" />
-          <span>
-            {formatTime(currentTime)} / {formatTime(totalDuration)}
-          </span>
-        </div> */}
         {mode === 'edit' && (
           <>
             <Button
@@ -99,7 +144,13 @@ export function SceneHeader({
             <Button
               variant="ghost"
               className="gap-2 rounded-xl text-xs"
-              onClick={() => navigate('/preview')}
+              onClick={() =>
+                navigate(
+                  projectId
+                    ? `/preview?projectId=${encodeURIComponent(projectId)}`
+                    : '/preview',
+                )
+              }
             >
               <Play className="w-3.5 h-3.5" />
               预览

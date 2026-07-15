@@ -6,10 +6,28 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { useEffect, useRef } from 'react';
 import { mapboxToken } from '@/config/public-env';
 
-export function SceneCanvas() {
+interface SceneCanvasProps {
+  mode?: 'edit' | 'preview';
+  onMapReady?: (map: mapboxgl.Map, overlayRoot: HTMLElement) => void;
+  onMapDispose?: (map: mapboxgl.Map) => void;
+}
+
+export function SceneCanvas({
+  mode = 'edit',
+  onMapReady,
+  onMapDispose,
+}: SceneCanvasProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<mapboxgl.Map | null>(null);
+  const onMapReadyRef = useRef(onMapReady);
+  const onMapDisposeRef = useRef(onMapDispose);
   const { theme } = useTheme();
+
+  useEffect(() => {
+    onMapReadyRef.current = onMapReady;
+    onMapDisposeRef.current = onMapDispose;
+  }, [onMapDispose, onMapReady]);
 
   useEffect(() => {
     if (!mapboxToken || !mapRef.current) return;
@@ -41,10 +59,14 @@ export function SceneCanvas() {
 
     map.on('load', () => {
       map.resize();
+      if (overlayRef.current) {
+        onMapReadyRef.current?.(map, overlayRef.current);
+      }
     });
 
     return () => {
       resizeObserver.disconnect();
+      onMapDisposeRef.current?.(map);
       map.remove();
       mapInstance.current = null;
     };
@@ -64,6 +86,26 @@ export function SceneCanvas() {
     return <div role="alert">PUBLIC_MAPBOX_TOKEN is not configured.</div>;
   }
 
+  if (mode === 'preview') {
+    return (
+      <section className="flex flex-1 items-center justify-center p-8">
+        <div className="relative h-[75vh] aspect-[16/9] max-w-[95vw] overflow-hidden rounded-xl border border-border bg-muted shadow-2xl">
+          <div
+            ref={mapRef}
+            data-testid="scene-runtime-map"
+            className="absolute inset-0"
+          />
+          <div
+            ref={overlayRef}
+            data-testid="scene-runtime-overlay"
+            className="pointer-events-none absolute inset-0"
+          />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/20 to-transparent" />
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="flex-1 flex items-center justify-center bg-background/50">
       <div className="w-full max-w-5xl px-6">
@@ -78,8 +120,14 @@ export function SceneCanvas() {
           <div className="relative w-full aspect-video">
             <div
               ref={mapRef}
+              data-testid="scene-runtime-map"
               className="absolute top-0 left-0 w-full h-full"
               style={{ boxSizing: 'border-box' }}
+            />
+            <div
+              ref={overlayRef}
+              data-testid="scene-runtime-overlay"
+              className="pointer-events-none absolute inset-0"
             />
           </div>
         </div>

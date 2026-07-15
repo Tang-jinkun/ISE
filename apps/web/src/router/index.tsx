@@ -1,5 +1,5 @@
 import { Loading } from '@/components/ui/loading';
-import { Suspense, type JSX } from 'react';
+import { lazy, Suspense, type JSX } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -21,6 +21,10 @@ import {
   UserTeamWork,
   UserUserInfo
 } from './lazy_components';
+
+const RuntimeHarness = lazy(() => import('@/pages/RuntimeHarness'));
+const runtimeHarnessEnabled =
+  import.meta.env.DEV || String(import.meta.env.MODE) === 'test';
 
 const RequireAuth = ({ children }: { children: JSX.Element }) => {
   const location = useLocation();
@@ -74,6 +78,9 @@ export function AppRouter() {
           }
         />
         <Route path="/login" element={<Login />} />
+        {runtimeHarnessEnabled && (
+          <Route path="/runtime-harness" element={<RuntimeHarness />} />
+        )}
         <Route
           path="/user"
           element={
