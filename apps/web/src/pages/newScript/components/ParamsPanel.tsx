@@ -9,7 +9,6 @@ import { message } from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useParamsStore } from '@/stores/paramsStore';
-import { useWarDataStore } from '@/stores/warDataStore';
 import {
   Activity,
   ArrowRight,
@@ -17,7 +16,7 @@ import {
   ChevronRight,
   FileJson,
   Layers,
-  Map,
+  Map as MapIcon,
   MapPin,
   Music,
   Play,
@@ -145,7 +144,7 @@ const TRACK_CONFIG: Record<string, TrackConfig> = {
   },
   geojson: {
     label: '地理轨',
-    icon: <Map className="w-3.5 h-3.5" />,
+    icon: <MapIcon className="w-3.5 h-3.5" />,
     color: '#8b5cf6',
     controlledFields: ['start', 'finish', 'paint', 'layout']
   },
@@ -187,12 +186,13 @@ const TRACK_CONFIG: Record<string, TrackConfig> = {
  * 初始加载即渲染 chibi_battle.mock.ts 中全部 unit 的 path 配置数据
  */
 export const ParamsPanel = ({
+  sceneConfig,
   onUpdate
 }: {
-  onUpdate?: (id: string, data: any) => void;
+  sceneConfig: SceneProjectConfig | null;
+  onUpdate?: (config: SceneProjectConfig) => void;
 }) => {
   const { t } = useTranslation();
-  const { currentData } = useWarDataStore();
   const [searchTerm, setSearchTerm] = useState('');
 
   /**
@@ -225,22 +225,38 @@ export const ParamsPanel = ({
 
   // 1. 预处理数据
   const allUnitsData = useMemo(() => {
-    if (!currentData) return [];
-    const units: any[] = [];
-    currentData.outline.forEach((outline: any) => {
-      outline.descriptions.forEach((desc: any) => {
-        desc.units.forEach((unit: any) => {
-          units.push({
-            id: unit.id,
-            core_content: unit.core_content,
-            paths: unit.paths,
-            time: unit.time
-          });
-        });
-      });
-    });
-    return units;
-  }, [currentData]);
+    if (!sceneConfig) return [];
+    const units = new globalThis.Map<
+      string,
+      {
+        id: string;
+        core_content: string;
+        paths: Record<string, unknown[]>;
+        time: { start: number; finish: number };
+      }
+    >();
+    for (const track of sceneConfig.tracks) {
+      for (const item of track.items) {
+        const current = units.get(item.eventUnitId) ?? {
+          id: item.eventUnitId,
+          core_content: item.eventUnitId,
+          paths: {},
+          time: { start: item.startMs, finish: item.startMs + item.durationMs }
+        };
+        current.time.start = Math.min(current.time.start, item.startMs);
+        current.time.finish = Math.max(
+          current.time.finish,
+          item.startMs + item.durationMs
+        );
+        current.paths[track.type] = [
+          ...(current.paths[track.type] ?? []),
+          item
+        ];
+        units.set(item.eventUnitId, current);
+      }
+    }
+    return Array.from(units.values());
+  }, [sceneConfig]);
 
   const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>(
     () => {
@@ -273,10 +289,42 @@ export const ParamsPanel = ({
    * 自动保存处理
    */
   const handleSave = useCallback(
-    async (unitId: string, fieldPath: string, value: any) => {
+    async (itemId: string, fieldPath: string, value: any) => {
       try {
-        if (onUpdate) {
-          onUpdate(unitId, { [fieldPath]: value });
+        if (onUpdate && sceneConfig) {
+          const path = fieldPath.split('.');
+          const replaceField = (
+            source: Record<string, unknown>,
+            [field, ...remaining]: string[]
+          ): Record<string, unknown> => {
+            if (!field) return source;
+            if (remaining.length === 0) return { ...source, [field]: value };
+            const nested = source[field];
+            return {
+              ...source,
+              [field]: replaceField(
+                typeof nested === 'object' && nested !== null
+                  ? (nested as Record<string, unknown>)
+                  : {},
+                remaining
+              )
+            };
+          };
+          const next = {
+            ...sceneConfig,
+            tracks: sceneConfig.tracks.map((track) => ({
+              ...track,
+              items: track.items.map((item) =>
+                item.id === itemId
+                  ? (replaceField(
+                      item as unknown as Record<string, unknown>,
+                      path
+                    ) as typeof item)
+                  : item
+              )
+            }))
+          } as SceneProjectConfig;
+          onUpdate(next);
         }
         message.success(
           `已保存 ${ATTR_MAP[fieldPath.split('.').pop() || ''] || fieldPath}`
@@ -285,7 +333,7 @@ export const ParamsPanel = ({
         message.error('保存失败，请检查网络连接');
       }
     },
-    [onUpdate]
+    [onUpdate, sceneConfig]
   );
 
   /**
@@ -489,7 +537,7 @@ export const ParamsPanel = ({
                               ([subK, subV]: [string, any]) => (
                                 <div key={subK}>
                                   {renderInput(
-                                    unitId,
+                                    item.id,
                                     `${k}.${subK}`,
                                     subV,
                                     ATTR_MAP[subK] || subK
@@ -503,7 +551,7 @@ export const ParamsPanel = ({
                     }
 
                     return (
-                      <div key={k}>{renderInput(unitId, k, v, label)}</div>
+                      <div key={k}>{renderInput(item.id, k, v, label)}</div>
                     );
                   })}
                 </div>
@@ -549,7 +597,7 @@ export const ParamsPanel = ({
           </div>
         </div>
         <h2 className="text-sm font-black text-foreground tracking-tight flex items-center gap-2">
-          {currentData?.war_name || '未加载'}{' '}
+          {sceneConfig?.sourceDocumentId || '未加载'}{' '}
           <span className="text-[10px] font-mono font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
             {allUnitsData.length} UNITS
           </span>
@@ -797,3 +845,4 @@ export const ParamsPanel = ({
     </div>
   );
 };
+import type { SceneProjectConfig } from '@ise/runtime-contracts';

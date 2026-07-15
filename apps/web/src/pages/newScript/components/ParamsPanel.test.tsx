@@ -1,5 +1,5 @@
 import { useParamsStore } from '@/stores/paramsStore';
-import { useWarDataStore } from '@/stores/warDataStore';
+import type { SceneProjectConfig } from '@ise/runtime-contracts';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ParamsPanel } from './ParamsPanel';
@@ -14,10 +14,6 @@ vi.mock('react-i18next', () => {
 });
 
 // Mock the stores
-vi.mock('@/stores/warDataStore', () => ({
-  useWarDataStore: vi.fn()
-}));
-
 vi.mock('@/stores/paramsStore', () => ({
   useParamsStore: vi.fn()
 }));
@@ -45,23 +41,42 @@ vi.mock('lucide-react', async () => {
 });
 
 describe('ParamsPanel', () => {
-  const mockData = {
-    war_name: 'Test War',
-    outline: [
+  const sceneConfig: SceneProjectConfig = {
+    schemaVersion: 'ise-scene/v1',
+    sourceDocumentId: 'document-1',
+    eventPlanArtifactId: 'event-plan-1',
+    runtimePlanArtifactId: 'runtime-plan-1',
+    totalDurationMs: 1_000,
+    entities: [],
+    diagnostics: [],
+    tracks: [
       {
-        descriptions: [
+        trackId: 'video-track-1',
+        label: '视频轨',
+        type: 'video',
+        visible: true,
+        items: [
           {
-            units: [
-              {
-                id: 'unit-1',
-                core_content: 'Test Content',
-                paths: {
-                  video: [{ uuid: 'v1', start: 0, finish: 1000 }],
-                  audio: [] // 轨道数组长度为 0
-                },
-                time: { start: 0, finish: 1000 }
-              }
-            ]
+            id: 'video-1',
+            eventUnitId: 'unit-1',
+            startMs: 0,
+            durationMs: 1_000,
+            evidenceRefs: ['evidence-1'],
+            assetId: 'video:test',
+            params: {
+              layout: {
+                xPct: 0,
+                yPct: 0,
+                widthPct: 100,
+                heightPct: 100,
+                zIndex: 1,
+                opacity: 1,
+                fit: 'contain'
+              },
+              volume: 1,
+              playbackRate: 1,
+              loop: false
+            }
           }
         ]
       }
@@ -70,9 +85,6 @@ describe('ParamsPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useWarDataStore as any).mockReturnValue({
-      currentData: mockData
-    });
     (useParamsStore as any).mockReturnValue({
       showTransitions: false,
       setShowTransitions: vi.fn()
@@ -80,7 +92,7 @@ describe('ParamsPanel', () => {
   });
 
   it('当轨道数组长度为 0 时，隐藏该轨道的名称展示', () => {
-    render(<ParamsPanel />);
+    render(<ParamsPanel sceneConfig={sceneConfig} />);
     // "视频轨" 应该存在，因为长度为 1
     const videoTracks = screen.queryAllByText(/视频轨/);
     expect(videoTracks.length).toBeGreaterThan(0);
@@ -91,35 +103,23 @@ describe('ParamsPanel', () => {
   });
 
   it('中文标识正确渲染', () => {
-    render(<ParamsPanel />);
+    render(<ParamsPanel sceneConfig={sceneConfig} />);
     expect(screen.getAllByText(/视频轨/)[0]).toBeInTheDocument();
   });
 
   it('映射表缺失字段时有降级提示', () => {
     const dataWithUnknownTrack = {
-      ...mockData,
-      outline: [
+      ...sceneConfig,
+      tracks: [
         {
-          descriptions: [
-            {
-              units: [
-                {
-                  ...mockData.outline[0].descriptions[0].units[0],
-                  paths: {
-                    unknownTrack: [{ uuid: 'u1' }]
-                  }
-                }
-              ]
-            }
-          ]
+          ...sceneConfig.tracks[0],
+          type: 'unknownTrack',
+          label: 'unknownTrack'
         }
       ]
-    };
-    (useWarDataStore as any).mockReturnValue({
-      currentData: dataWithUnknownTrack
-    });
+    } as unknown as SceneProjectConfig;
 
-    render(<ParamsPanel />);
+    render(<ParamsPanel sceneConfig={dataWithUnknownTrack} />);
     // 应该显示 key "unknownTrack" 作为降级名称
     const elements = screen.getAllByText(/unknownTrack/);
     expect(elements.length).toBeGreaterThan(0);

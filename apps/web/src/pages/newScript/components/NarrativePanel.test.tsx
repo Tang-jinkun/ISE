@@ -1,23 +1,7 @@
+import type { AgentArtifactView } from '@/api/agent';
 import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { NarrativePanel } from './NarrativePanel';
-
-vi.mock('@/stores/warDataStore', () => ({
-  useWarDataStore: () => ({
-    currentData: {
-      war_name: 'Test War',
-      target_duration: 1000,
-      outline: [
-        {
-          id: 'o1',
-          title: 'Opening stage',
-          time: { start: 0, finish: 1000 },
-          descriptions: []
-        }
-      ]
-    }
-  })
-}));
 
 vi.mock('./DataImportButton', () => ({
   DataImportButton: () => null
@@ -34,12 +18,38 @@ vi.mock('lucide-react', async (importOriginal) => {
 });
 
 describe('NarrativePanel', () => {
+  const eventPlan: AgentArtifactView = {
+    artifactId: 'event-plan-1',
+    type: 'ise.event-plan-draft/v1',
+    version: 1,
+    createdAt: '2026-07-15T00:00:00.000Z',
+    createdBy: 'agent',
+    superseded: false,
+    data: {
+      eventUnits: [
+        {
+          eventUnitId: 'o1',
+          title: 'Opening stage',
+          worldStateChange: 'The scene opens',
+          participants: [],
+          locationRefs: [],
+          evidenceRefs: ['evidence-1'],
+          inferenceRefs: [],
+          uncertainties: [],
+          narrativePurpose: 'Opening',
+          importance: 'high'
+        }
+      ]
+    }
+  };
+
   const renderPanel = () =>
     render(
       <NarrativePanel
         selectedNode={{ id: 'n-root', title: 'Narrative', summary: '' }}
         nowText={() => ''}
         onCopy={vi.fn()}
+        eventPlan={eventPlan}
       />
     );
 

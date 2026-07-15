@@ -1,3 +1,4 @@
+import type { SceneProjectConfig } from '@ise/runtime-contracts';
 import { http, type ResType } from './http';
 
 export type OwnerType = 'PERSON' | 'TEAM';
@@ -35,7 +36,12 @@ export const buildSceneUpdate = (
   config
 });
 
-export const createScene = (data: { title: string }) =>
+export type CreateScenePayload = {
+  title: string;
+  config?: SceneProjectConfig;
+};
+
+export const createScene = (data: CreateScenePayload) =>
   http.post<SceneItem>('scene', data);
 
 export const listScenes = (

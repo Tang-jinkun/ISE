@@ -1,3 +1,5 @@
+import type { SceneProjectConfig } from '@ise/runtime-contracts';
+import { createScene } from '@/api/scene';
 import { Dragger } from '@/components/common/Dragger';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,17 +11,11 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import {
-  type WarDescription,
-  type WarOutline,
-  type WarUnit
-} from '@/mock/core.type';
-import { useWarDataStore } from '@/stores/warDataStore';
-import {
   Activity,
   ArrowRight,
   Camera,
   Image as ImageIcon,
-  Map,
+  Map as MapIcon,
   Minus,
   Music,
   Play,
@@ -29,6 +25,7 @@ import {
   X
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DataImportButton } from './DataImportButton';
 
 const getTypeIcon = (type: string) => {
@@ -57,7 +54,7 @@ const getTypeIcon = (type: string) => {
       return <Type className="w-3.5 h-3.5" />;
     case 'geojson':
     case 'map':
-      return <Map className="w-3.5 h-3.5" />;
+      return <MapIcon className="w-3.5 h-3.5" />;
     default:
       return <Play className="w-3.5 h-3.5" />;
   }
@@ -81,6 +78,8 @@ const getClipStyle = (type?: string) => {
 interface SceneModalProps {
   isOpen: boolean;
   onClose: () => void;
+  title: string;
+  config: SceneProjectConfig | null;
 }
 
 export interface TimelineItem {
@@ -141,9 +140,14 @@ const TYPE_MAP: Record<string, string> = {
   dynamic_line: 'Dynamiclayer'
 };
 
-export const SceneModal: React.FC<SceneModalProps> = ({ isOpen, onClose }) => {
-  const { currentData } = useWarDataStore();
-  const sumtime = currentData?.target_duration || 40000;
+export const SceneModal: React.FC<SceneModalProps> = ({
+  isOpen,
+  onClose,
+  title,
+  config
+}) => {
+  const navigate = useNavigate();
+  const sumtime = config?.totalDurationMs ?? 0;
 
   // Timeline-like state
   const [scale, setScale] = useState(1);
@@ -215,117 +219,57 @@ export const SceneModal: React.FC<SceneModalProps> = ({ isOpen, onClose }) => {
   }, [startTickIndex, endTickIndex]);
 
   const outlineArray = useMemo(() => {
-    if (!currentData) return [];
-    const outlines: TimelineItem[] = currentData.outline.map(
-      (o: WarOutline) => ({
-        title: o.title,
-        start: o.time.start,
-        finish: o.time.finish
-      })
-    );
-
-    const descriptions: TimelineItem[] = [];
-    currentData.outline.forEach((o: WarOutline) => {
-      o.descriptions.forEach((d: WarDescription) => {
-        descriptions.push({
-          title: d.title,
-          start: d.time.start,
-          finish: d.time.finish
+    if (!config) return [];
+    const eventUnits = new globalThis.Map<string, TimelineItem>();
+    for (const track of config.tracks) {
+      for (const item of track.items) {
+        const existing = eventUnits.get(item.eventUnitId);
+        const finish = item.startMs + item.durationMs;
+        eventUnits.set(item.eventUnitId, {
+          title: item.eventUnitId,
+          start: Math.min(existing?.start ?? item.startMs, item.startMs),
+          finish: Math.max(existing?.finish ?? finish, finish)
         });
-      });
-    });
-
+      }
+    }
     return [
-      { id: 'outline', title: '阶段层', content: outlines },
-      { id: 'description', title: '微场景层', content: descriptions }
+      {
+        id: 'outline',
+        title: '阶段层',
+        content: Array.from(eventUnits.values()).sort(
+          (left, right) => left.start - right.start
+        )
+      }
     ];
-  }, [currentData]);
+  }, [config]);
 
   const pathArray = useMemo(() => {
-    if (!currentData) return [];
-    const finalTracks: PathTrack[] = [];
-
-    // Helper to find a track of a certain type that has no time overlap with the current item
-    const findAvailableTrack = (
-      type: string,
-      start: number,
-      finish: number
-    ): PathTrack | undefined => {
-      return finalTracks.find(
-        (t) =>
-          t.type === type &&
-          !t.sceneItems.some(
-            (existing) => start < existing.finish && existing.start < finish
-          )
-      );
-    };
-
-    // 1. First, collect all items across all units
-    const allItems: (TimelineItem & { trackType: string })[] = [];
-
-    currentData.outline.forEach((o: WarOutline) => {
-      o.descriptions.forEach((d: WarDescription) => {
-        d.units.forEach((u: WarUnit) => {
-          Object.entries(u.paths).forEach(([type, items]) => {
-            if (Array.isArray(items) && TYPE_LABELS[type]) {
-              items.forEach((item: any) => {
-                allItems.push({
-                  title: item.content || item.file_name || TYPE_LABELS[type],
-                  name: item.content || item.file_name || TYPE_LABELS[type],
-                  start: item.start,
-                  finish: item.finish,
-                  itemType: TYPE_MAP[type],
-                  trackType: type
-                });
-              });
-            }
-          });
-        });
-      });
-    });
-
-    // 2. Sort all items by start time to facilitate "greedy" packing into tracks
-    allItems.sort((a, b) => a.start - b.start);
-
-    // 3. Distribute items into tracks, splitting if overlaps are detected
-    allItems.forEach((item) => {
-      let targetTrack = findAvailableTrack(
-        item.trackType,
-        item.start,
-        item.finish
-      );
-
-      if (!targetTrack) {
-        // Create a new track for this type
-        const existingTypeCount = finalTracks.filter(
-          (t) => t.type === item.trackType
-        ).length;
-        targetTrack = {
-          id: `${item.trackType}-${existingTypeCount}`,
-          type: item.trackType,
-          name:
-            existingTypeCount > 0
-              ? `${TYPE_LABELS[item.trackType]} ${existingTypeCount + 1}`
-              : TYPE_LABELS[item.trackType],
-          sceneItems: []
+    if (!config) return [];
+    return config.tracks.map<PathTrack>((track) => ({
+      id: track.trackId,
+      type: track.type,
+      name: track.label,
+      sceneItems: track.items.map((item) => {
+        const params = item.params as Record<string, unknown>;
+        const itemTitle =
+          (typeof params.text === 'string' && params.text) ||
+          (typeof params.label === 'string' && params.label) ||
+          ('assetId' in item && item.assetId) ||
+          item.id;
+        return {
+          title: itemTitle,
+          name: itemTitle,
+          start: item.startMs,
+          finish: item.startMs + item.durationMs,
+          itemType: TYPE_MAP[track.type] ?? track.type
         };
-        finalTracks.push(targetTrack);
-      }
-
-      targetTrack.sceneItems.push(item);
-    });
-
-    // 4. Sort final tracks by type label to keep similar tracks together
-    return finalTracks.sort((a, b) => {
-      const labelA = TYPE_LABELS[a.type] || '';
-      const labelB = TYPE_LABELS[b.type] || '';
-      if (labelA !== labelB) return labelA.localeCompare(labelB);
-      return a.id.localeCompare(b.id);
-    });
-  }, [currentData]);
+      })
+    }));
+  }, [config]);
 
   const [visibleItemCount, setVisibleItemCount] = useState(0);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const totalItems = useMemo(() => {
     let count = 0;
@@ -387,12 +331,22 @@ export const SceneModal: React.FC<SceneModalProps> = ({ isOpen, onClose }) => {
   }, [isOpen, totalItems]);
 
   const handleConfirm = async () => {
+    if (!config || isConfirming) return;
     setIsConfirming(true);
-    // Simulate creating project/loading
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    // New project URL
-    window.location.href =
-      'http://localhost:9999/scene?projectId=17ffd11f-7c16-4cc8-bd5f-8967dc45e44d';
+    setCreateError(null);
+    try {
+      const response = await createScene({ title, config });
+      onClose();
+      navigate(`/scene?projectId=${encodeURIComponent(response.data.id)}`);
+    } catch (error) {
+      setCreateError(
+        error instanceof Error && error.message
+          ? error.message
+          : '场景创建失败，请稍后重试'
+      );
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   const getDraggerWidth = (start: number, finish: number) => {
@@ -637,7 +591,12 @@ export const SceneModal: React.FC<SceneModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Footer Area with Confirm Button */}
-        <div className="flex-none p-4 border-t border-border bg-card/30 flex justify-end gap-3">
+        <div className="flex-none p-4 border-t border-border bg-card/30 flex items-center justify-end gap-3">
+          {createError && (
+            <p role="alert" className="mr-auto text-xs text-destructive">
+              {createError}
+            </p>
+          )}
           <Button
             variant="outline"
             onClick={onClose}
@@ -648,7 +607,8 @@ export const SceneModal: React.FC<SceneModalProps> = ({ isOpen, onClose }) => {
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={isConfirming}
+            disabled={isConfirming || !config}
+            aria-label="确认创建场景"
             className="text-xs font-bold px-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 min-w-[100px]"
           >
             {isConfirming ? (

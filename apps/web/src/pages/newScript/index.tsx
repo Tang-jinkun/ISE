@@ -1,11 +1,25 @@
+import type { SceneProjectConfig } from '@ise/runtime-contracts';
+import {
+  approveAgentReview,
+  attachAgentFile,
+  createAgentSession,
+  rejectAgentReview,
+  reviseEventPlan,
+  sendAgentMessage,
+  type ReviewTuple,
+  type RevisionRequest
+} from '@/api/agent';
+import { uploadFile } from '@/api/file';
 import { updateScript } from '@/api/script';
 import { EditorProvider } from '@/components/resource-editors';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { message } from '@/components/ui/message';
-import { adaptNewToOld } from '@/lib/dataAdapter';
+import { useAgentSession } from '@/hooks/useAgentSession';
 import { cn } from '@/lib/utils';
-import type { SpatioTemporalContext } from '@/mock/types';
-import { useWarDataStore } from '@/stores/warDataStore';
+import {
+  type AgentActivity,
+  useAgentSessionStore
+} from '@/stores/agentSessionStore';
 import {
   ArrowLeft,
   ArrowRight,
@@ -25,7 +39,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChatContent } from './components/ChatContent';
 import { DataImportButton } from './components/DataImportButton';
-import { type EntityType } from './components/EntityHighlighter';
+import { EventPlanReview } from './components/EventPlanReview';
 import { NarrativePanel } from './components/NarrativePanel';
 import { ParamsPanel } from './components/ParamsPanel';
 import { ResourcePanel } from './components/ResourcePanel';
@@ -39,6 +53,55 @@ type ChatMessage = {
   thinking?: string;
   time: string;
 };
+
+const DEFAULT_TARGET_DURATION_MS = 180_000;
+
+const buildGenerationObjective = (
+  objective: string,
+  targetDurationMs = DEFAULT_TARGET_DURATION_MS
+) =>
+  `${objective.trim()}\n\n目标演示时长：${Math.round(targetDurationMs / 1000)} 秒。`;
+
+const errorText = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message ? error.message : fallback;
+
+const reviewBody = ({
+  artifactId,
+  version,
+  fingerprint
+}: ReviewTuple) => ({ artifactId, version, fingerprint });
+
+const activitySummary = (activity: AgentActivity): string | null => {
+  switch (activity.type) {
+    case 'run.started':
+      return '智能体已开始生成场景';
+    case 'tool.started':
+    case 'tool.progress':
+      return typeof activity.data.summary === 'string'
+        ? activity.data.summary
+        : '正在处理报告内容';
+    case 'artifact.created':
+      return '已生成新的场景产物';
+    case 'review.requested':
+      return '事件计划等待审核';
+    case 'review.resolved':
+      return '事件计划审核已提交';
+    case 'compile.progress':
+      return typeof activity.data.message === 'string'
+        ? activity.data.message
+        : '正在编译场景配置';
+    case 'run.completed':
+      return '场景配置已生成';
+    case 'run.failed':
+      return '场景生成失败';
+  }
+  return null;
+};
+
+function AgentSessionBridge({ sessionId }: { sessionId: string }) {
+  useAgentSession(sessionId);
+  return null;
+}
 
 function uid(prefix = 'id') {
   return `${prefix}-${Math.random().toString(36).substr(2, 9)}`;
@@ -120,28 +183,19 @@ export type Resource = {
   config?: any;
 };
 
-type DescriptionItem = {
-  title: string;
-  summary?: string;
-  mini_scene: any[];
-};
-
-type OutlineItem = {
-  title: string;
-  descriptions: DescriptionItem[];
-};
-
 type NormandyData = {
   query: string;
   introduction: string;
-  spatio_temporal_context?: SpatioTemporalContext;
-  outlineItems: OutlineItem[];
+  outlineItems: Array<{
+    title: string;
+    descriptions: Array<{ title: string; summary?: string; mini_scene: any[] }>;
+  }>;
   subtitles: {
     title: string;
     subtitle: string;
     core_content?: string;
     time_range: number | [number, number];
-    entities?: Record<EntityType, string[]>;
+    entities?: Record<string, string[]>;
     resources?: Resource[];
     relation?: {
       entity: string;
@@ -151,97 +205,19 @@ type NormandyData = {
   }[];
 };
 
-function transformChiBiToInternal(warData: any): NormandyData {
-  if (!warData) {
-    return {
-      query: '',
-      introduction: '',
-      outlineItems: [],
-      subtitles: []
-    };
-  }
-
-  const subtitles: any[] = [];
-
-  if (warData.outline) {
-    warData.outline.forEach((outlineItem: any) => {
-      if (outlineItem.descriptions) {
-        outlineItem.descriptions.forEach((desc: any) => {
-          if (desc.mini_scene) {
-            desc.mini_scene.forEach((scene: any) => {
-              const resources: Resource[] = [];
-              if (scene.audio) {
-                resources.push({
-                  id: uid('res'),
-                  type: 'audio',
-                  name: scene.audio.file_id || 'Audio',
-                  url: scene.audio.src,
-                  properties: scene.audio
-                });
-              }
-              if (scene.geojsons && Array.isArray(scene.geojsons)) {
-                scene.geojsons.forEach((g: any) => {
-                  resources.push({
-                    id: uid('res'),
-                    type: 'geojson',
-                    name: g.id || 'GeoJSON',
-                    url: g.file_path,
-                    properties: g
-                  });
-                });
-              }
-
-              subtitles.push({
-                title: desc.title,
-                subtitle:
-                  typeof scene.subtitle === 'string'
-                    ? scene.subtitle
-                    : scene.subtitle?.content || '',
-                core_content: scene.core_content,
-                time_range: scene.timing
-                  ? [scene.timing.start / 1000, scene.timing.finish / 1000]
-                  : [0, 0],
-                entities: {
-                  location:
-                    scene.entities?.space || scene.entities?.location || [],
-                  person: scene.entities?.person || [],
-                  event: Array.isArray(scene.entities?.event)
-                    ? scene.entities.event
-                    : scene.entities?.event
-                      ? [scene.entities.event]
-                      : [],
-                  time: Array.isArray(scene.entities?.time)
-                    ? scene.entities.time
-                    : scene.entities?.time
-                      ? [scene.entities.time]
-                      : [],
-                  thing: scene.entities?.thing || []
-                },
-                resources: resources,
-                relation: []
-              });
-            });
-          }
-        });
-      }
-    });
-  }
-
-  return {
-    query: warData.war_name || '',
-    introduction: warData.intro || '',
-    spatio_temporal_context: warData.spatio_temporal_context,
-    outlineItems: warData.outline || [],
-    subtitles
-  };
-}
-
 export default function Script() {
-  const { currentData, switchMockDataset } = useWarDataStore();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('projectId') || '';
-  console.log(projectId); // Use it to avoid unused error if needed, but wait, it IS used below.
+  const [agentSessionId, setAgentSessionId] = useState('');
+  const sessionState = useAgentSessionStore();
+  const isCurrentSession = sessionState.sessionId === agentSessionId;
+  const activities = isCurrentSession ? sessionState.activities : [];
+  const artifacts = isCurrentSession ? sessionState.artifacts : {};
+  const activeReview = isCurrentSession ? sessionState.activeReview : null;
+  const compiledConfig = isCurrentSession
+    ? sessionState.compiledConfig
+    : null;
 
   const [saving, setSaving] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string>('n-root');
@@ -425,14 +401,16 @@ export default function Script() {
   }, [nodes]);
 
   const selectedNode = nodeIndex.get(selectedNodeId) ?? nodes[0];
-
-  useEffect(() => {
-    if (currentData) {
-      const adapted = adaptNewToOld(currentData);
-      setNormandyData(transformChiBiToInternal(adapted));
-      setEditableTitle(currentData.war_name);
-    }
-  }, [currentData]);
+  const artifactList = Object.values(artifacts);
+  const eventPlanArtifact = artifactList.find((artifact) =>
+    artifact.type.includes('event-plan')
+  );
+  const narrativePlanArtifact = artifactList.find((artifact) =>
+    artifact.type.includes('narrative-plan')
+  );
+  const activeReviewArtifact = activeReview
+    ? artifacts[activeReview.artifactId]
+    : undefined;
 
   useEffect(() => {
     setSelectedNodeId('n-root');
@@ -444,12 +422,27 @@ export default function Script() {
       return;
     }
     if (saving) return;
+    const conversation = [
+      ...messages.map(({ role, content }) => ({ role, content })),
+      ...activities.flatMap((activity) => {
+        const content = activitySummary(activity);
+        return content ? [{ role: 'assistant' as const, content }] : [];
+      })
+    ].filter(({ content }) => content.trim().length > 0);
+    if (!agentSessionId || conversation.length === 0) {
+      message.error('请先导入报告并生成可保存的对话');
+      return;
+    }
     try {
       setSaving(true);
       const title = editableTitle.trim();
       await updateScript(projectId, {
         title: title || undefined,
-        conversation: [] // Conversation removed in cleanup
+        conversation,
+        config: JSON.stringify({
+          agentSessionId,
+          artifactIds: Object.keys(artifacts)
+        })
       });
       message.success('已保存');
     } catch (err) {
@@ -471,40 +464,19 @@ export default function Script() {
   const [isLoadingPanel, setIsLoadingPanel] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
 
-  const togglePanel = async () => {
+  const togglePanel = () => {
     if (isPanelVisible) {
       setIsPanelVisible(false);
       return;
     }
-
-    setIsLoadingPanel(true);
     setPanelError(null);
-    try {
-      // Simulate loading analysis data
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      setIsPanelVisible(true);
-    } catch (err) {
-      setPanelError('解析面板加载失败，请重试');
-    } finally {
-      setIsLoadingPanel(false);
-    }
+    setIsLoadingPanel(false);
+    setIsPanelVisible(true);
   };
 
   const [density, setDensity] = useState<'compact' | 'comfortable'>(
     'comfortable'
   );
-  const [sidebarModules, setSidebarModules] = useState({
-    nav: true,
-    filter: false,
-    tree: false
-  });
-
-  const toggleSidebarModule = (module: keyof typeof sidebarModules) => {
-    setSidebarModules((prev) => ({ ...prev, [module]: !prev[module] }));
-  };
-  // Suppress unused warning for now as we might re-enable modules later
-  console.log(toggleSidebarModule);
-
   const copySelectedSummary = async () => {
     const text = `${selectedNode.title}\n${selectedNode.summary}`;
     try {
@@ -536,135 +508,148 @@ export default function Script() {
     return () => window.removeEventListener('resize', updateInitialWidth);
   }, []);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: uid('m'),
-      role: 'assistant',
-      content: '你好，请问有什么可以帮您？',
-      time: nowText()
-    }
-    // {
-    //   id: uid('m'),
-    //   role: 'user',
-    //   content:
-    //     '请你帮我总结归纳《诺曼底登陆战役》场景脚本相关信息，要包含战役介绍、生命周期、OOB等完整的信息，最后给出完整的战役场景信息配置结构',
-    //   time: nowText(5)
-    // },
-    // {
-    //   id: uid('m'),
-    //   role: 'assistant',
-    //   content: '',
-    //   time: nowText(7)
-    // }
-  ]);
-
-  useEffect(() => {
-    if (currentData) {
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        // 查找最后一个助手消息，但排除掉第一条欢迎语（index 0）
-        const lastAssistantMsgIdx = newMessages.findLastIndex(
-          (m, idx) => m.role === 'assistant' && idx > 0
-        );
-        if (lastAssistantMsgIdx !== -1) {
-          const adaptedData = adaptNewToOld(currentData);
-          newMessages[lastAssistantMsgIdx] = {
-            ...newMessages[lastAssistantMsgIdx],
-            content: JSON.stringify(adaptedData)
-          };
-        }
-        return newMessages;
-      });
-    }
-  }, [currentData]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSceneModalOpen, setIsSceneModalOpen] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const activityMessages = useMemo<ChatMessage[]>(
+    () =>
+      activities.flatMap((activity) => {
+        const content = activitySummary(activity);
+        return content
+          ? [
+              {
+                id: `agent-event-${activity.id}`,
+                role: 'assistant' as const,
+                content,
+                time: nowText()
+              }
+            ]
+          : [];
+      }),
+    [activities]
+  );
+  const visibleMessages = useMemo(
+    () => [...messages, ...activityMessages],
+    [activityMessages, messages]
+  );
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [visibleMessages.length]);
+
+  const appendUserMessage = (content: string) => {
+    setMessages((current) => [
+      ...current,
+      { id: uid('m'), role: 'user', content, time: nowText() }
+    ]);
+  };
+
+  const startGeneration = async (file: File) => {
+    const objective = input.trim();
+    if (!objective || sending) {
+      if (!objective) message.error('请先输入场景生成目标');
+      return;
+    }
+
+    setSending(true);
+    setOperationError(null);
+    appendUserMessage(objective);
+    setInput('');
+    try {
+      const uploaded = await uploadFile(file, { fileType: 'application' });
+      const session = await createAgentSession();
+      await attachAgentFile(session.sessionId, { fileId: uploaded.data.id });
+      useAgentSessionStore.getState().open(session.sessionId);
+      setAgentSessionId(session.sessionId);
+      await sendAgentMessage(session.sessionId, {
+        content: buildGenerationObjective(objective)
+      });
+    } catch (error) {
+      const content = errorText(error, '智能体接口调用失败');
+      setOperationError(content);
+      message.error(content);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const send = async (overrideContent?: string) => {
     const text =
       typeof overrideContent === 'string' ? overrideContent : input.trim();
     if (!text || sending) return;
+    if (!agentSessionId) {
+      message.error('请先导入 DOCX 报告');
+      return;
+    }
 
     setSending(true);
+    setOperationError(null);
     setInput('');
-
-    const userMessage: ChatMessage = {
-      id: uid('m'),
-      role: 'user',
-      content: text,
-      time: nowText()
-    };
-
-    const assistantId = uid('m');
-    const startTime = nowText();
-
-    setMessages((prev) => [
-      ...prev,
-      userMessage,
-      {
-        id: assistantId,
-        role: 'assistant',
-        content: '',
-        thinking: '正在分析用户意图...',
-        time: startTime
-      }
-    ]);
+    appendUserMessage(text);
 
     try {
-      // Mock thinking process
-      const thinkingSteps = [
-        '正在检索相关历史剧本...',
-        '正在构建时空上下文...',
-        '正在生成战役数据结构...',
-        '校验数据完整性...'
-      ];
-
-      for (const step of thinkingSteps) {
-        await new Promise((resolve) => setTimeout(resolve, 5500));
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, thinking: (m.thinking || '') + '\n' + step }
-              : m
-          )
-        );
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Always return mock data as requested
-      // 如果没有 currentData，则返回一段说明文字，而不是空 JSON
-      const mockResponse = currentData
-        ? JSON.stringify(adaptNewToOld(currentData))
-        : '抱歉，当前暂无解析数据。您可以尝试提问有关战役的问题。';
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId ? { ...m, content: mockResponse } : m
-        )
-      );
-    } catch (err) {
-      console.error(err);
-      message.error('智能体接口调用失败');
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? {
-                ...m,
-                content: '调用智能体失败，请稍后重试。'
-              }
-            : m
-        )
-      );
+      await sendAgentMessage(agentSessionId, { content: text });
+    } catch (error) {
+      const content = errorText(error, '智能体接口调用失败');
+      setOperationError(content);
+      message.error(content);
     } finally {
       setSending(false);
     }
+  };
+
+  const runReviewAction = async (action: () => Promise<unknown>) => {
+    if (reviewLoading) return;
+    setReviewLoading(true);
+    setReviewError(null);
+    try {
+      await action();
+    } catch (error) {
+      setReviewError(errorText(error, '审核操作失败，请稍后重试'));
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const approveReview = (nextReview: ReviewTuple) =>
+    runReviewAction(() =>
+      approveAgentReview(
+        agentSessionId,
+        nextReview.reviewId,
+        reviewBody(nextReview)
+      )
+    );
+
+  const rejectReview = (nextReview: ReviewTuple) =>
+    runReviewAction(() =>
+      rejectAgentReview(
+        agentSessionId,
+        nextReview.reviewId,
+        reviewBody(nextReview)
+      )
+    );
+
+  const reviseReview = (revision: RevisionRequest) =>
+    runReviewAction(async () => {
+      const response = await reviseEventPlan(
+        agentSessionId,
+        revision.baseArtifactId,
+        revision
+      );
+      useAgentSessionStore
+        .getState()
+        .ingestArtifacts(agentSessionId, [response.artifact]);
+    });
+
+  const updateCompiledDraft = (config: SceneProjectConfig) => {
+    if (useAgentSessionStore.getState().sessionId !== agentSessionId) return;
+    useAgentSessionStore.setState({ compiledConfig: config });
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -695,6 +680,9 @@ export default function Script() {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+      {agentSessionId ? (
+        <AgentSessionBridge sessionId={agentSessionId} />
+      ) : null}
       <div className="flex-none px-4 sm:px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -744,7 +732,8 @@ export default function Script() {
               onClick={() => {
                 setIsSceneModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-700 dark:text-cyan-200 transition-colors hover:bg-cyan-500/15"
+              disabled={!compiledConfig}
+              className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-700 dark:text-cyan-200 transition-colors hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ArrowRight className="h-3.5 w-3.5" />
               转换为场景
@@ -795,12 +784,12 @@ export default function Script() {
                 <Bot className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
                 智能问答
               </div>
-              <DataImportButton />
+              <DataImportButton onImport={startGeneration} isLoading={sending} />
             </div>
 
             {/* Chat Messages Area */}
             <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4 thin-scrollbar border border-border rounded-xl bg-background/50">
-              {messages.map((m, index) => (
+              {visibleMessages.map((m) => (
                 <div
                   key={m.id}
                   className={cn(
@@ -828,27 +817,8 @@ export default function Script() {
                         <div className="w-1.5 h-1.5 bg-cyan-500/60 rounded-full animate-bounce [animation-delay:-0.15s]" />
                         <div className="w-1.5 h-1.5 bg-cyan-500/60 rounded-full animate-bounce" />
                       </div>
-                    ) : index === 0 ? (
-                      <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
-                        {m.content}
-                      </div>
                     ) : (
-                      <ChatContent
-                        content={m.content}
-                        onParse={() => {
-                          if (currentData) {
-                            const adapted = adaptNewToOld(currentData);
-                            setNormandyData(transformChiBiToInternal(adapted));
-                            setSelectedNodeId('n-root');
-                            setActiveTab('narrative');
-                            message.success('解析成功');
-                            // 触发右侧解析面板展示
-                            if (!isPanelVisible) {
-                              void togglePanel();
-                            }
-                          }
-                        }}
-                      />
+                      <ChatContent content={m.content} />
                     )}
                     <div
                       className={cn(
@@ -868,6 +838,32 @@ export default function Script() {
                   )}
                 </div>
               ))}
+              {operationError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {operationError}
+                </p>
+              )}
+              {activeReview && activeReviewArtifact && (
+                <fieldset disabled={reviewLoading} className="space-y-2">
+                  <EventPlanReview
+                    artifact={activeReviewArtifact}
+                    review={activeReview}
+                    onApprove={(nextReview) => void approveReview(nextReview)}
+                    onRevise={(revision) => void reviseReview(revision)}
+                    onReject={(nextReview) => void rejectReview(nextReview)}
+                  />
+                  {reviewLoading && (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      正在提交审核...
+                    </p>
+                  )}
+                  {reviewError && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {reviewError}
+                    </p>
+                  )}
+                </fieldset>
+              )}
               <div ref={chatEndRef} />
             </div>
 
@@ -1065,26 +1061,20 @@ export default function Script() {
                       selectedNode={selectedNode}
                       nowText={nowText}
                       onCopy={copySelectedSummary}
+                      eventPlan={eventPlanArtifact}
+                      narrativePlan={narrativePlanArtifact}
                     />
                   )}
                   {activeTab === 'resources' && (
                     <ResourcePanel
-                      selectedNode={selectedNode}
-                      isAddResourceOpen={isAddResourceOpen}
-                      setIsAddResourceOpen={setIsAddResourceOpen}
-                      newResource={newResource}
-                      setNewResource={setNewResource}
-                      handleAddResource={handleAddResource}
-                      updateResourceProperty={updateResourceProperty}
-                      removeResource={removeResource}
-                      setPreviewResource={setPreviewResource}
-                      previewResource={previewResource}
-                      ResourceEditorAdapter={ResourceEditorAdapter}
+                      sceneConfig={compiledConfig}
+                      diagnostics={sessionState.diagnostics}
                     />
                   )}
                   {activeTab === 'params' && (
                     <ParamsPanel
-                      onUpdate={updateNodeData}
+                      sceneConfig={compiledConfig}
+                      onUpdate={updateCompiledDraft}
                     />
                   )}
                 </div>
@@ -1105,6 +1095,8 @@ export default function Script() {
       <SceneModal
         isOpen={isSceneModalOpen}
         onClose={() => setIsSceneModalOpen(false)}
+        title={editableTitle.trim() || '未命名场景'}
+        config={compiledConfig}
       />
     </div>
   );

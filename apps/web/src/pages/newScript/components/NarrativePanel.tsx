@@ -1,6 +1,6 @@
+import type { AgentArtifactView, AgentEventUnit } from '@/api/agent';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useWarDataStore } from '@/stores/warDataStore';
 import {
   BookOpen,
   ChevronDown,
@@ -29,6 +29,8 @@ type NarrativePanelProps = {
   selectedNode: { id: string; title: string; summary: string };
   nowText: () => string;
   onCopy: () => void;
+  eventPlan?: AgentArtifactView;
+  narrativePlan?: AgentArtifactView;
 };
 
 type LayoutType = 'grid' | 'waterfall' | 'carousel' | 'timeline';
@@ -42,7 +44,9 @@ type LayoutConfig = {
 export const NarrativePanel: React.FC<NarrativePanelProps> = ({
   selectedNode,
   nowText,
-  onCopy
+  onCopy,
+  eventPlan,
+  narrativePlan
 }) => {
   const [layout, setLayout] = useState<LayoutType>('timeline');
   const [config, setConfig] = useState<LayoutConfig>({
@@ -73,7 +77,39 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
     });
   };
 
-  const { currentData } = useWarDataStore();
+  const currentData: any = useMemo(() => {
+    const eventData =
+      typeof eventPlan?.data === 'object' && eventPlan.data !== null
+        ? (eventPlan.data as { eventUnits?: AgentEventUnit[] })
+        : undefined;
+    const narrativeData =
+      typeof narrativePlan?.data === 'object' && narrativePlan.data !== null
+        ? (narrativePlan.data as Record<string, unknown>)
+        : undefined;
+    const eventUnits = Array.isArray(eventData?.eventUnits)
+      ? eventData.eventUnits
+      : [];
+    const title =
+      (typeof narrativeData?.title === 'string' && narrativeData.title) ||
+      selectedNode.title ||
+      '未命名的脚本项目';
+    const introduction =
+      (typeof narrativeData?.summary === 'string' && narrativeData.summary) ||
+      selectedNode.summary ||
+      '';
+
+    return {
+      war_name: title,
+      target_duration: 0,
+      intro: { content: introduction },
+      outline: eventUnits.map((unit, index) => ({
+        id: unit.eventUnitId,
+        title: unit.title,
+        time: { start: index, finish: index + 1 },
+        descriptions: []
+      }))
+    };
+  }, [eventPlan, narrativePlan, selectedNode.summary, selectedNode.title]);
 
   const timelineData = useMemo(() => {
     if (!currentData) return [];
@@ -96,7 +132,7 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
             </div>
           </div>
         )}
-        {timelineData.map((item, i) => {
+        {timelineData.map((item: any, i: number) => {
           const isExpanded = expandedNodes.has(item.id);
           return (
             <div key={item.id} className="relative flex items-start group">
@@ -241,7 +277,7 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
       case 'grid':
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {timelineData.map((item, i) => (
+            {timelineData.map((item: any, i: number) => (
               <div
                 key={i}
                 className={cn(
@@ -278,7 +314,7 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
       case 'waterfall':
         return (
           <div className="columns-1 sm:columns-2 gap-4 space-y-4">
-            {timelineData.map((item, i) => (
+            {timelineData.map((item: any, i: number) => (
               <div
                 key={i}
                 className="break-inside-avoid p-4 rounded-xl border border-border bg-card/50 hover:border-primary/30 transition-all"
@@ -311,7 +347,7 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
       case 'carousel':
         return (
           <div className="relative h-[300px] flex items-center justify-center overflow-hidden perspective-1000">
-            {timelineData.map((item, i) => {
+            {timelineData.map((item: any, i: number) => {
               const offset = i - Math.floor(timelineData.length / 2);
               return (
                 <div
