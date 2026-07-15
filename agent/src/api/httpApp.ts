@@ -6,7 +6,9 @@ import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { AgentRepositories } from '../persistence/repositories.ts'
 import { EventBroker } from '../session/eventBroker.ts'
 import { SessionAgentRunner } from '../session/sessionAgentRunner.ts'
+import { ReviewService } from '../session/reviewService.ts'
 import { mapAgentError } from './errors.ts'
+import { registerReviewRoutes } from './reviewRoutes.ts'
 import { registerSessionRoutes } from './sessionRoutes.ts'
 
 export interface CreateHttpAppOptions {
@@ -40,6 +42,8 @@ export async function createHttpApp(options: CreateHttpAppOptions): Promise<Fast
     workspace: options.workspace ?? process.cwd(),
     events,
   })
+  const reviews = new ReviewService(options.repositories, events, runner, options.workspace ?? process.cwd())
+  runner.setDraftObserver(input => reviews.createForDraft(input.sessionId, input.runId, input.draft))
   app.setErrorHandler((error, _request, reply) => {
     const mapped = mapAgentError(error)
     void reply.status(mapped.status).send({
@@ -51,5 +55,6 @@ export async function createHttpApp(options: CreateHttpAppOptions): Promise<Fast
     })
   })
   await registerSessionRoutes(app, { repositories: options.repositories, nest: options.nest, runner, events })
+  await registerReviewRoutes(app, { nest: options.nest, reviews })
   return app
 }

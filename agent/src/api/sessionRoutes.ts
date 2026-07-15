@@ -48,7 +48,7 @@ function toAttachmentView(row: PersistedAttachmentRecord): AttachmentView {
   }
 }
 
-function toArtifactView(row: ReturnType<AgentRepositories['artifacts']['listLedger']>[number]): AgentArtifactView {
+export function toArtifactView(row: ReturnType<AgentRepositories['artifacts']['listLedger']>[number]): AgentArtifactView {
   return {
     artifactId: row.id,
     type: row.type,

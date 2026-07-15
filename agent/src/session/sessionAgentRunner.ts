@@ -1,4 +1,4 @@
-import type { AgentRunResult, ModelAdapter } from '@ise/agent-core'
+import type { AgentRunResult, Artifact, ModelAdapter } from '@ise/agent-core'
 import type { SkillRegistry } from '@ise/skills-core'
 import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { QueuedRunResponse } from '../api/contracts.ts'
@@ -25,9 +25,14 @@ export interface SessionAgentRunnerOptions {
 export class SessionAgentRunner {
   readonly events: EventBroker
   readonly #controllers = new Map<string, AbortController>()
+  #draftObserver?: (input: { sessionId: string; runId: string; draft: Artifact }) => void
 
   constructor(readonly options: SessionAgentRunnerOptions) {
     this.events = options.events ?? new EventBroker(options.repositories.events)
+  }
+
+  setDraftObserver(observer: (input: { sessionId: string; runId: string; draft: Artifact }) => void): void {
+    this.#draftObserver = observer
   }
 
   enqueue(input: {
@@ -49,6 +54,25 @@ export class SessionAgentRunner {
         'queued',
         created.id,
       )
+      return created
+    })
+    queueMicrotask(() => void this.execute(run.id, input.authorization))
+    return { runId: run.id, status: 'queued' }
+  }
+
+  enqueueAfterApproval(input: {
+    sessionId: string
+    subject: string
+    authorization: string
+    acceptedArtifactId: string
+  }): QueuedRunResponse {
+    const run = this.options.repositories.transaction(() => {
+      this.options.repositories.sessions.requireOwned(input.sessionId, input.subject)
+      const created = this.options.repositories.runs.createQueued(
+        input.sessionId,
+        `Create exactly one grounded NarrativePlan for accepted EventPlan artifact ${input.acceptedArtifactId} through propose_scene_plan, then stop.`,
+      )
+      this.options.repositories.sessions.transition(input.sessionId, ['awaiting_review'], 'queued', created.id)
       return created
     })
     queueMicrotask(() => void this.execute(run.id, input.authorization))
@@ -117,12 +141,16 @@ export class SessionAgentRunner {
       return
     }
     const summary = result.turnOutcome?.finalAnswer ?? result.goal.finalSummary
+    const draft = result.artifacts.find(artifact => artifact.type === EVENT_PLAN_DRAFT_ARTIFACT)
     this.options.repositories.transaction(() => {
       if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
       this.options.repositories.runs.finish(run.id, 'completed')
-      const hasDraft = result.artifacts.some(artifact => artifact.type === EVENT_PLAN_DRAFT_ARTIFACT)
-      this.options.repositories.sessions.transition(run.sessionId, ['running'], hasDraft ? 'awaiting_review' : 'completed')
+      if (!draft) this.options.repositories.sessions.transition(run.sessionId, ['running'], 'completed')
     })
+    if (draft) {
+      if (this.#draftObserver) this.#draftObserver({ sessionId: run.sessionId, runId: run.id, draft })
+      else this.options.repositories.sessions.transition(run.sessionId, ['running'], 'awaiting_review')
+    }
   }
 
   private async finishFromThrownError(runId: string, error: unknown, aborted: boolean): Promise<void> {
