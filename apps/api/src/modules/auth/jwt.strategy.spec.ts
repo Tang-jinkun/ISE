@@ -40,34 +40,76 @@ describe('JwtStrategy token purpose', () => {
     process.env = originalEnv;
   });
 
-  it('accepts an access token and preserves its subject and username', async () => {
-    const payload = { ...identity, tokenType: 'access' as const };
+  it('authenticates a signed access token and returns the claims bound to that token', async () => {
+    const tokenIdentity = { sub: 'bound-user', username: 'bound-username' };
+    const token = signToken({ ...tokenIdentity, tokenType: 'access' });
 
-    await expect(strategy.validate(requestFor(payload), payload)).resolves.toEqual(payload);
-    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: identity.sub } });
-  });
-
-  it('rejects a refresh token used to authenticate an API request', async () => {
-    const payload = { ...identity, tokenType: 'refresh' as const };
-
-    await expect(strategy.validate(requestFor(payload), payload)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    await expect(authenticate(token)).resolves.toMatchObject({
+      outcome: 'success',
+      user: { ...tokenIdentity, tokenType: 'access' },
+    });
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: tokenIdentity.sub },
+    });
   });
 
   it.each([
-    ['missing', { ...identity }],
-    ['unknown', { ...identity, tokenType: 'other' }],
-  ])('rejects an API token with a %s purpose', async (_label, payload) => {
-    await expect(strategy.validate(requestFor(payload), payload as any)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    ['refresh', { ...identity, tokenType: 'refresh' }],
+    ['purpose-less legacy', { ...identity }],
+    ['unknown-purpose', { ...identity, tokenType: 'other' }],
+  ])('rejects a correctly signed %s token', async (_label, payload) => {
+    const result = await authenticate(signToken(payload));
+
+    expect(result).toMatchObject({
+      outcome: 'error',
+      error: expect.any(UnauthorizedException),
+    });
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
-  function requestFor(payload: object): Request {
-    const token = new JwtService().sign(payload, { secret, expiresIn: '3d' });
-    return { headers: { authorization: `Bearer ${token}` } } as Request;
+  it('rejects an access token with an invalid signature before validation', async () => {
+    const token = signToken({ ...identity, tokenType: 'access' }, 'different-secret');
+
+    await expect(authenticate(token)).resolves.toMatchObject({
+      outcome: 'fail',
+      challenge: expect.any(Error),
+    });
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects an expired access token before validation', async () => {
+    const token = signToken({ ...identity, tokenType: 'access' }, secret, -1);
+
+    await expect(authenticate(token)).resolves.toMatchObject({
+      outcome: 'fail',
+      challenge: expect.any(Error),
+    });
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  function signToken(payload: object, signingSecret = secret, expiresIn = 3 * 24 * 60 * 60) {
+    return new JwtService().sign(payload, { secret: signingSecret, expiresIn });
+  }
+
+  function authenticate(token: string) {
+    return new Promise<
+      | { outcome: 'success'; user: unknown }
+      | { outcome: 'fail'; challenge: unknown }
+      | { outcome: 'error'; error: unknown }
+    >((resolve) => {
+      const passportStrategy = strategy as JwtStrategy & {
+        success(user: unknown): void;
+        fail(challenge: unknown): void;
+        error(error: unknown): void;
+        authenticate(request: Request): void;
+      };
+
+      passportStrategy.success = (user) => resolve({ outcome: 'success', user });
+      passportStrategy.fail = (challenge) => resolve({ outcome: 'fail', challenge });
+      passportStrategy.error = (error) => resolve({ outcome: 'error', error });
+      passportStrategy.authenticate({
+        headers: { authorization: `Bearer ${token}` },
+      } as Request);
+    });
   }
 });
