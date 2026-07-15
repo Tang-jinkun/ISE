@@ -186,11 +186,17 @@ function bearingDegrees(
   endLongitude: number,
   endLatitude: number,
 ) {
-  const averageLatitudeRad = degreesToRadians((startLatitude + endLatitude) / 2);
-  const latitudeDelta = degreesToRadians(endLatitude - startLatitude);
+  const startLatitudeRad = degreesToRadians(startLatitude);
+  const endLatitudeRad = degreesToRadians(endLatitude);
   const longitudeDelta = degreesToRadians(shortestLongitudeDelta(startLongitude, endLongitude));
-  const east = longitudeDelta * Math.cos(averageLatitudeRad);
-  return ((Math.atan2(east, latitudeDelta) * 180) / Math.PI + 360) % 360;
+  const y = Math.sin(longitudeDelta) * Math.cos(endLatitudeRad);
+  const x =
+    Math.cos(startLatitudeRad) * Math.sin(endLatitudeRad) -
+    Math.sin(startLatitudeRad) * Math.cos(endLatitudeRad) * Math.cos(longitudeDelta);
+  if (x === 0 && y === 0) {
+    return 0;
+  }
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 function shortestLongitudeDelta(start: number, end: number) {

@@ -1,5 +1,6 @@
 import type { SceneTrack } from '@ise/runtime-contracts';
 import mapboxgl from 'mapbox-gl';
+import { z } from 'zod';
 import { SceneRuntimeError } from './errors';
 import type { ResourceManager } from './ResourceManager';
 
@@ -44,7 +45,7 @@ const browserDependencies: MapRuntimeDependencies = {
   createMarker: (element) => new mapboxgl.Marker({ element }),
 };
 
-const geoId = (trackId: string, itemId: string) => `ise:${trackId}:${itemId}`;
+const geoId = (trackId: string, itemId: string) => `ise:geo:${trackId}:${itemId}`;
 const trailId = (entityId: string) => `ise:trail:${entityId}`;
 
 export class MapRuntime {
@@ -81,12 +82,15 @@ export class MapRuntime {
       for (const item of track.items) {
         const asset = await this.resources.acquire(item.assetId, 'geojson', signal);
         this.acquiredGeojsonAssetIds.push(item.assetId);
-        const data = await asset.readJson();
-        if (!isSupportedGeojson(data)) {
+        let data: unknown;
+        try {
+          data = geojsonDocumentSchema.parse(await asset.readJson());
+        } catch (error) {
           throw new SceneRuntimeError(
             'GEOJSON_INVALID',
-            `GeoJSON root must be a Feature, FeatureCollection, or GeometryCollection: ${item.assetId}`,
+            `GeoJSON document is invalid: ${item.assetId}`,
             item.assetId,
+            { cause: error },
           );
         }
         this.geojsonItems.push({ trackId: track.trackId, item, data });
@@ -388,14 +392,6 @@ export class MapRuntime {
   }
 }
 
-function isSupportedGeojson(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const type = (value as { type?: unknown }).type;
-  return type === 'Feature' || type === 'FeatureCollection' || type === 'GeometryCollection';
-}
-
 function isActive(item: { startMs: number; durationMs: number }, timeMs: number) {
   return item.startMs <= timeMs && timeMs < item.startMs + item.durationMs;
 }
@@ -457,3 +453,73 @@ function lineFeature(coordinates: ReadonlyArray<readonly [number, number]>) {
     },
   };
 }
+
+const longitudeSchema = z.number().finite().min(-180).max(180);
+const latitudeSchema = z.number().finite().min(-90).max(90);
+const positionSchema = z
+  .tuple([longitudeSchema, latitudeSchema])
+  .rest(z.number().finite());
+const pointCoordinatesSchema = positionSchema;
+const multiPointCoordinatesSchema = z.array(positionSchema).min(1);
+const lineCoordinatesSchema = z.array(positionSchema).min(2);
+const multiLineCoordinatesSchema = z.array(lineCoordinatesSchema).min(1);
+const linearRingSchema = z
+  .array(positionSchema)
+  .min(4)
+  .refine(
+    (positions) =>
+      positions[0]?.length === positions.at(-1)?.length &&
+      positions[0]?.every((coordinate, index) => coordinate === positions.at(-1)?.[index]),
+    'Linear ring must be closed',
+  );
+const polygonCoordinatesSchema = z.array(linearRingSchema).min(1);
+const multiPolygonCoordinatesSchema = z.array(polygonCoordinatesSchema).min(1);
+
+const pointGeometrySchema = z
+  .object({ type: z.literal('Point'), coordinates: pointCoordinatesSchema })
+  .passthrough();
+const multiPointGeometrySchema = z
+  .object({ type: z.literal('MultiPoint'), coordinates: multiPointCoordinatesSchema })
+  .passthrough();
+const lineGeometrySchema = z
+  .object({ type: z.literal('LineString'), coordinates: lineCoordinatesSchema })
+  .passthrough();
+const multiLineGeometrySchema = z
+  .object({ type: z.literal('MultiLineString'), coordinates: multiLineCoordinatesSchema })
+  .passthrough();
+const polygonGeometrySchema = z
+  .object({ type: z.literal('Polygon'), coordinates: polygonCoordinatesSchema })
+  .passthrough();
+const multiPolygonGeometrySchema = z
+  .object({ type: z.literal('MultiPolygon'), coordinates: multiPolygonCoordinatesSchema })
+  .passthrough();
+
+const geometrySchema: z.ZodType<unknown> = z.lazy(() => geometryUnionSchema);
+const geometryCollectionSchema = z
+  .object({ type: z.literal('GeometryCollection'), geometries: z.array(geometrySchema) })
+  .passthrough();
+const geometryUnionSchema = z.discriminatedUnion('type', [
+  pointGeometrySchema,
+  multiPointGeometrySchema,
+  lineGeometrySchema,
+  multiLineGeometrySchema,
+  polygonGeometrySchema,
+  multiPolygonGeometrySchema,
+  geometryCollectionSchema,
+]);
+const featureSchema = z
+  .object({
+    type: z.literal('Feature'),
+    properties: z.record(z.string(), z.unknown()).nullable().optional(),
+    geometry: geometrySchema,
+    id: z.union([z.string(), z.number()]).optional(),
+  })
+  .passthrough();
+const featureCollectionSchema = z
+  .object({ type: z.literal('FeatureCollection'), features: z.array(featureSchema) })
+  .passthrough();
+const geojsonDocumentSchema = z.union([
+  featureSchema,
+  featureCollectionSchema,
+  geometryCollectionSchema,
+]);

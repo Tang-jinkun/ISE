@@ -70,8 +70,40 @@ describe('sampleTrajectory', () => {
 
   it('computes eastbound heading and a positive climb pitch', () => {
     const sample = sampleTrajectory(trajectory, 500);
-    expect(sample.headingDeg).toBeCloseTo(90, 3);
+    expect(sample.headingDeg).toBeCloseTo(89.75, 2);
     expect(sample.pitchDeg).toBeGreaterThan(0);
     expect(sample.tailEndIndex).toBe(1);
+  });
+
+  it('uses spherical initial bearing for a high-latitude long segment', () => {
+    const highLatitude = prepareTrajectory(
+      {
+        schemaVersion: 'ise-trajectory/v1',
+        points: [
+          { timeMs: 0, longitude: 0, latitude: 80, altitudeM: 1_000 },
+          { timeMs: 1_000, longitude: 90, latitude: 80, altitudeM: 1_000 },
+        ],
+      },
+      { ...metadata, endTimeMs: 1_000 },
+    );
+
+    expect(sampleTrajectory(highLatitude, 500).headingDeg).toBeCloseTo(45.44, 2);
+  });
+
+  it('uses the shortest spherical segment across the antimeridian', () => {
+    const antimeridian = prepareTrajectory(
+      {
+        schemaVersion: 'ise-trajectory/v1',
+        points: [
+          { timeMs: 0, longitude: 179, latitude: 10, altitudeM: 1_000 },
+          { timeMs: 1_000, longitude: -179, latitude: 10, altitudeM: 1_000 },
+        ],
+      },
+      { ...metadata, endTimeMs: 1_000 },
+    );
+
+    const sample = sampleTrajectory(antimeridian, 500);
+    expect(Math.abs(sample.longitude)).toBeCloseTo(180, 6);
+    expect(sample.headingDeg).toBeCloseTo(89.826, 3);
   });
 });
