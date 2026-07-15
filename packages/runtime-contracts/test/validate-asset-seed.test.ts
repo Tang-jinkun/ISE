@@ -27,8 +27,8 @@ test('reports a schema error without uploading or rewriting the file', async () 
   assert.equal(await readFile(file, 'utf8'), source);
 });
 
-test('exports validateAssetSeedFile from the package root', async () => {
-  const contracts = await import('@ise/runtime-contracts');
+test('exports validateAssetSeedFile from the Node-only package entrypoint', async () => {
+  const contracts = await import('@ise/runtime-contracts/node');
   assert.equal(contracts.validateAssetSeedFile, validateAssetSeedFile);
 });
 
