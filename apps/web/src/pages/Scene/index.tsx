@@ -1,5 +1,6 @@
 import { getScene, updateScene } from '@/api/scene';
 import { message } from '@/components/ui/message';
+import { useSceneRuntime } from '@/hooks/useSceneRuntime';
 import { useSceneStore } from '@/stores/sceneStore';
 import {
   sceneProjectConfigSchema,
@@ -7,7 +8,8 @@ import {
   type SceneTrack,
   type SceneTrackItem,
 } from '@ise/runtime-contracts';
-import { useEffect, useMemo, useState } from 'react';
+import type mapboxgl from 'mapbox-gl';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AssetLibrary } from './components/AssetLibrary';
 import { PropertyPanel } from './components/PropertyPanel';
@@ -34,6 +36,27 @@ export default function Scene() {
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [blockingError, setBlockingError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [runtimeTarget, setRuntimeTarget] = useState<{
+    map: mapboxgl.Map;
+    overlayRoot: HTMLElement;
+  } | null>(null);
+
+  const handleMapReady = useCallback(
+    (map: mapboxgl.Map, overlayRoot: HTMLElement) => {
+      setRuntimeTarget({ map, overlayRoot });
+    },
+    [],
+  );
+  const handleMapDispose = useCallback((map: mapboxgl.Map) => {
+    setRuntimeTarget((target) => (target?.map === map ? null : target));
+  }, []);
+
+  const runtime = useSceneRuntime({
+    map: runtimeTarget?.map ?? null,
+    overlayRoot: runtimeTarget?.overlayRoot ?? null,
+    config,
+    timeMs: currentTimeMs,
+  });
 
   useEffect(() => {
     let active = true;
@@ -214,13 +237,22 @@ export default function Scene() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+    <div
+      className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
+      data-testid="scene-runtime-ready"
+      data-status={runtime.status}
+    >
       <SceneHeader
         projectTitle={projectTitle}
         totalDuration={totalDurationMs / 1000}
-        currentTime={currentTimeMs / 1000}
+        currentTime={runtime.currentTimeMs / 1000}
         onTitleChange={(title) => updateCurrentScene({ title })}
         onSave={handleSave}
+        onPlay={() => void runtime.play().catch(() => undefined)}
+        onPause={runtime.pause}
+        onReplay={() => void runtime.replay().catch(() => undefined)}
+        runtimeReady={runtime.status === 'ready'}
+        projectId={projectId}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -231,14 +263,17 @@ export default function Scene() {
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
-            <SceneCanvas />
+            <SceneCanvas
+              onMapReady={handleMapReady}
+              onMapDispose={handleMapDispose}
+            />
             <PropertyPanel />
           </div>
 
           <Timeline
             tracks={tracks}
             selectedClipId={selectedClipId}
-            currentTimeMs={currentTimeMs}
+            currentTimeMs={runtime.currentTimeMs}
             totalDurationMs={totalDurationMs}
             onTimeChange={(timeMs) =>
               setCurrentTimeMs(Math.min(Math.max(0, timeMs), totalDurationMs))

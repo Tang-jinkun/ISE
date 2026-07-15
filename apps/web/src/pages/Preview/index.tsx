@@ -1,76 +1,125 @@
-import { Button } from '@/components/ui/button';
-import { useSceneStore } from '@/stores/sceneStore';
-import { Pause, Play } from 'lucide-react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { getScene } from '@/api/scene';
+import { useSceneRuntime } from '@/hooks/useSceneRuntime';
+import {
+  sceneProjectConfigSchema,
+  type SceneProjectConfig,
+} from '@ise/runtime-contracts';
+import type mapboxgl from 'mapbox-gl';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { SceneCanvas } from '../Scene/components/SceneCanvas';
 import { SceneHeader } from '../Scene/components/SceneHeader';
-import { mapboxToken } from '@/config/public-env';
+
+function validationMessage(error: { issues: readonly { message: string }[] }) {
+  return error.issues.map((issue) => issue.message).join('; ');
+}
 
 export default function Preview() {
-  const navigate = useNavigate();
-  const [isPlaying, setIsPlaying] = useState(false);
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const { currentScene } = useSceneStore();
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('projectId');
+  const [title, setTitle] = useState('未命名场景');
+  const [config, setConfig] = useState<SceneProjectConfig | null>(null);
+  const [blockingError, setBlockingError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [runtimeTarget, setRuntimeTarget] = useState<{
+    map: mapboxgl.Map;
+    overlayRoot: HTMLElement;
+  } | null>(null);
 
   useEffect(() => {
-    if (!mapboxToken || !mapRef.current) return;
-
-    const token = mapboxToken;
-
-    if (!token) {
-      mapRef.current.innerHTML =
-        '<div style="color:#9ca3af;font-size:11px;padding:8px">未配置 MAPBOX_TOKEN，无法加载地图</div>';
-      return;
+    let active = true;
+    if (!projectId) {
+      setBlockingError('缺少场景 ID。');
+      setLoading(false);
+      return () => {
+        active = false;
+      };
     }
 
-    mapboxgl.accessToken = token;
-    const map = new mapboxgl.Map({
-      container: mapRef.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: [110, 30],
-      zoom: 3.5,
-      attributionControl: false
-    });
+    setLoading(true);
+    setBlockingError(null);
+    void getScene(projectId)
+      .then((response) => {
+        if (!active) return;
+        const parsed = sceneProjectConfigSchema.safeParse(response.data.config);
+        if (!parsed.success) {
+          setConfig(null);
+          setBlockingError(validationMessage(parsed.error));
+          return;
+        }
+        setTitle(response.data.title);
+        setConfig(parsed.data);
+      })
+      .catch(() => {
+        if (active) setBlockingError('场景加载失败。');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
     return () => {
-      map.remove();
+      active = false;
     };
+  }, [projectId]);
+
+  const handleMapReady = useCallback(
+    (map: mapboxgl.Map, overlayRoot: HTMLElement) => {
+      setRuntimeTarget({ map, overlayRoot });
+    },
+    [],
+  );
+  const handleMapDispose = useCallback((map: mapboxgl.Map) => {
+    setRuntimeTarget((target) => (target?.map === map ? null : target));
   }, []);
 
-  if (!mapboxToken) {
-    return <div role="alert">PUBLIC_MAPBOX_TOKEN is not configured.</div>;
+  const runtime = useSceneRuntime({
+    map: runtimeTarget?.map ?? null,
+    overlayRoot: runtimeTarget?.overlayRoot ?? null,
+    config,
+  });
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        正在加载场景...
+      </div>
+    );
+  }
+
+  if (blockingError || !config) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background px-6 text-foreground">
+        <div
+          role="alert"
+          className="max-w-xl border-l-2 border-red-500 px-4 py-3 text-sm text-red-400"
+        >
+          {blockingError || '场景配置无效。'}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div
+      className="flex min-h-screen flex-col bg-background"
+      data-testid="scene-runtime-ready"
+      data-status={runtime.status}
+    >
       <SceneHeader
-        projectTitle={currentScene?.title || '未命名场景'}
+        projectTitle={title}
+        totalDuration={config.totalDurationMs / 1000}
+        currentTime={runtime.currentTimeMs / 1000}
+        onPlay={() => void runtime.play().catch(() => undefined)}
+        onPause={runtime.pause}
+        onReplay={() => void runtime.replay().catch(() => undefined)}
+        runtimeReady={runtime.status === 'ready'}
         mode="preview"
       />
-      <div className="flex-1 flex flex-col items-center justify-center p-8">
-        <div className="relative h-[75vh] aspect-[16/9] max-w-[95vw] bg-muted rounded-xl overflow-hidden border border-border shadow-2xl">
-          <div ref={mapRef} className="absolute inset-0" />
-
-          {/* Overlay controls or info if needed */}
-          <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/20 to-transparent h-24" />
-        </div>
-
-        <div className="mt-8 flex items-center gap-6">
-          <Button
-            size="lg"
-            className="rounded-full w-16 h-16 p-0 bg-cyan-500 hover:bg-cyan-400 text-primary-foreground shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all hover:scale-105"
-            onClick={() => setIsPlaying(!isPlaying)}
-          >
-            {isPlaying ? (
-              <Pause className="w-8 h-8 fill-current" />
-            ) : (
-              <Play className="w-8 h-8 fill-current ml-1" />
-            )}
-          </Button>
-        </div>
-      </div>
+      <SceneCanvas
+        mode="preview"
+        onMapReady={handleMapReady}
+        onMapDispose={handleMapDispose}
+      />
     </div>
   );
 }
