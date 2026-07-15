@@ -1,15 +1,27 @@
-import type { AgentRunResult, Artifact, ModelAdapter } from '@ise/agent-core'
+import type { AgentContext, AgentRunResult, Artifact, ModelAdapter } from '@ise/agent-core'
+import { sceneProjectConfigSchema } from '@ise/runtime-contracts'
 import type { SkillRegistry } from '@ise/skills-core'
 import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { QueuedRunResponse } from '../api/contracts.ts'
 import { agentError } from '../api/errors.ts'
 import { EVENT_PLAN_DRAFT_ARTIFACT } from '../contracts/artifactTypes.ts'
+import {
+  ASSET_REGISTRY_ARTIFACT,
+  COMPILED_RUNTIME_ARTIFACT,
+  NARRATIVE_PLAN_ARTIFACT,
+  type CompiledRuntimeArtifactData,
+} from '../contracts/artifactTypes.ts'
 import type { AgentRepositories, RunRecord } from '../persistence/repositories.ts'
 import { PersistentArtifactStore } from '../persistence/persistentArtifactStore.ts'
 import { PersistentDomainStateStore } from '../persistence/persistentDomainStateStore.ts'
 import { IseAgentHost } from '../runtime/IseAgentHost.ts'
 import { createSessionToolRegistry } from '../runtime/toolAssembly.ts'
 import { createAssetRegistrySnapshot } from '../services/assetRegistry.ts'
+import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
+import { createCompilerTools } from '../tools/compilerTools.ts'
+import { capabilityManifest } from '../compiler/capabilityManifest.ts'
+import { assetRegistrySnapshotSchema } from '../contracts/assetRegistry.ts'
+import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
 import { EventBroker } from './eventBroker.ts'
 import { PublicEventSink } from './publicEventSink.ts'
 import { SessionAttachmentReader } from './sessionAttachmentReader.ts'
@@ -128,6 +140,7 @@ export class SessionAgentRunner {
             stage: payload.stage,
             percentage: payload.percentage,
           }),
+          skills: this.options.skills,
         }),
         skills: this.options.skills,
         workspace: this.options.workspace,
@@ -136,7 +149,11 @@ export class SessionAgentRunner {
         eventSink: new PublicEventSink(run.sessionId, this.events, run.id),
         signal: controller.signal,
       }).run(run.objective)
-      await this.finishFromResult(run, result)
+      const narrative = result.artifacts.find(artifact => artifact.type === NARRATIVE_PLAN_ARTIFACT)
+      const compiled = narrative
+        ? await this.compileNarrative(run, authorization, artifacts, narrative)
+        : result.artifacts.find(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)
+      await this.finishFromResult(run, result, compiled)
     } catch (error) {
       await this.finishFromThrownError(runId, error, controller.signal.aborted)
     } finally {
@@ -144,12 +161,28 @@ export class SessionAgentRunner {
     }
   }
 
-  private async finishFromResult(run: RunRecord, result: AgentRunResult): Promise<void> {
+  private async finishFromResult(run: RunRecord, result: AgentRunResult, compiled?: Artifact): Promise<void> {
     if (result.goal.status !== 'completed') {
       await this.finishFromThrownError(run.id, new Error(result.goal.remainingIssues.join('; ') || 'Agent run failed'), false)
       return
     }
     const summary = result.turnOutcome?.finalAnswer ?? result.goal.finalSummary
+    if (compiled) {
+      const data = compiled.data as CompiledRuntimeArtifactData
+      const sceneProjectConfig = sceneProjectConfigSchema.parse(data.sceneProjectConfig)
+      this.options.repositories.transaction(() => {
+        if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
+        this.options.repositories.runs.finish(run.id, 'completed')
+        this.options.repositories.sessions.transition(run.sessionId, ['running'], 'completed')
+        this.events.append(run.sessionId, run.id, 'run.completed', {
+          runId: run.id,
+          status: 'completed',
+          runtimeArtifactId: compiled.id,
+          sceneProjectConfig,
+        })
+      })
+      return
+    }
     const draft = result.artifacts.find(artifact => artifact.type === EVENT_PLAN_DRAFT_ARTIFACT)
     this.options.repositories.transaction(() => {
       if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
@@ -165,10 +198,12 @@ export class SessionAgentRunner {
   private async finishFromThrownError(runId: string, error: unknown, aborted: boolean): Promise<void> {
     const run = this.options.repositories.runs.get(runId)
     if (!run || ['completed', 'failed', 'cancelled'].includes(run.status)) return
-    const code = aborted ? 'RUN_CANCELLED' : 'AGENT_RUN_FAILED'
+    const compilationDiagnostics = error instanceof CompilationError ? error.diagnostics : undefined
+    const code = aborted ? 'RUN_CANCELLED' : compilationDiagnostics?.[0]?.code ?? 'AGENT_RUN_FAILED'
     const message = error instanceof Error ? error.message : String(error)
+    const diagnostics = compilationDiagnostics ?? [diagnostic(code, message)]
     this.options.repositories.transaction(() => {
-      this.options.repositories.runs.finish(run.id, aborted ? 'cancelled' : 'failed', { code, message })
+      this.options.repositories.runs.finish(run.id, aborted ? 'cancelled' : 'failed', { code, message, diagnostics })
       this.options.repositories.sessions.transition(
         run.sessionId,
         ['queued', 'running'],
@@ -177,9 +212,84 @@ export class SessionAgentRunner {
       this.events.append(run.sessionId, run.id, 'run.failed', {
         runId: run.id,
         status: aborted ? 'cancelled' : 'failed',
-        diagnostics: [{ code, message, severity: 'error' }],
+        diagnostics,
       })
     })
+  }
+
+  private async compileNarrative(
+    run: RunRecord,
+    authorization: string,
+    artifacts: PersistentArtifactStore,
+    narrativeArtifact: Artifact,
+  ): Promise<Artifact> {
+    const narrativePlan = narrativePlanSchema.parse(narrativeArtifact.data)
+    const snapshot = createAssetRegistrySnapshot(await this.options.nest.listAssetMetadata(authorization))
+    const logicalKey = `asset-registry:${snapshot.registryVersion}`
+    let registryArtifact = artifacts.list(ASSET_REGISTRY_ARTIFACT).find(item => item.logicalKey === logicalKey)
+    if (!registryArtifact) {
+      registryArtifact = artifacts.create({
+        type: ASSET_REGISTRY_ARTIFACT,
+        createdBy: 'tool',
+        logicalKey,
+        data: assetRegistrySnapshotSchema.parse(snapshot),
+      })
+      this.events.append(run.sessionId, run.id, 'artifact.created', {
+        runId: run.id,
+        artifactId: registryArtifact.id,
+        artifactType: registryArtifact.type,
+        logicalKey: registryArtifact.logicalKey,
+      })
+    }
+    const compileTool = createCompilerTools({
+      onCompileProgress: payload => this.events.append(run.sessionId, run.id, 'compile.progress', {
+        runId: run.id,
+        stage: payload.stage,
+        percentage: payload.percentage,
+      }),
+    })[0]!
+    const context = this.toolContext(run, artifacts)
+    this.events.append(run.sessionId, run.id, 'tool.started', {
+      runId: run.id,
+      toolCallId: `compile-${run.id}`,
+      toolName: compileTool.name,
+      summary: 'Compile validated replay runtime',
+    })
+    const result = await compileTool.execute({
+      eventPlanArtifactId: narrativePlan.sourceEventPlan.artifactId,
+      narrativePlanArtifactId: narrativeArtifact.id,
+      assetRegistryArtifactId: registryArtifact.id,
+      capabilityManifestVersion: capabilityManifest.version,
+      assetRegistryVersion: snapshot.registryVersion,
+    }, context)
+    if (result.artifacts?.length !== 1 || result.artifacts[0]!.type !== COMPILED_RUNTIME_ARTIFACT) {
+      throw new CompilationError([diagnostic('COMPILED_ARTIFACT_MISSING', 'Compiler returned no playable artifact')])
+    }
+    const compiled = artifacts.create(result.artifacts[0]!)
+    this.events.append(run.sessionId, run.id, 'artifact.created', {
+      runId: run.id,
+      artifactId: compiled.id,
+      artifactType: compiled.type,
+      logicalKey: compiled.logicalKey,
+    })
+    return compiled
+  }
+
+  private toolContext(run: RunRecord, artifacts: PersistentArtifactStore): AgentContext {
+    return {
+      workspace: this.options.workspace,
+      goal: {
+        objective: run.objective,
+        status: 'active',
+        turnCount: 0,
+        maxTurns: 1,
+        evidence: [],
+        remainingIssues: [],
+        startedAt: run.createdAt,
+      },
+      artifacts,
+      domainState: new PersistentDomainStateStore(run.sessionId, this.options.repositories.sessions),
+    }
   }
 
   private buildBoundedObjective(sessionId: string, content: string): string {

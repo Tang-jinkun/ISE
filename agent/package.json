@@ -9,7 +9,7 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "test:service": "tsx --test test/*api.test.ts test/sse.test.ts test/agent-service-flow.test.ts",
-    "test": "tsx --test test/runtime.test.ts test/contracts.test.ts test/document-parser.test.ts test/document-tools.test.ts test/event-plan-tools.test.ts test/skill.test.ts test/event-plan-flow.test.ts",
+    "test": "tsx --test test/runtime.test.ts test/contracts.test.ts test/document-parser.test.ts test/document-tools.test.ts test/event-plan-tools.test.ts test/skill.test.ts test/event-plan-flow.test.ts test/api-contracts.test.ts test/nest-gateway.test.ts test/persistence.test.ts test/sse.test.ts test/session-api.test.ts test/review-api.test.ts test/narrative-plan.test.ts test/asset-registry.test.ts test/compiler.test.ts test/base-runtime-adapter.test.ts test/agent-service-flow.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

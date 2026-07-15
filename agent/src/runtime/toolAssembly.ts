@@ -1,4 +1,5 @@
-import { ToolRegistry, type AgentTool } from '@ise/agent-core'
+import { ToolRegistry, createSkillAgentTool, type AgentTool } from '@ise/agent-core'
+import { SkillTool, type SkillRegistry } from '@ise/skills-core'
 import type { AttachmentReader } from '../session/sessionAttachmentReader.ts'
 import type { AssetRegistrySnapshot } from '../contracts/assetRegistry.ts'
 import { createAssetTools } from '../tools/assetTools.ts'
@@ -12,15 +13,24 @@ export interface ToolAssemblyOptions {
   extraTools?: readonly AgentTool[]
   loadAssetSnapshot?: () => Promise<AssetRegistrySnapshot>
   onCompileProgress?: (payload: CompileProgressPayload) => void
+  skills?: SkillRegistry
 }
 
 export function createSessionToolRegistry(options: ToolAssemblyOptions): ToolRegistry {
-  return new ToolRegistry([
+  const tools: AgentTool[] = [
     ...createDocumentTools(options.attachmentReader),
     ...createEventPlanTools(),
     ...createScenePlanTools(),
     ...(options.loadAssetSnapshot ? createAssetTools(options.loadAssetSnapshot) : []),
     ...createCompilerTools({ onCompileProgress: options.onCompileProgress }),
     ...(options.extraTools ?? []),
-  ])
+  ]
+  const registry = new ToolRegistry(tools)
+  if (options.skills) {
+    registry.register(createSkillAgentTool(new SkillTool(options.skills), {
+      availableTools: () => tools.map(tool => tool.name),
+      authorizeProjectSkill: () => true,
+    }))
+  }
+  return registry
 }
