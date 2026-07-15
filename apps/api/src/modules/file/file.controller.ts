@@ -16,6 +16,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
 import { Request } from 'express';
+import { IsOptional, IsString } from 'class-validator';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -29,12 +30,22 @@ import { responseMessage } from '@/utils';
 import { UpdateFileDto } from './dto/update-file.dto';
 
 class UploadFileDto {
+  @IsOptional()
+  @IsString()
   folderId?: string;
+
+  @IsOptional()
+  @IsString()
   fileType?: string;
 }
 
 class ListFilesQueryDto {
+  @IsOptional()
+  @IsString()
   folderId?: string;
+
+  @IsOptional()
+  @IsString()
   fileType?: string;
 }
 

@@ -63,8 +63,18 @@ export class FileService {
     const { userId, folderId, fileType, file } = options;
     const email = await this.getUserEmail(userId);
     const fileName = this.normalizeFilename(file.originalname);
-    const targetFolderId =
-      folderId && folderId !== '' ? folderId : await this.ensureRootFolder(userId);
+    let targetFolderId: string;
+    if (folderId && folderId !== '') {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: folderId, userId },
+      });
+      if (!folder) {
+        throw new NotFoundException('Target folder does not exist');
+      }
+      targetFolderId = folder.id;
+    } else {
+      targetFolderId = await this.ensureRootFolder(userId);
+    }
 
     const rawType = file.mimetype || '';
     let computedType = 'application';

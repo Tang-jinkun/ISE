@@ -8,15 +8,17 @@ export class CreateScriptDto {
   @IsNotEmpty({ message: '标题不能为空' })
   title: string;
 
-  @ApiProperty({ description: '脚本配置', example: '{}' })
+  @ApiProperty({ description: '脚本配置', example: '{}', required: false })
   @IsString()
   @IsNotEmpty({ message: '配置不能为空' })
-  config: string;
+  @IsOptional()
+  config?: string;
 
-  @ApiProperty({ description: '脚本类型', example: 'python' })
+  @ApiProperty({ description: '脚本类型', example: 'python', required: false })
   @IsString()
   @IsNotEmpty({ message: '类型不能为空' })
-  type: string;
+  @IsOptional()
+  type?: string;
 
   @ApiProperty({ description: '拥有者类型', enum: OwnerType, default: OwnerType.PERSON })
   @IsEnum(OwnerType)
@@ -31,5 +33,6 @@ export class CreateScriptDto {
       { role: 'assistant', content: '好的，这是一个示例脚本...' },
     ],
   })
+  @IsOptional()
   conversation?: any;
 }
