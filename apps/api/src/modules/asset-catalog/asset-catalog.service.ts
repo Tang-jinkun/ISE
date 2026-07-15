@@ -2,8 +2,10 @@ import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { readFileSync } from 'fs';
 import {
   assetSeedManifestSchema,
+  publicAssetCatalogEntrySchema,
   resolvedAssetAccessSchema,
   type AssetManifestEntry,
+  type PublicAssetCatalogEntry,
 } from '@ise/runtime-contracts';
 import { requiredEnv } from '@/config/required-env';
 import { MinioService } from '@/minio/minio.service';
@@ -29,9 +31,10 @@ export class AssetCatalogService {
     this.#entries = new Map(parsed.assets.map((entry) => [entry.assetId, entry]));
   }
 
-  listPublic() {
+  listPublic(): PublicAssetCatalogEntry[] {
     return [...this.#entries.values()].map(
-      ({ objectName: _objectName, sourceRelativePath: _sourceRelativePath, ...entry }) => entry,
+      ({ objectName: _objectName, sourceRelativePath: _sourceRelativePath, ...entry }) =>
+        publicAssetCatalogEntrySchema.parse(entry),
     );
   }
 

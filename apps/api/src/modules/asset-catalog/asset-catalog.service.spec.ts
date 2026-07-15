@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import type { AssetManifestEntry } from '@ise/runtime-contracts';
+import { publicAssetCatalogEntrySchema, type AssetManifestEntry } from '@ise/runtime-contracts';
 import { AssetCatalogService } from './asset-catalog.service';
 
 jest.mock('@ise/runtime-contracts', () => {
@@ -37,6 +37,82 @@ function modelEntry(overrides: Partial<AssetManifestEntry> = {}): AssetManifestE
   } as AssetManifestEntry;
 }
 
+function entriesForEveryKind(): AssetManifestEntry[] {
+  return [
+    modelEntry(),
+    {
+      assetId: 'trajectory:route',
+      kind: 'trajectory',
+      displayName: 'Route',
+      aliases: [],
+      fingerprint,
+      sourceRelativePath: 'trajectories/route.json',
+      objectName: 'demo/trajectories/route.json',
+      mediaType: 'application/vnd.ise.trajectory+json',
+      size: 128,
+      availability: 'available',
+      criticality: 'required',
+      fallbackAssetIds: [],
+      allowFallback: false,
+      trajectory: {
+        format: 'ise-trajectory/v1',
+        timeUnit: 'ms',
+        coordinateOrder: 'lng-lat-alt',
+        startTimeMs: 0,
+        endTimeMs: 1_000,
+        monotonic: true,
+      },
+    },
+    {
+      assetId: 'video:replay',
+      kind: 'video',
+      displayName: 'Replay',
+      aliases: [],
+      fingerprint,
+      sourceRelativePath: 'videos/replay.mp4',
+      objectName: 'demo/videos/replay.mp4',
+      mediaType: 'video/mp4',
+      size: 256,
+      availability: 'available',
+      criticality: 'optional',
+      fallbackAssetIds: [],
+      allowFallback: false,
+      video: { durationMs: 10_000, codec: 'h264' },
+    },
+    {
+      assetId: 'image:poster',
+      kind: 'image',
+      displayName: 'Poster',
+      aliases: [],
+      fingerprint,
+      sourceRelativePath: 'images/poster.png',
+      objectName: 'demo/images/poster.png',
+      mediaType: 'image/png',
+      size: 64,
+      availability: 'available',
+      criticality: 'optional',
+      fallbackAssetIds: [],
+      allowFallback: false,
+      image: { width: 1920, height: 1080, fit: 'contain' },
+    },
+    {
+      assetId: 'geojson:airspace',
+      kind: 'geojson',
+      displayName: 'Airspace',
+      aliases: [],
+      fingerprint,
+      sourceRelativePath: 'geojson/airspace.json',
+      objectName: 'demo/geojson/airspace.json',
+      mediaType: 'application/geo+json',
+      size: 32,
+      availability: 'available',
+      criticality: 'optional',
+      fallbackAssetIds: [],
+      allowFallback: false,
+    },
+  ];
+}
+
 function createService(entries: AssetManifestEntry[] = [modelEntry()]) {
   const minio = {
     presignRead: jest.fn().mockResolvedValue('https://minio.test/signed'),
@@ -61,6 +137,24 @@ describe('AssetCatalogService', () => {
     ]);
     expect(service.listPublic()[0]).not.toHaveProperty('objectName');
     expect(service.listPublic()[0]).not.toHaveProperty('sourceRelativePath');
+  });
+
+  it('returns shared-schema public entries for every asset kind without storage fields', () => {
+    const { service } = createService(entriesForEveryKind());
+
+    const entries = service.listPublic();
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      'model',
+      'trajectory',
+      'video',
+      'image',
+      'geojson',
+    ]);
+    for (const entry of entries) {
+      expect(publicAssetCatalogEntrySchema.parse(entry)).toEqual(entry);
+      expect(entry).not.toHaveProperty('objectName');
+      expect(entry).not.toHaveProperty('sourceRelativePath');
+    }
   });
 
   it('validates injected manifest entries before exposing them', () => {
