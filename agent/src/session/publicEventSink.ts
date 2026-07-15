@@ -40,19 +40,24 @@ function publicArtifactMetadata(value: unknown): Record<string, unknown> | undef
 }
 
 export class PublicEventSink implements AgentEventSink {
-  constructor(readonly sessionId: string, readonly broker: EventBroker) {}
+  constructor(
+    readonly sessionId: string,
+    readonly broker: EventBroker,
+    readonly persistentRunId?: string,
+  ) {}
 
   async emit(event: AgentActionEvent): Promise<void> {
+    const runId = this.persistentRunId ?? event.runId
     switch (event.eventType) {
       case 'run.started':
-        this.broker.append(this.sessionId, event.runId, 'run.started', {
-          runId: event.runId,
+        this.broker.append(this.sessionId, runId, 'run.started', {
+          runId,
           status: 'running',
         })
         return
       case 'tool.started':
-        this.broker.append(this.sessionId, event.runId, 'tool.started', {
-          runId: event.runId,
+        this.broker.append(this.sessionId, runId, 'tool.started', {
+          runId,
           toolCallId: requiredString(event.toolCallId),
           toolName: requiredString(event.data?.tool),
           summary: event.summary,
@@ -62,8 +67,8 @@ export class PublicEventSink implements AgentEventSink {
         const toolName = optionalString(event.data?.tool)
         const message = optionalString(event.data?.message)
         const percentage = typeof event.data?.percentage === 'number' ? event.data.percentage : undefined
-        this.broker.append(this.sessionId, event.runId, 'tool.progress', {
-          runId: event.runId,
+        this.broker.append(this.sessionId, runId, 'tool.progress', {
+          runId,
           toolCallId: requiredString(event.toolCallId),
           ...(toolName ? { toolName } : {}),
           ...(message ? { message } : {}),
@@ -74,8 +79,8 @@ export class PublicEventSink implements AgentEventSink {
       case 'artifact.created': {
         const metadata = publicArtifactMetadata(event.data?.metadata)
         const logicalKey = optionalString(event.data?.logicalKey)
-        this.broker.append(this.sessionId, event.runId, 'artifact.created', {
-          runId: event.runId,
+        this.broker.append(this.sessionId, runId, 'artifact.created', {
+          runId,
           artifactId: requiredString(event.data?.artifactId),
           artifactType: requiredString(event.data?.artifactType),
           ...(logicalKey ? { logicalKey } : {}),
@@ -84,8 +89,8 @@ export class PublicEventSink implements AgentEventSink {
         return
       }
       case 'run.failed':
-        this.broker.append(this.sessionId, event.runId, 'run.failed', {
-          runId: event.runId,
+        this.broker.append(this.sessionId, runId, 'run.failed', {
+          runId,
           status: 'failed',
           diagnostics: diagnostics(event.data?.diagnostics),
         })
