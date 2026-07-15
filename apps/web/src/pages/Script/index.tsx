@@ -1360,6 +1360,7 @@ export default function Script() {
               </div>
               <button
                 type="button"
+                aria-label="发送问题"
                 onClick={() => void send()}
                 disabled={sending || !input.trim()}
                 className={cn(

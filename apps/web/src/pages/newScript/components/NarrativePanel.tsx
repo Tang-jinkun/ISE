@@ -37,7 +37,6 @@ type LayoutConfig = {
   fontSize: number;
   fontFamily: string;
   animationDuration: number;
-  themeColor?: string;
 };
 
 export const NarrativePanel: React.FC<NarrativePanelProps> = ({
@@ -245,15 +244,16 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
             {timelineData.map((item, i) => (
               <div
                 key={i}
-                className="p-4 rounded-xl border border-border bg-card/50 hover:border-cyan-500/30 transition-all hover:shadow-lg group"
+                className={cn(
+                  'p-4 rounded-xl border bg-card/50 hover:border-primary/30 transition-all hover:shadow-lg group',
+                  i === 0 ? 'border-primary' : 'border-border'
+                )}
                 style={{
-                  borderColor: i === 0 ? config.themeColor : undefined,
                   transitionDuration: `${config.animationDuration}s`
                 }}
               >
                 <div
-                  className="text-[10px] font-bold uppercase tracking-wider mb-1"
-                  style={{ color: config.themeColor }}
+                  className="text-[10px] font-bold uppercase tracking-wider mb-1 text-primary"
                 >
                   Stage {i + 1}
                 </div>
@@ -281,7 +281,7 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
             {timelineData.map((item, i) => (
               <div
                 key={i}
-                className="break-inside-avoid p-4 rounded-xl border border-border bg-card/50 hover:border-cyan-500/30 transition-all"
+                className="break-inside-avoid p-4 rounded-xl border border-border bg-card/50 hover:border-primary/30 transition-all"
                 style={{
                   minHeight: `${100 + (i % 3) * 40}px`,
                   transitionDuration: `${config.animationDuration}s`
@@ -298,9 +298,8 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
                 </div>
                 <div className="mt-4 h-1 w-full bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full"
+                    className="h-full bg-primary"
                     style={{
-                      backgroundColor: config.themeColor,
                       width: `${(i + 1) * 20}%`
                     }}
                   />
@@ -317,19 +316,20 @@ export const NarrativePanel: React.FC<NarrativePanelProps> = ({
               return (
                 <div
                   key={i}
-                  className="absolute w-64 p-6 rounded-2xl border border-border bg-card shadow-xl transition-all duration-500 ease-out"
+                  className={cn(
+                    'absolute w-64 p-6 rounded-2xl border bg-card shadow-xl transition-all duration-500 ease-out',
+                    offset === 0 ? 'border-primary' : 'border-border'
+                  )}
                   style={{
                     transform: `translateX(${offset * 120}px) translateZ(${Math.abs(offset) * -100}px) rotateY(${offset * -15}deg)`,
                     opacity: 1 - Math.abs(offset) * 0.3,
                     zIndex: 10 - Math.abs(offset),
-                    borderColor: offset === 0 ? config.themeColor : undefined,
                     transitionDuration: `${config.animationDuration}s`
                   }}
                 >
                   <div className="text-center">
                     <div
-                      className="text-2xl font-bold mb-4"
-                      style={{ color: config.themeColor }}
+                      className="text-2xl font-bold mb-4 text-primary"
                     >
                       {item.stage}
                     </div>

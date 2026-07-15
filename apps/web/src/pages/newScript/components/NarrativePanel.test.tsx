@@ -27,13 +27,15 @@ vi.mock('lucide-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('lucide-react')>();
   return {
     ...actual,
-    Grid: () => <span data-testid="grid-layout-icon" />
+    Columns: () => <span data-testid="waterfall-layout-icon" />,
+    Grid: () => <span data-testid="grid-layout-icon" />,
+    Layers: () => <span data-testid="carousel-layout-icon" />
   };
 });
 
 describe('NarrativePanel', () => {
-  it('does not add an inline cyan theme color to the initial grid layout', () => {
-    const { container } = render(
+  const renderPanel = () =>
+    render(
       <NarrativePanel
         selectedNode={{ id: 'n-root', title: 'Narrative', summary: '' }}
         nowText={() => ''}
@@ -41,11 +43,16 @@ describe('NarrativePanel', () => {
       />
     );
 
-    const gridButton = container
-      .querySelector('[data-testid="grid-layout-icon"]')
+  const switchLayout = (container: HTMLElement, testId: string) => {
+    const button = container
+      .querySelector(`[data-testid="${testId}"]`)
       ?.closest('button');
-    expect(gridButton).not.toBeNull();
-    fireEvent.click(gridButton!);
+    expect(button).not.toBeNull();
+    fireEvent.click(button!);
+  };
+
+  const expectNoCyanAccent = (container: HTMLElement) => {
+    expect(container.innerHTML).not.toContain('cyan');
 
     const hasInlineCyan = Array.from(container.querySelectorAll('[style]')).some(
       (element) => {
@@ -55,5 +62,47 @@ describe('NarrativePanel', () => {
     );
 
     expect(hasInlineCyan).toBe(false);
+  };
+
+  it('uses semantic primary accents in the grid layout', () => {
+    const { container } = renderPanel();
+    switchLayout(container, 'grid-layout-icon');
+
+    const stageLabel = Array.from(container.querySelectorAll('div')).find(
+      (element) => element.textContent === 'Stage 1'
+    );
+    const card = stageLabel?.closest('.group');
+
+    expect(stageLabel).toHaveClass('text-primary');
+    expect(card).toHaveClass('border-primary', 'hover:border-primary/30');
+    expectNoCyanAccent(container);
+  });
+
+  it('keeps waterfall progress visible with a semantic primary accent', () => {
+    const { container } = renderPanel();
+    switchLayout(container, 'waterfall-layout-icon');
+
+    const progress = Array.from(container.querySelectorAll('[style]')).find(
+      (element) => element.getAttribute('style')?.includes('width: 20%')
+    );
+    const card = progress?.closest('.break-inside-avoid');
+
+    expect(progress).toHaveClass('bg-primary');
+    expect(card).toHaveClass('hover:border-primary/30');
+    expectNoCyanAccent(container);
+  });
+
+  it('uses semantic primary accents in the carousel layout', () => {
+    const { container } = renderPanel();
+    switchLayout(container, 'carousel-layout-icon');
+
+    const title = Array.from(container.querySelectorAll('.text-2xl')).find(
+      (element) => element.textContent === 'Opening stage'
+    );
+    const card = title?.closest('.absolute');
+
+    expect(title).toHaveClass('text-primary');
+    expect(card).toHaveClass('border-primary');
+    expectNoCyanAccent(container);
   });
 });
