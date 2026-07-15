@@ -22,8 +22,14 @@ test('loads the generate-battle-replay project skill with its bounded tool surfa
     'inspect_report_evidence',
     'propose_event_plan',
     'accept_event_plan',
+    'inspect_replay_assets',
+    'propose_scene_plan',
+    'compile_replay_runtime',
+    'validate_replay_runtime',
   ])
   assert.match(skill.instructions, /EventUnit/)
+  assert.match(skill.instructions, /NarrativePlan/)
+  assert.match(skill.instructions, /never invent asset IDs/i)
 })
 
 test('documents all evidence classes and rejects the known unsupported SRT claims', async () => {
