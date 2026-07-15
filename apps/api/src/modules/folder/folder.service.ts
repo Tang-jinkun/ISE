@@ -34,8 +34,8 @@ export class FolderService {
 
     // 如果有 parentId，检查父文件夹是否存在
     if (parentId && parentId !== 'root') {
-      const parent = await this.prisma.folder.findUnique({
-        where: { id: parentId },
+      const parent = await this.prisma.folder.findFirst({
+        where: { id: parentId, userId },
       });
       if (!parent) {
         throw new NotFoundException('父文件夹不存在');
