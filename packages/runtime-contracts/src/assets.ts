@@ -101,6 +101,15 @@ export const assetManifestEntrySchema = z.discriminatedUnion('kind', [
 ]);
 export type AssetManifestEntry = z.infer<typeof assetManifestEntrySchema>;
 
+export const publicAssetCatalogEntrySchema = z.discriminatedUnion('kind', [
+  modelEntrySchema.omit({ sourceRelativePath: true, objectName: true }),
+  trajectoryEntrySchema.omit({ sourceRelativePath: true, objectName: true }),
+  videoEntrySchema.omit({ sourceRelativePath: true, objectName: true }),
+  imageEntrySchema.omit({ sourceRelativePath: true, objectName: true }),
+  geojsonEntrySchema.omit({ sourceRelativePath: true, objectName: true })
+]);
+export type PublicAssetCatalogEntry = z.infer<typeof publicAssetCatalogEntrySchema>;
+
 export const assetNameMappingSchema = z.strictObject({
   sourceName: canonicalNonBlankString,
   sourceKind: z.enum(['report', 'trajectory', 'model', 'operator']),
