@@ -1,9 +1,47 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { readFile } from 'fs/promises';
-import { resolve } from 'path';
+import { lstat, readFile, realpath } from 'fs/promises';
+import { isAbsolute, relative, resolve, sep } from 'path';
 import { assetSeedManifestSchema, prepareAssetForUpload } from '@ise/runtime-contracts';
 import { MinioService } from '@/minio/minio.service';
+
+function assertContained(root: string, candidate: string) {
+  const pathFromRoot = relative(root, candidate);
+  if (
+    pathFromRoot === '' ||
+    pathFromRoot === '..' ||
+    pathFromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(pathFromRoot)
+  ) {
+    throw new Error('Asset source path escapes the configured source directory');
+  }
+}
+
+async function readAssetSource(sourceDir: string, sourceRelativePath: string) {
+  const root = resolve(sourceDir);
+  const candidate = resolve(root, sourceRelativePath);
+  assertContained(root, candidate);
+
+  let current = root;
+  const rootStats = await lstat(root);
+  if (rootStats.isSymbolicLink()) {
+    throw new Error('Asset source path contains a symbolic link or junction');
+  }
+  for (const segment of sourceRelativePath.split('/')) {
+    current = resolve(current, segment);
+    const stats = await lstat(current);
+    if (stats.isSymbolicLink()) {
+      throw new Error('Asset source path contains a symbolic link or junction');
+    }
+  }
+
+  const [canonicalRoot, canonicalCandidate] = await Promise.all([
+    realpath(root),
+    realpath(candidate),
+  ]);
+  assertContained(canonicalRoot, canonicalCandidate);
+  return readFile(canonicalCandidate);
+}
 
 export async function seedAssets(options: {
   manifestPath: string;
@@ -22,7 +60,7 @@ export async function seedAssets(options: {
       continue;
     }
 
-    const source = await readFile(resolve(options.sourceDir, entry.sourceRelativePath));
+    const source = await readAssetSource(options.sourceDir, entry.sourceRelativePath);
     const prepared = await prepareAssetForUpload(entry, source);
     await options.upload(entry.objectName, Buffer.from(prepared), entry.mediaType);
   }

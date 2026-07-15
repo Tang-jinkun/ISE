@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -94,12 +94,11 @@ async function fixture(manifestOverride: Partial<AssetSeedManifest> = {}) {
   };
   await writeFile(sourcePath, source, { encoding: 'utf8', flag: 'wx' }).catch(async (error) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    const { mkdir } = await import('fs/promises');
     await mkdir(join(sourceDir, 'trajectories'), { recursive: true });
     await writeFile(sourcePath, source);
   });
   await writeFile(manifestPath, JSON.stringify(manifest));
-  return { manifest, manifestPath, prepared, sourceDir };
+  return { manifest, manifestPath, prepared, source, sourceDir };
 }
 
 afterEach(async () => {
@@ -157,6 +156,40 @@ describe('seedAssets', () => {
     await expect(
       seedAssets({ manifestPath: base.manifestPath, sourceDir: base.sourceDir, upload }),
     ).rejects.toThrow('Required asset is missing: trajectory:route');
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('rejects source paths containing a symlink or Windows junction', async () => {
+    const base = await fixture();
+    const externalDirectory = await mkdtemp(join(tmpdir(), 'ise-seed-assets-external-'));
+    temporaryDirectories.push(externalDirectory);
+    await writeFile(join(externalDirectory, 'route.json'), base.source);
+    const linkedDirectory = join(base.sourceDir, 'linked');
+    try {
+      await symlink(
+        externalDirectory,
+        linkedDirectory,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES')) {
+        expect(process.platform).toBe('win32');
+        return;
+      }
+      throw error;
+    }
+
+    const linkedManifest = {
+      ...base.manifest,
+      assets: [{ ...base.manifest.assets[0], sourceRelativePath: 'linked/route.json' }],
+    } as AssetSeedManifest;
+    await writeFile(base.manifestPath, JSON.stringify(linkedManifest));
+    const upload = jest.fn();
+
+    await expect(
+      seedAssets({ manifestPath: base.manifestPath, sourceDir: base.sourceDir, upload }),
+    ).rejects.toThrow(/symbolic link|junction|reparse/i);
     expect(upload).not.toHaveBeenCalled();
   });
 

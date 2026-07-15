@@ -17,6 +17,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
 import { Request, Response } from 'express';
+import { pipeline } from 'stream/promises';
 import { IsOptional, IsString } from 'class-validator';
 import {
   ApiBearerAuth,
@@ -49,6 +50,13 @@ class ListFilesQueryDto {
   @IsOptional()
   @IsString()
   fileType?: string;
+}
+
+function encodeRfc5987Filename(filename: string) {
+  return encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 @ApiTags('文件管理')
@@ -137,9 +145,15 @@ export class FileController {
     }
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      `attachment; filename*=UTF-8''${encodeRfc5987Filename(file.name)}`,
     );
-    file.stream.pipe(res);
+    try {
+      await pipeline(file.stream, res);
+    } catch (error) {
+      if (!res.destroyed) {
+        res.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
   }
 
   @Patch(':id')

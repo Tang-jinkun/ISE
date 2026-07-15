@@ -52,13 +52,14 @@ export class SceneService {
   }
 
   async update(userId: string, id: string, updateSceneDto: UpdateSceneDto) {
+    const { title, type, config } = updateSceneDto;
+    const validatedConfig = config === undefined ? undefined : this.validateConfig(config);
     await this.findOne(userId, id);
 
-    const { title, type, config } = updateSceneDto;
     const data: any = {};
     if (title !== undefined) data.title = title;
     if (type !== undefined) data.type = type;
-    if (config !== undefined) data.config = this.validateConfig(config);
+    if (validatedConfig !== undefined) data.config = validatedConfig;
 
     return this.prisma.scene.update({
       where: { id },

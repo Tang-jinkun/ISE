@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as Minio from 'minio';
 import * as archiver from 'archiver';
-import { PassThrough } from 'stream';
+import { PassThrough, Readable } from 'stream';
 import { SaveMinioFile } from './dto/save_minio.dto';
 import { ParamMinioFile } from './dto/param_minio.dto';
 
@@ -52,7 +52,7 @@ export class MinioService {
     return this.minioClient.presignedGetObject(this.bucketName, objectName, expiresSeconds);
   }
 
-  async openRead(objectName: string): Promise<NodeJS.ReadableStream> {
+  async openRead(objectName: string): Promise<Readable> {
     await this.ensureBucketExists();
     return this.minioClient.getObject(this.bucketName, objectName);
   }

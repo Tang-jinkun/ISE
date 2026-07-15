@@ -58,6 +58,7 @@ describe('SceneService config validation', () => {
 
     await expect(action(service)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.scene.create).not.toHaveBeenCalled();
+    expect(prisma.scene.findFirst).not.toHaveBeenCalled();
     expect(prisma.scene.update).not.toHaveBeenCalled();
   });
 
