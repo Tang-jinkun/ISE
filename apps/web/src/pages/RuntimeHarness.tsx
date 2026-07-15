@@ -1,8 +1,13 @@
+import { getScene } from '@/api/scene';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { mapboxToken } from '@/config/public-env';
 import { useSceneRuntime } from '@/hooks/useSceneRuntime';
 import { RUNTIME_CATALOG_CONFIG, RUNTIME_MAIN_CONFIG } from '@/runtime';
+import {
+  sceneProjectConfigSchema,
+  type SceneProjectConfig,
+} from '@ise/runtime-contracts';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -14,18 +19,77 @@ const fixtures = {
   'runtime-catalog': RUNTIME_CATALOG_CONFIG,
 } as const;
 
-type FixtureName = keyof typeof fixtures;
-
 export function RuntimeHarness() {
   const { search } = useLocation();
-  const fixture = new URLSearchParams(search).get('fixture') ?? 'runtime-main';
+  const searchParams = new URLSearchParams(search);
+  const sceneId = searchParams.get('sceneId');
+  if (sceneId) {
+    return <PersistedSceneRuntimeHarness key={sceneId} sceneId={sceneId} />;
+  }
+
+  const fixture = searchParams.get('fixture') ?? 'runtime-main';
   if (fixture !== 'runtime-main' && fixture !== 'runtime-catalog') {
     return <div role="alert">Unknown runtime fixture.</div>;
   }
-  return <RuntimeHarnessController fixture={fixture} />;
+  return <RuntimeHarnessController config={fixtures[fixture]} />;
 }
 
-function RuntimeHarnessController({ fixture }: { fixture: FixtureName }) {
+function PersistedSceneRuntimeHarness({ sceneId }: { sceneId: string }) {
+  const [config, setConfig] = useState<SceneProjectConfig | null>(null);
+  const [blockingError, setBlockingError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void getScene(sceneId)
+      .then((response) => {
+        if (!active) return;
+        const parsed = sceneProjectConfigSchema.safeParse(response.data.config);
+        if (!parsed.success) {
+          setBlockingError(
+            parsed.error.issues.map((issue) => issue.message).join('; '),
+          );
+          return;
+        }
+        setConfig(parsed.data);
+      })
+      .catch(() => {
+        if (active) setBlockingError('Unable to load persisted scene.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [sceneId]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading persisted scene...
+      </div>
+    );
+  }
+
+  if (blockingError || !config) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background px-6 text-foreground">
+        <div
+          role="alert"
+          className="max-w-xl border-l-2 border-red-500 px-4 py-3 text-sm text-red-400"
+        >
+          {blockingError || 'Persisted scene configuration is invalid.'}
+        </div>
+      </div>
+    );
+  }
+
+  return <RuntimeHarnessController config={config} />;
+}
+
+function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
   const mapRootRef = useRef<HTMLDivElement | null>(null);
   const overlayRootRef = useRef<HTMLDivElement | null>(null);
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
@@ -59,7 +123,7 @@ function RuntimeHarnessController({ fixture }: { fixture: FixtureName }) {
   const runtime = useSceneRuntime({
     map,
     overlayRoot: overlayRootRef.current,
-    config: fixtures[fixture],
+    config,
     timeMs,
   });
   const status = mapboxToken ? runtime.status : 'error';
@@ -104,7 +168,7 @@ function RuntimeHarnessController({ fixture }: { fixture: FixtureName }) {
         <Input
           type="number"
           min={0}
-          max={fixtures[fixture].totalDurationMs}
+          max={config.totalDurationMs}
           step={100}
           value={timeMs}
           aria-label="毫秒时间"
@@ -114,7 +178,7 @@ function RuntimeHarnessController({ fixture }: { fixture: FixtureName }) {
             const next = Number(event.target.value);
             if (Number.isFinite(next)) {
               setTimeMs(
-                Math.min(fixtures[fixture].totalDurationMs, Math.max(0, next)),
+                Math.min(config.totalDurationMs, Math.max(0, next)),
               );
             }
           }}
