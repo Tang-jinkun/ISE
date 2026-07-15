@@ -23,11 +23,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { message } from '@/components/ui/message';
-import {
-  login as apiLogin,
-  register as apiRegister,
-  sendRegisterCode
-} from '@/api/auth';
+import { login as apiLogin, register as apiRegister } from '@/api/auth';
 import { tokenStorage } from '@/api/http';
 import { Globe, Layers, Bot, Users } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
@@ -64,9 +60,6 @@ export default function Login() {
       email: z.string().email({
         message: t('auth.errors.emailInvalid')
       }),
-      code: z.string().min(4, {
-        message: '验证码至少 4 位'
-      }),
       password: z.string().min(6, {
         message: t('auth.errors.passwordMin')
       }),
@@ -90,7 +83,6 @@ export default function Login() {
     defaultValues: {
       username: '',
       email: '',
-      code: '',
       password: '',
       confirmPassword: ''
     }
@@ -114,8 +106,7 @@ export default function Login() {
     const res = await apiRegister({
       email: values.email,
       password: values.password,
-      username: values.username,
-      code: values.code
+      username: values.username
     });
     if (res?.data?.access_token) {
       await fetchUser();
@@ -294,53 +285,9 @@ export default function Login() {
                             {t('auth.email')}
                           </FormLabel>
                           <FormControl>
-                            <div className="flex gap-2">
-                              <Input
-                                type="email"
-                                placeholder="john@example.com"
-                                className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40"
-                                {...field}
-                              />
-                              <Button
-                                type="button"
-                                className="border border-border bg-muted text-foreground hover:bg-accent"
-                                onClick={async () => {
-                                  if (!field.value) {
-                                    message.error('请先填写邮箱');
-                                    return;
-                                  }
-                                  const res = await sendRegisterCode(
-                                    field.value
-                                  );
-                                  if (
-                                    res?.code === 200 ||
-                                    res?.message === '验证码已发送'
-                                  ) {
-                                    message.success('验证码已发送');
-                                  } else {
-                                    message.error(res?.message || '发送失败');
-                                  }
-                                }}
-                              >
-                                发送验证码
-                              </Button>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={registerForm.control}
-                      name="code"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-foreground">
-                            验证码
-                          </FormLabel>
-                          <FormControl>
                             <Input
-                              placeholder="输入邮箱验证码"
+                              type="email"
+                              placeholder="john@example.com"
                               className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40"
                               {...field}
                             />

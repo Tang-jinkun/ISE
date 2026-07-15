@@ -4,8 +4,6 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterParamsDto } from './dto/params-auth.dto';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
-import { EmailService } from '@/modules/email/email.service';
-import { RedisService } from '@/redis/redis.service';
 import { requiredEnv } from '@/config/required-env';
 import { AuthTokenPayload } from './jwt-payload';
 
@@ -15,27 +13,11 @@ export class AuthService {
   constructor(
     private jwtService: JwtService,
     private prisma: PrismaService,
-    private emailService: EmailService,
-    private redisService: RedisService,
   ) {
     this.secretKey = requiredEnv('JWT_SECRET');
   }
 
-  async sendRegisterCode(email: string) {
-    const code = Math.random().toString().slice(2, 8);
-    const ttlSeconds = 10 * 60;
-    const key = `verify:register:${email}`;
-    await this.redisService.set(key, code, ttlSeconds);
-    await this.emailService.sendVerificationCode(email, code);
-    return { ok: true };
-  }
-
   async register(body: RegisterParamsDto) {
-    const key = `verify:register:${body.email}`;
-    const storedCode = await this.redisService.get(key);
-    if (!storedCode) throw new BadRequestException('验证码已过期或不存在');
-    if (storedCode !== body.code) throw new BadRequestException('验证码错误');
-
     const exists = await this.prisma.user.findUnique({
       where: { email: body.email },
     });
@@ -45,8 +27,6 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: { email: body.email, username: body.username, password: hash, role: 'USER' },
     });
-    await this.redisService.del(key);
-
     return this.generateToken(user);
   }
 

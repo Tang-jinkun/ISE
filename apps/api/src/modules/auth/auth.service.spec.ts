@@ -7,12 +7,6 @@ import { AuthService } from './auth.service';
 jest.mock('@/prisma/prisma.service', () => ({ PrismaService: class PrismaService {} }), {
   virtual: true,
 });
-jest.mock('@/modules/email/email.service', () => ({ EmailService: class EmailService {} }), {
-  virtual: true,
-});
-jest.mock('@/redis/redis.service', () => ({ RedisService: class RedisService {} }), {
-  virtual: true,
-});
 jest.mock(
   '@/config/required-env',
   () => ({
@@ -34,13 +28,13 @@ describe('AuthService token purpose', () => {
   };
   const originalEnv = process.env;
 
-  let prisma: { user: { findUnique: jest.Mock } };
+  let prisma: { user: { findUnique: jest.Mock; create: jest.Mock } };
   let service: AuthService;
 
   beforeEach(() => {
     process.env = { ...originalEnv, JWT_SECRET: secret };
-    prisma = { user: { findUnique: jest.fn() } };
-    service = new AuthService(new JwtService(), prisma as any, {} as any, {} as any);
+    prisma = { user: { findUnique: jest.fn(), create: jest.fn() } };
+    service = new AuthService(new JwtService(), prisma as any);
   });
 
   afterAll(() => {
@@ -104,6 +98,44 @@ describe('AuthService token purpose', () => {
     });
     expect(refreshedAccess.exp! - refreshedAccess.iat!).toBe(3 * 24 * 60 * 60);
     expect(refreshedRefresh.exp! - refreshedRefresh.iat!).toBe(5 * 24 * 60 * 60);
+  });
+
+  it('registers without email or Redis dependencies and returns purpose-specific tokens', async () => {
+    const body = {
+      email: 'new-user@example.com',
+      username: 'new-user',
+      password: 'password-123',
+    };
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockImplementation(async ({ data }) => ({
+      id: 'user-2',
+      ...data,
+    }));
+
+    const tokens = await service.register(body);
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: body.email } });
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        email: body.email,
+        username: body.username,
+        password: expect.any(String),
+        role: 'USER',
+      },
+    });
+    const passwordHash = prisma.user.create.mock.calls[0][0].data.password;
+    expect(passwordHash).not.toBe(body.password);
+    await expect(bcrypt.compare(body.password, passwordHash)).resolves.toBe(true);
+    expect(verifyToken(tokens.access_token)).toMatchObject({
+      sub: 'user-2',
+      username: body.username,
+      tokenType: 'access',
+    });
+    expect(verifyToken(tokens.refresh_token)).toMatchObject({
+      sub: 'user-2',
+      username: body.username,
+      tokenType: 'refresh',
+    });
   });
 
   it('rejects an access token used as a refresh token without exposing it', () => {

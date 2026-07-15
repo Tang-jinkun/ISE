@@ -19,14 +19,6 @@ import { LoginResponseDto, UserInfoResponseDto } from './dto/response-auth.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('send-register-code')
-  @ApiOperation({ summary: '发送注册验证码' })
-  @ApiBody({ schema: { properties: { email: { type: 'string', format: 'email' } } } })
-  async sendRegisterCode(@Body('email') email: string) {
-    await this.authService.sendRegisterCode(email);
-    return responseMessage(null, '验证码已发送');
-  }
-
   @Post('register')
   @ApiOperation({ summary: '用户注册' })
   @ApiOkResponse({ type: LoginResponseDto })
