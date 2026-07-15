@@ -1,0 +1,50 @@
+[
+  {
+    "assetId": "video:ooda-chain",
+    "status": "loadedmetadata",
+    "durationMs": 16017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:runway-exit",
+    "status": "loadedmetadata",
+    "durationMs": 8017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:missile-impact",
+    "status": "loadedmetadata",
+    "durationMs": 8017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:cockpit-jamming",
+    "status": "loadedmetadata",
+    "durationMs": 5017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:damage-check",
+    "status": "loadedmetadata",
+    "durationMs": 8017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:bomb-explosion",
+    "status": "loadedmetadata",
+    "durationMs": 12017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:radar-offline",
+    "status": "loadedmetadata",
+    "durationMs": 5017,
+    "codec": "avc1.640020"
+  },
+  {
+    "assetId": "video:target-lock",
+    "status": "loadedmetadata",
+    "durationMs": 5017,
+    "codec": "avc1.640020"
+  }
+]

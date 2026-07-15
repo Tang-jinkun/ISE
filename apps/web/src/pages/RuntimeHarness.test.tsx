@@ -1,7 +1,7 @@
 import { getScene, type SceneItem } from '@/api/scene';
 import { useSceneRuntime } from '@/hooks/useSceneRuntime';
 import { RUNTIME_MAIN_CONFIG } from '@/runtime';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RuntimeHarness } from './RuntimeHarness';
@@ -29,6 +29,18 @@ vi.mock('mapbox-gl', () => ({
     accessToken: '',
     Map: vi.fn(),
   },
+}));
+
+vi.mock('./RuntimeCatalogCalibrationViewport', () => ({
+  RuntimeCatalogCalibrationViewport: ({
+    onModelLoaded,
+  }: {
+    onModelLoaded: () => void;
+  }) => (
+    <button type="button" onClick={onModelLoaded}>
+      Mark model loaded
+    </button>
+  ),
 }));
 
 function scene(config: unknown): SceneItem {
@@ -101,5 +113,47 @@ describe('RuntimeHarness source selection', () => {
 
     expect(getScene).not.toHaveBeenCalled();
     expectRuntimeConfig(RUNTIME_MAIN_CONFIG);
+  });
+
+  it('isolates runtime-catalog calibration from the normal runtime controller', () => {
+    renderHarness('?fixture=runtime-catalog&calibration=1');
+
+    expect(screen.getByTestId('runtime-catalog-calibration')).toBeVisible();
+    expect(useSceneRuntime).not.toHaveBeenCalled();
+  });
+
+  it('retains calibration records in the runtime-catalog route session', () => {
+    renderHarness('?fixture=runtime-catalog&calibration=1');
+
+    fireEvent.change(screen.getByLabelText('Model GLB'), {
+      target: {
+        files: [new File(['glTF'], 'J-10.glb', { type: 'model/gltf-binary' })],
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Mark model loaded' }));
+    fireEvent.change(screen.getByLabelText('Scale'), { target: { value: '2.5' } });
+    fireEvent.change(screen.getByLabelText('Rotation X'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Rotation Y'), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText('Rotation Z'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Altitude'), { target: { value: '40' } });
+    for (const name of [
+      'Model visible',
+      'Model upright',
+      'Nose aligned',
+      'Reference altitude matched',
+    ]) {
+      fireEvent.click(screen.getByRole('checkbox', { name }));
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Record calibration' }));
+
+    expect(screen.getByTestId('calibration-progress')).toHaveTextContent('1 / 6');
+    expect(JSON.parse(screen.getByTestId('calibration-records').textContent ?? '')).toEqual({
+      'model:j10': {
+        scale: 2.5,
+        rotationOffsetDeg: [10, 20, 30],
+        altitudeOffsetM: 40,
+        entityTypes: ['aircraft'],
+      },
+    });
   });
 });

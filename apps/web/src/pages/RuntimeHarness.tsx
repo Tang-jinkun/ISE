@@ -13,6 +13,13 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import {
+  RUNTIME_CATALOG_MODELS,
+  RuntimeCatalogCalibration,
+  type RuntimeCatalogModelId,
+  type RuntimeModelCalibration,
+} from './RuntimeCatalogCalibration';
+import { RuntimeCatalogCalibrationViewport } from './RuntimeCatalogCalibrationViewport';
 
 const fixtures = {
   'runtime-main': RUNTIME_MAIN_CONFIG,
@@ -34,7 +41,48 @@ export function RuntimeHarness() {
   if (fixture !== 'runtime-main' && fixture !== 'runtime-catalog') {
     return <div role="alert">Unknown runtime fixture.</div>;
   }
+  if (fixture === 'runtime-catalog' && searchParams.get('calibration') === '1') {
+    return <RuntimeCatalogCalibrationSession />;
+  }
   return <RuntimeHarnessController config={fixtures[fixture]} />;
+}
+
+function RuntimeCatalogCalibrationSession() {
+  const [records, setRecords] = useState<
+    Partial<Record<RuntimeCatalogModelId, RuntimeModelCalibration>>
+  >({});
+  const orderedRecords = Object.fromEntries(
+    RUNTIME_CATALOG_MODELS.flatMap(({ assetId }) => {
+      const calibration = records[assetId];
+      return calibration ? [[assetId, calibration]] : [];
+    }),
+  );
+
+  return (
+    <>
+      <RuntimeCatalogCalibration
+        Viewport={RuntimeCatalogCalibrationViewport}
+        onRecord={(assetId, calibration) => {
+          setRecords((current) => ({ ...current, [assetId]: calibration }));
+        }}
+      />
+      <section className="absolute bottom-3 right-3 z-50 w-[min(22rem,calc(100vw-1.5rem))] border border-border bg-card/95 p-3 shadow-xl">
+        <div className="flex items-center justify-between gap-3 text-xs text-foreground">
+          <span>Session records</span>
+          <output data-testid="calibration-progress">
+            {Object.keys(records).length} / {RUNTIME_CATALOG_MODELS.length}
+          </output>
+        </div>
+        <pre
+          data-testid="calibration-records"
+          aria-label="Current calibration JSON"
+          className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-border pt-2 text-[11px] text-muted-foreground"
+        >
+          {JSON.stringify(orderedRecords, null, 2)}
+        </pre>
+      </section>
+    </>
+  );
 }
 
 function PersistedSceneRuntimeHarness({ sceneId }: { sceneId: string }) {

@@ -1,0 +1,38 @@
+{
+  "model:j10": {
+    "scale": 19.260474,
+    "rotationOffsetDeg": [90, 0, 0],
+    "altitudeOffsetM": -1.29958,
+    "entityTypes": ["aircraft"]
+  },
+  "model:jf17": {
+    "scale": 15.287153,
+    "rotationOffsetDeg": [90, 0, 0],
+    "altitudeOffsetM": 2.661958,
+    "entityTypes": ["aircraft"]
+  },
+  "model:mig29": {
+    "scale": 21.146357,
+    "rotationOffsetDeg": [90, 0, 0],
+    "altitudeOffsetM": 0.864481,
+    "entityTypes": ["aircraft"]
+  },
+  "model:pl15e": {
+    "scale": 5.743099,
+    "rotationOffsetDeg": [90, 0, 0],
+    "altitudeOffsetM": 0.10824,
+    "entityTypes": ["missile"]
+  },
+  "model:rafale": {
+    "scale": 21.179728,
+    "rotationOffsetDeg": [90, 0, 0],
+    "altitudeOffsetM": 2.074768,
+    "entityTypes": ["aircraft"]
+  },
+  "model:su30mki": {
+    "scale": 25.489869,
+    "rotationOffsetDeg": [90, 0, 0],
+    "altitudeOffsetM": 2.345046,
+    "entityTypes": ["aircraft"]
+  }
+}
