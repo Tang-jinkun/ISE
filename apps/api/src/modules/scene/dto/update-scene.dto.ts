@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsObject, IsOptional, IsString } from 'class-validator';
 import { SceneType } from '@prisma/client';
 
 export class UpdateSceneDto {
@@ -15,5 +15,6 @@ export class UpdateSceneDto {
 
   @ApiProperty({ description: '配置信息', required: false })
   @IsOptional()
+  @IsObject()
   config?: any;
 }

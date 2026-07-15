@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 import { OwnerType, SceneType } from '@prisma/client';
 
 export class CreateSceneDto {
@@ -13,12 +13,17 @@ export class CreateSceneDto {
   @IsOptional()
   ownerType?: OwnerType;
 
-  @ApiProperty({ description: '场景类型（公开/私有）', enum: SceneType, default: SceneType.PRIVATE })
+  @ApiProperty({
+    description: '场景类型（公开/私有）',
+    enum: SceneType,
+    default: SceneType.PRIVATE,
+  })
   @IsEnum(SceneType)
   @IsOptional()
   type?: SceneType;
 
-  @ApiProperty({ description: '配置信息', required: false, default: [] })
+  @ApiProperty({ description: '配置信息', required: false })
   @IsOptional()
+  @IsObject()
   config?: any;
 }

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { OwnerType } from '@prisma/client';
 
 export class CreateScriptDto {
@@ -8,16 +8,14 @@ export class CreateScriptDto {
   @IsNotEmpty({ message: '标题不能为空' })
   title: string;
 
-  @ApiProperty({ description: '脚本配置', example: '{}', required: false })
-  @IsString()
-  @IsNotEmpty({ message: '配置不能为空' })
+  @ApiPropertyOptional({ description: '脚本配置', default: '{}' })
   @IsOptional()
+  @IsString()
   config?: string;
 
-  @ApiProperty({ description: '脚本类型', example: 'python', required: false })
-  @IsString()
-  @IsNotEmpty({ message: '类型不能为空' })
+  @ApiPropertyOptional({ description: '脚本类型', default: 'default' })
   @IsOptional()
+  @IsString()
   type?: string;
 
   @ApiProperty({ description: '拥有者类型', enum: OwnerType, default: OwnerType.PERSON })
@@ -25,14 +23,8 @@ export class CreateScriptDto {
   @IsOptional()
   ownerType?: OwnerType;
 
-  @ApiProperty({
-    description: '与大模型 Agent 的交互对话（JSON）',
-    required: false,
-    example: [
-      { role: 'user', content: '帮我生成一个测试脚本' },
-      { role: 'assistant', content: '好的，这是一个示例脚本...' },
-    ],
-  })
+  @ApiPropertyOptional({ description: '可见对话记录' })
   @IsOptional()
-  conversation?: any;
+  @IsArray()
+  conversation?: Array<{ role: string; content: string }>;
 }

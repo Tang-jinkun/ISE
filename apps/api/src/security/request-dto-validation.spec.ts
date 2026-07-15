@@ -94,6 +94,15 @@ describe('strict request DTO compatibility', () => {
     expect(result).toMatchObject({ config: '{"tracks":[]}', conversation });
   });
 
+  it('rejects a non-array script conversation', async () => {
+    await expect(
+      pipe.transform(
+        { title: 'Scene script', conversation: 'hidden transcript' },
+        { type: 'body', metatype: CreateScriptDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('keeps the existing title-only script creation request valid', async () => {
     const result = await pipe.transform(
       { title: 'Untitled script' },

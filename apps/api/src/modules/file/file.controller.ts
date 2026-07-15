@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -15,7 +16,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as multer from 'multer';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { IsOptional, IsString } from 'class-validator';
 import {
   ApiBearerAuth,
@@ -120,6 +121,25 @@ export class FileController {
       fileType: query.fileType,
     });
     return responseMessage(data, '获取成功');
+  }
+
+  @Get(':id/content')
+  async content(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: any },
+    @Res() res: Response,
+  ) {
+    const file = await this.fileService.readOwned(req.user.sub, id);
+    res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Length', String(file.size));
+    if (file.fingerprint) {
+      res.setHeader('X-Content-SHA256', file.fingerprint);
+    }
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    );
+    file.stream.pipe(res);
   }
 
   @Patch(':id')

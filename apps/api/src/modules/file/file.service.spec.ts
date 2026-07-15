@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { FileService } from './file.service';
 import { MAX_UPLOAD_SIZE_BYTES } from './upload-validation';
+import { PassThrough } from 'stream';
 
 jest.mock('@/prisma/prisma.service', () => ({ PrismaService: class PrismaService {} }), {
   virtual: true,
@@ -37,6 +38,7 @@ function dependencies() {
   const prisma = {
     file: {
       create: jest.fn().mockResolvedValue({ id: 'file-1' }),
+      findFirst: jest.fn(),
     },
     folder: {
       create: jest.fn(),
@@ -55,6 +57,7 @@ function dependencies() {
       objectName: `${body.folder}/${body.file_type}/${body.file_name}`,
     })),
     deleteFile: jest.fn().mockResolvedValue({ ok: true }),
+    openRead: jest.fn(),
   };
   return { prisma, minioService };
 }
@@ -213,5 +216,44 @@ describe('FileService upload security', () => {
         errors: [databaseError, cleanupError],
       }),
     );
+  });
+
+  it('opens file bytes only after an owner-scoped lookup', async () => {
+    const { prisma, minioService } = dependencies();
+    const stream = new PassThrough();
+    prisma.file.findFirst.mockResolvedValue({
+      id: 'file-1',
+      userId: 'user-1',
+      src: 'owner/video/file.mp4',
+      name: 'flight.mp4',
+      size: 20,
+      mimeType: 'video/mp4',
+      fingerprint: `sha256:${'a'.repeat(64)}`,
+    });
+    minioService.openRead.mockResolvedValue(stream);
+    const service = new FileService(prisma as any, minioService as any);
+
+    await expect(service.readOwned('user-1', 'file-1')).resolves.toEqual({
+      stream,
+      name: 'flight.mp4',
+      size: 20,
+      mimeType: 'video/mp4',
+      fingerprint: `sha256:${'a'.repeat(64)}`,
+    });
+    expect(prisma.file.findFirst).toHaveBeenCalledWith({
+      where: { id: 'file-1', userId: 'user-1' },
+    });
+    expect(minioService.openRead).toHaveBeenCalledWith('owner/video/file.mp4');
+  });
+
+  it('does not open bytes for a file outside the user scope', async () => {
+    const { prisma, minioService } = dependencies();
+    prisma.file.findFirst.mockResolvedValue(null);
+    const service = new FileService(prisma as any, minioService as any);
+
+    await expect(service.readOwned('user-1', 'foreign-file')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(minioService.openRead).not.toHaveBeenCalled();
   });
 });

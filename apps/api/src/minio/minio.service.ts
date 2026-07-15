@@ -47,6 +47,23 @@ export class MinioService {
     return { bucket: this.bucketName, objectName };
   }
 
+  async presignRead(objectName: string, expiresSeconds: number): Promise<string> {
+    await this.ensureBucketExists();
+    return this.minioClient.presignedGetObject(this.bucketName, objectName, expiresSeconds);
+  }
+
+  async openRead(objectName: string): Promise<NodeJS.ReadableStream> {
+    await this.ensureBucketExists();
+    return this.minioClient.getObject(this.bucketName, objectName);
+  }
+
+  async putObject(objectName: string, bytes: Buffer, mediaType: string): Promise<void> {
+    await this.ensureBucketExists();
+    await this.minioClient.putObject(this.bucketName, objectName, bytes, bytes.byteLength, {
+      'Content-Type': mediaType,
+    });
+  }
+
   async deleteFile(body: ParamMinioFile) {
     await this.ensureBucketExists();
     const objectName = `${body.folder}/${body.file_type}/${body.file_name}`;

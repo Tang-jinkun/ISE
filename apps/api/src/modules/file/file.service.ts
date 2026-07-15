@@ -117,6 +117,20 @@ export class FileService {
     });
   }
 
+  async readOwned(userId: string, id: string) {
+    const file = await this.prisma.file.findFirst({ where: { id, userId } });
+    if (!file) {
+      throw new NotFoundException('File does not exist');
+    }
+    return {
+      stream: await this.minioService.openRead(file.src),
+      name: file.name,
+      size: file.size,
+      mimeType: file.mimeType,
+      fingerprint: file.fingerprint,
+    };
+  }
+
   async update(userId: string, id: string, updateDto: UpdateFileDto) {
     const file = await this.prisma.file.findFirst({
       where: { id, userId },
