@@ -103,6 +103,32 @@ test('rejects uppercase fingerprints, absolute paths, traversal, and unknown fie
   assert.equal(assetSeedManifestSchema.safeParse(unknown).success, false);
 });
 
+test('rejects noncanonical public strings in both Zod and JSON Schema', () => {
+  const validate = compileJsonSchema(assetSeedManifestJsonSchema);
+  const cases: Array<(manifest: AssetSeedManifest & { assets: any[]; nameMappings: any[] }) => void> = [
+    manifest => { manifest.assets[0].displayName = ''; },
+    manifest => { manifest.assets[0].displayName = '   '; },
+    manifest => { manifest.assets[0].displayName = ' JF-17 '; },
+    manifest => { manifest.assets[0].aliases = [' JF-17 Thunder ']; },
+    manifest => { manifest.assets[0].sourceRelativePath = ' models/JF-17.glb'; },
+    manifest => { manifest.assets[0].sourceRelativePath = 'models/JF-17.glb '; },
+    manifest => { manifest.assets[0].sourceRelativePath = ' C:/assets/JF-17.glb '; },
+    manifest => { manifest.assets[0].sourceRelativePath = 'C:/assets/JF-17.glb'; },
+    manifest => { manifest.assets[0].sourceRelativePath = '/assets/JF-17.glb'; },
+    manifest => { manifest.assets[0].sourceRelativePath = '../models/JF-17.glb'; },
+    manifest => { manifest.assets[0].sourceRelativePath = 'models\\JF-17.glb'; },
+    manifest => { manifest.nameMappings[0].sourceName = ' JF-17 '; },
+    manifest => { manifest.nameMappings[0].note = ' mapping note '; }
+  ];
+
+  for (const mutate of cases) {
+    const manifest = validManifest() as AssetSeedManifest & { assets: any[]; nameMappings: any[] };
+    mutate(manifest);
+    assert.equal(assetSeedManifestSchema.safeParse(manifest).success, false);
+    assert.equal(validate(manifest), false, JSON.stringify(validate.errors));
+  }
+});
+
 test('rejects duplicate assets and unresolved fallbacks or name mappings', () => {
   const duplicate = validManifest();
   duplicate.assets.push(duplicate.assets[0]!);
@@ -203,5 +229,32 @@ test('exports strict seed and resolved-access JSON Schemas', () => {
     false
   );
   assert.equal(validateAccess({ ...model, objectName: 'secret/key' }), false);
-  assert.match(resolvedAssetAccessJsonSchema.$comment ?? '', /per-kind.*runtime.*relational/i);
+  assert.match(resolvedAssetAccessJsonSchema.$comment ?? '', /runtime.*per-kind/i);
+});
+
+test('documents trajectory time ordering as a runtime-only JSON Schema invariant', () => {
+  const access = {
+    assetId: 'trajectory:reversed',
+    url: 'https://minio.example.test/trajectory',
+    fingerprint,
+    mediaType: 'application/vnd.ise.trajectory+json',
+    size: 100,
+    expiresAt: '2026-07-15T12:05:00.000Z',
+    trajectory: {
+      format: 'ise-trajectory/v1',
+      timeUnit: 'ms',
+      coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 1000,
+      endTimeMs: 0,
+      monotonic: true
+    }
+  };
+  assert.equal(resolvedAssetAccessSchema.safeParse(access).success, false);
+
+  const validate = compileJsonSchema(resolvedAssetAccessJsonSchema);
+  assert.equal(validate(access), true, JSON.stringify(validate.errors));
+  assert.match(
+    resolvedAssetAccessJsonSchema.$comment ?? '',
+    /runtime.*endTimeMs.*startTimeMs.*JSON Schema/i
+  );
 });

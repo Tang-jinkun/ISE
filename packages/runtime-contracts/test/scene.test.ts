@@ -114,6 +114,28 @@ test('requires kind-specific asset IDs only on image, video, and geojson items',
   }
 });
 
+test('rejects blank, whitespace-wrapped IDs and other noncanonical public strings in Zod and JSON Schema', () => {
+  const validate = compileJsonSchema(sceneProjectConfigJsonSchema);
+  const cases: Array<(config: SceneProjectConfig & { tracks: any[]; entities: any[] }) => void> = [
+    config => { config.sourceDocumentId = '   '; },
+    config => { config.sourceDocumentId = ' document-1 '; },
+    config => { config.entities[0].entityId = ' entity-jf17 '; },
+    config => { config.entities[0].displayName = ' JF-17 '; },
+    config => { config.tracks[0].trackId = ' subtitle-1 '; },
+    config => { config.tracks[0].label = ' Subtitles '; },
+    config => { config.tracks[0].items[0].id = ' item-1 '; },
+    config => { config.tracks[0].items[0].evidenceRefs = [' evidence-1 ']; },
+    config => { config.tracks[0].items[0].params.text = ' Contact '; }
+  ];
+
+  for (const mutate of cases) {
+    const config = validConfig() as SceneProjectConfig & { tracks: any[]; entities: any[] };
+    mutate(config);
+    assert.equal(sceneProjectConfigSchema.safeParse(config).success, false);
+    assert.equal(validate(config), false, JSON.stringify(validate.errors));
+  }
+});
+
 test('exports a strict JSON Schema', () => {
   assert.equal(sceneProjectConfigJsonSchema.additionalProperties, false);
   assert.deepEqual(sceneProjectConfigJsonSchema.properties?.schemaVersion, {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-const nonEmptyId = z.string().trim().min(1);
+const canonicalNonBlankString = z.string().regex(/^\S(?:[\s\S]*\S)?$/);
+const nonEmptyId = canonicalNonBlankString;
 const milliseconds = z.number().int().nonnegative();
 const longitude = z.number().finite().min(-180).max(180);
 const latitude = z.number().finite().min(-90).max(90);
@@ -17,13 +18,13 @@ export const diagnosticSchema = z.strictObject({
   eventUnitId: nonEmptyId.optional(),
   commandId: nonEmptyId.optional(),
   assetId: assetId.optional(),
-  message: z.string().trim().min(1)
+  message: canonicalNonBlankString
 });
 export type Diagnostic = z.infer<typeof diagnosticSchema>;
 
 export const sceneEntitySchema = z.strictObject({
   entityId: nonEmptyId,
-  displayName: z.string().trim().min(1),
+  displayName: canonicalNonBlankString,
   kind: z.enum(['aircraft', 'missile', 'location', 'other']),
   modelAssetId: assetId.regex(/^model:/).optional(),
   defaultTrajectoryAssetId: assetId.regex(/^trajectory:/).optional(),
@@ -51,7 +52,7 @@ const baseItemShape = {
 };
 
 const subtitleParamsSchema = z.strictObject({
-  text: z.string().trim().min(1),
+  text: canonicalNonBlankString,
   position: z.enum(['top', 'bottom']),
   maxWidthPct: z.number().finite().positive().max(100)
 });
@@ -68,15 +69,15 @@ const videoParamsSchema = z.strictObject({
 });
 const markerParamsSchema = z.strictObject({
   coordinates,
-  label: z.string().trim().min(1),
-  color: z.string().trim().min(1)
+  label: canonicalNonBlankString,
+  color: canonicalNonBlankString
 });
 const geojsonParamsSchema = z.strictObject({
-  lineColor: z.string().trim().min(1),
+  lineColor: canonicalNonBlankString,
   lineWidth: z.number().finite().nonnegative(),
-  fillColor: z.string().trim().min(1),
+  fillColor: canonicalNonBlankString,
   fillOpacity: z.number().finite().min(0).max(1),
-  circleColor: z.string().trim().min(1),
+  circleColor: canonicalNonBlankString,
   circleRadius: z.number().finite().nonnegative(),
   keepAfterEnd: z.boolean()
 });
@@ -136,7 +137,7 @@ export type SceneTrackItem = z.infer<typeof sceneTrackItemSchema>;
 
 const trackBase = {
   trackId: nonEmptyId,
-  label: z.string().trim().min(1),
+  label: canonicalNonBlankString,
   visible: z.boolean()
 };
 export const sceneTrackSchema = z.discriminatedUnion('type', [

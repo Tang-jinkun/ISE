@@ -5,8 +5,9 @@ export const assetIdSchema = z.string().regex(
 );
 export const fingerprintSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 
-const safeRelativePath = z.string().trim().min(1).regex(
-  /^(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*\/\/)(?!.*\/$)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/
+const canonicalNonBlankString = z.string().regex(/^\S(?:[\s\S]*\S)?$/);
+const safeRelativePath = z.string().regex(
+  /^(?!\s)(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*\/\/)(?!.*\/$)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).*\S$/
 );
 
 export const modelAssetMetadataSchema = z.strictObject({
@@ -34,7 +35,7 @@ export const trajectoryAssetMetadataSchema = z.strictObject({
 
 export const videoAssetMetadataSchema = z.strictObject({
   durationMs: z.number().int().positive(),
-  codec: z.string().trim().min(1)
+  codec: canonicalNonBlankString
 });
 
 export const imageAssetMetadataSchema = z.strictObject({
@@ -44,8 +45,8 @@ export const imageAssetMetadataSchema = z.strictObject({
 });
 
 const commonEntryShape = {
-  displayName: z.string().trim().min(1),
-  aliases: z.array(z.string().trim().min(1)),
+  displayName: canonicalNonBlankString,
+  aliases: z.array(canonicalNonBlankString),
   fingerprint: fingerprintSchema,
   sourceRelativePath: safeRelativePath,
   objectName: safeRelativePath,
@@ -101,10 +102,10 @@ export const assetManifestEntrySchema = z.discriminatedUnion('kind', [
 export type AssetManifestEntry = z.infer<typeof assetManifestEntrySchema>;
 
 export const assetNameMappingSchema = z.strictObject({
-  sourceName: z.string().trim().min(1),
+  sourceName: canonicalNonBlankString,
   sourceKind: z.enum(['report', 'trajectory', 'model', 'operator']),
   assetId: assetIdSchema,
-  note: z.string().trim().min(1)
+  note: canonicalNonBlankString
 });
 
 const assetSeedManifestBaseSchema = z.strictObject({
@@ -227,11 +228,11 @@ export const assetSeedManifestJsonSchema = {
   ...z.toJSONSchema(assetSeedManifestBaseSchema, {
     target: 'draft-2020-12'
   }),
-  $comment: 'The runtime parser is authoritative for relational invariants including duplicate IDs, cross-record references, fallback cycles, and trimmed path normalization.'
+  $comment: 'The runtime parser is authoritative for relational invariants including duplicate IDs, cross-record references, and fallback cycles.'
 };
 export const resolvedAssetAccessJsonSchema = {
   ...z.toJSONSchema(resolvedAssetAccessSchema, {
     target: 'draft-2020-12'
   }),
-  $comment: 'This JSON Schema expresses the strict per-kind resolved-access structure; the runtime parser remains authoritative for relational invariants outside this record.'
+  $comment: 'The runtime Zod parser is authoritative for trajectory endTimeMs >= startTimeMs ordering because standard JSON Schema has no portable property-comparison keyword; this schema otherwise expresses the strict per-kind resolved-access structure.'
 };
