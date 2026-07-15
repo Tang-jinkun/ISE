@@ -326,6 +326,31 @@ describe('ResourceManager', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects when dispose releases a fulfilled entry before waiter delivery', async () => {
+    const manager = new ResourceManager({
+      resolveAsset: async () => modelAccess(),
+      now: () => 0,
+    });
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+    const pendingEntries = (manager as unknown as {
+      pending: Map<string, unknown>;
+    }).pending;
+    const deletePending = pendingEntries.delete.bind(pendingEntries);
+    vi.spyOn(pendingEntries, 'delete').mockImplementation((key) => {
+      const deleted = deletePending(key);
+      manager.dispose();
+      return deleted;
+    });
+
+    const acquisition = manager.acquire('model:rafale', 'model', controller.signal);
+
+    await expect(acquisition).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+    expect(removeListener).toHaveBeenCalled();
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['fingerprint', { fingerprint: 'sha256:not-valid' }],
     ['fractional size', { size: 1.5 }],

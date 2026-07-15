@@ -219,6 +219,20 @@ export class ResourceManager {
       }
       pending.promise.then(
         (loaded) => {
+          const entry = pending.entry;
+          const ownsEntry =
+            entry !== undefined &&
+            !entry.released &&
+            this.entries.get(entry.key) === entry;
+          if (this.disposed || pending.cancelled || !ownsEntry) {
+            const error = this.disposed
+              ? new SceneRuntimeError('RUNTIME_DISPOSED', 'Resource manager is disposed')
+              : abortError(`Asset ownership was released before delivery: ${pending.assetId}`);
+            if (finish(false)) {
+              reject(error);
+            }
+            return;
+          }
           if (finish(true)) {
             resolve(loaded);
           }
@@ -235,6 +249,9 @@ export class ResourceManager {
   private cancelReservation(pending: PendingEntry) {
     pending.reservationCount = Math.max(0, pending.reservationCount - 1);
     if (pending.entry) {
+      if (pending.entry.released || this.entries.get(pending.entry.key) !== pending.entry) {
+        return;
+      }
       pending.entry.refCount -= 1;
       if (pending.entry.refCount <= 0) {
         this.entries.delete(pending.entry.key);
