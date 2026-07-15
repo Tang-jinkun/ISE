@@ -1,0 +1,2107 @@
+{
+  "battles": [
+    {
+      "id": "chibi",
+      "name": {
+        "zh": "赤壁之战",
+        "en": "Battle of Red Cliffs",
+        "fr": "Bataille de la Falaise rouge"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "208-11",
+        "end": "208-12",
+        "duration": "约 1 个月"
+      },
+      "location": {
+        "name": "湖北赤壁",
+        "lat": 29.87,
+        "lng": 113.88
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "孙刘联军",
+          "strength": "约 5 万"
+        },
+        "sideB": {
+          "name": "曹操大军",
+          "strength": "约 20-25 万"
+        }
+      },
+      "result": "孙刘联军大胜，曹操北撤，奠定三国鼎立基础。",
+      "historicalSignificance": "中国古代战争史上以少胜多的著名战例，彻底改变了当时的政治格局，导致了长达数十年的三分天下态势。",
+      "details": {
+        "background": "东汉末年，曹操在统一北方后，挥师南下企图一举消灭刘备和孙权。刘备在长坂坡大败后，遣诸葛亮出使东吴，促成了孙刘联盟。此时曹操已占领荆州，水陆并进，气势汹汹，而江东集团内部对战与和存在巨大分歧，周瑜、鲁肃力主抗曹。曹操在赤壁之前的连战连捷使其产生了轻敌思想，加之北方士兵不习水性、水土不服引发瘟疫，为战役的失败埋下了伏笔。曹操拥有压倒性的兵力优势，但战线过长，后勤补给压力巨大，且水军主要由新降的荆州水军组成，军心不稳。孙刘联军虽然兵力薄弱，但拥有长江天险，且周瑜等将领对水战极度精通，形成了战术上的局部优势。这场战役不仅是军事上的较量，更是智谋与心理的博弈。",
+        "course": [
+          {
+            "phase": "初期交火：乌林初战",
+            "content": "公元208年冬，曹操率领大军从江陵出发，沿江东下。孙刘联军逆流而上。双方在赤壁相遇。曹军初抵江面，因长途跋涉且北方士兵不习水战，在小规模接触中失利，被迫退守北岸乌林，与南岸的孙刘联军隔江对峙。此时曹军中已开始流行疫病，士气受挫。"
+          },
+          {
+            "phase": "连环计：庞统献策",
+            "content": "为了解决北方士兵晕船的问题，曹操采纳了庞统（实为周瑜安排的间谍）的建议，下令将所有战船用铁链锁在一起，并铺上木板。这虽然解决了船只颠簸问题，但也使得船队失去了灵活性，一旦起火将无法疏散。曹操自恃水军规模庞大，认为火攻难以奏效，放松了警惕。"
+          },
+          {
+            "phase": "反间计：周瑜借刀杀人",
+            "content": "周瑜利用曹操安插在东吴的间谍蒋干，诱使曹操误以为荆州降将蔡瑁、张允正准备反叛。曹操大怒，下令处决了这两位唯一精通水战的将领。这一决策极大地削弱了曹军水师的指挥能力，为后来的火攻创造了有利条件。"
+          },
+          {
+            "phase": "苦肉计与诈降：黄盖修书",
+            "content": "老将黄盖与周瑜演了一出“苦肉计”，公开受杖刑。随后黄盖致书曹操，表达投降意愿。曹操在反复核实后信以为真，约定了投降时间。此时，诸葛亮利用对当地气象的精确观测，预测到了即将出现的反季节东南风。"
+          },
+          {
+            "phase": "火烧赤壁：决战时刻",
+            "content": "公元208年12月的一个夜晚，东南风大起。黄盖率领十艘装满干柴、枯草、硫磺和火药的快船冲向曹营。接近曹军水寨时，黄盖下令点火。火船顺风冲入曹军连环战船，由于船只被铁链锁死，火势迅速蔓延。江面上火光冲天，曹军死伤无数，岸上的营寨也被波及。孙刘联军乘势全面进攻，曹操在混乱中率残部经华容道撤回江陵。"
+          }
+        ],
+        "commanders": [
+          {
+            "name": "周瑜",
+            "role": "大都督",
+            "decision": "作为战役总指挥，制定了火攻的总体战略，并成功实施了反间计和苦肉计。",
+            "avatar": "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "诸葛亮",
+            "role": "军师",
+            "decision": "促成了孙刘联盟，并利用气象学知识精准预测了东南风的到来，为火攻提供了气象保障。",
+            "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "曹操",
+            "role": "主帅",
+            "decision": "虽然政治军事眼光卓越，但在赤壁战役中犯了轻敌、误杀将领、误信连环计等一系列重大决策错误。",
+            "avatar": "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "黄盖",
+            "role": "老将",
+            "decision": "不惜自身荣辱实施苦肉计，并亲自率领火船执行最危险的火攻任务。",
+            "avatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "刘备",
+            "role": "统帅",
+            "decision": "率领关羽、张飞等部配合东吴作战，在华容道等关键位置设伏截击曹操残部。",
+            "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
+          }
+        ],
+        "innovations": "火攻连锁战船是此次战役的核心创新。此外，反季节气象预测（东南风）的军事运用、大规模水陆协同作战、以及极为成功的心理战（苦肉计、反间计）都具有极高的学术研究价值。战役中对地理条件的极限利用，使得弱势一方能通过非对称作战击败强势对手。",
+        "losses": {
+          "official": "曹操大军伤亡过半，约 10-15 万人。",
+          "academic": "根据现代历史学家考证，直接战斗减员约 5-8 万，大量损失源于后续撤退过程中的疫病和踩踏，总计非战斗减员可能达到 10 万以上。"
+        },
+        "impact": "赤壁之战是三国鼎立局面的转折点。战后，曹操失去了在短期内统一全国的机会，被迫退守黄河流域；孙权稳固了在江东的统治，并开始向荆州扩张；刘备则乘机占据了荆州大部，并最终夺取益州。这场战役确立了中国长达数十年的三分天下态势，对中国后世的政治、军事、文学都产生了深远的影响。它是中国古代“以弱胜强”的经典范例，被广泛载入各类军事教材。",
+        "images": [
+          "/maps/chibi-route.svg",
+          "/maps/chibi-fire.svg"
+        ],
+        "resources": [
+          {
+            "label": "百度百科-赤壁之战详细词条",
+            "url": "https://baike.baidu.com/item/赤壁之战"
+          },
+          {
+            "label": "赤壁古战场博物馆官方网站",
+            "url": "http://www.chibi.com.cn/"
+          },
+          {
+            "label": "中国通史-赤壁之战纪录片",
+            "url": "https://www.cctv.com/history/chibi"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hainan",
+      "name": {
+        "zh": "海南岛战役",
+        "en": "Hainan Island Campaign",
+        "fr": "Campagne de l'île de Hainan"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1950-03-05",
+        "end": "1950-05-01",
+        "duration": "58 天"
+      },
+      "location": {
+        "name": "海南岛全境",
+        "lat": 19.16,
+        "lng": 109.83
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "中国人民解放军",
+          "strength": "约 10 万"
+        },
+        "sideB": {
+          "name": "中华民国国军",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "解放军占领海南全岛，国军撤往台湾。",
+      "historicalSignificance": "解放军历史上第一次成功的大规模渡海登陆作战，彻底粉碎了国民党守岛计划。",
+      "details": {
+        "background": "1950年初，中国大陆已基本解放。国民党残余部队撤往海南岛，由“战神”薛岳指挥，构筑了所谓的“伯陵防线”，由陆海空军立体防御。解放军第40、43军奉命南下，面对完全没有海军、空军支持的极端困境。士兵多为北方人，从未见过大海，晕船严重，且只有落后的木帆船。然而，朝鲜战争爆发前夕的特殊国际环境，使得解放海南岛具有极高的紧迫性。毛泽东主席要求借鉴金门战役的失败教训，采取“积极偷渡、分批潜渡、最后强渡”的方针。岛内由冯白驹领导的琼崖纵队在孤岛坚持斗争23年，是此次战役成功的关键“里应外合”力量。这不仅是一场军事较量，更是意志力的比拼。",
+        "course": [
+          {
+            "phase": "第一阶段：海上练兵与支前准备",
+            "content": "1950年1月至2月，解放军在雷州半岛开展了轰轰烈烈的大规模海上练兵。部队解决了晕船问题，并发明了“土炮艇”（在木帆船上加装山炮、野炮）。同时，广东地方政府组织了数千名船工和上千艘民船支前，为战役提供了坚实的后勤保障。"
+          },
+          {
+            "phase": "第二阶段：四次成功的先锋偷渡",
+            "content": "3月5日至3月底，解放军分四批、八个加强营约8000人，利用夜色和气象条件避开国军巡逻舰艇，成功潜渡琼州海峡。他们在岛内部队接应下成功登陆，建立了数个稳固的滩头支撑点，为后续大规模进攻撕开了口径。"
+          },
+          {
+            "phase": "第三阶段：主力大规模强渡登陆",
+            "content": "4月16日黄昏，主力部队乘300多艘帆船在护航艇掩护下大规模启渡。面对国军军舰和飞机的狂轰滥炸，解放军发扬拼刺刀精神，用木船打败了兵舰。17日凌晨，大部队在临高角、桥头等地抢滩登陆，粉碎了“伯陵防线”。"
+          },
+          {
+            "phase": "第四阶段：美亭决战与全岛追击",
+            "content": "4月19日至22日，解放军在黄竹、美亭地区与薛岳调集的国军主力展开决战。双方在开阔地带反复冲杀，最终解放军以顽强的意志击溃敌军。随后，大军分路向海口、三亚发起全速追击，国军指挥系统崩溃，残部纷纷抢渡撤往台湾。"
+          },
+          {
+            "phase": "第五阶段：解放全岛",
+            "content": "4月23日解放海口。5月1日，解放军占领三亚，海南全岛宣告解放。这场战役以解放军的全面胜利而告终。"
+          }
+        ],
+        "commanders": [
+          {
+            "name": "韩先楚",
+            "role": "40军军长",
+            "decision": "力主尽早开战，亲自率领第一梯队强渡，并在战场上果断指挥，是战役的核心前线指挥官。",
+            "avatar": "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "邓华",
+            "role": "兵团司令员",
+            "decision": "负责整体战略规划，坚决执行“潜渡与强渡相结合”的策略，稳扎稳打。",
+            "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "冯白驹",
+            "role": "琼崖纵队司令",
+            "decision": "指挥岛内部队全力接应，为登陆部队提供情报、粮食和掩护，功不可没。",
+            "avatar": "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "李作鹏",
+            "role": "43军军长",
+            "decision": "指挥东路部队强渡，在美亭决战中发挥了关键的包抄作用。",
+            "avatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "薛岳",
+            "role": "国军总司令",
+            "decision": "虽然构筑了严密的防线，但因内部矛盾和对解放军“潜渡”战术估计不足，导致防御体系迅速瓦解。",
+            "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
+          }
+        ],
+        "innovations": "创造性地利用木帆船改装“土炮艇”，在近海成功压制正规军舰；“潜渡与强渡”相结合的非对称登陆战术，是中国军事史上的重大创新。同时，在完全没有制空权和制海权的情况下进行大规模渡海作战，刷新了现代两栖战的认知。",
+        "losses": {
+          "official": "歼灭国民党军 3.3 万余人，解放军牺牲约 4500 人。",
+          "academic": "国军实际通过海运撤回台湾约 7 万人。解放军的损失主要发生在滩头强攻阶段及海面遭空袭过程中，作为攻方，其伤亡比控制在极佳水平。"
+        },
+        "impact": "海南岛的解放彻底打破了国民党利用岛屿链封锁大陆的计划。仅仅两个月后朝鲜战争爆发，美军第七舰队进入台湾海峡。如果海南岛未能在此时解放，其后果不堪设想。此战为解放军积累了宝贵的渡海作战经验，极大地提升了人民海军、空军建设的迫切性，并确立了中国对南海的统治基础。它是解放军历史上最辉煌、最艰难的胜利之一。",
+        "images": [
+          "/maps/hainan-landing.svg",
+          "/maps/hainan-chase.svg"
+        ],
+        "resources": [
+          {
+            "label": "海南岛战役纪念馆官网",
+            "url": "http://www.hainan.gov.cn/hainan/ztly/lgj.shtml"
+          },
+          {
+            "label": "《海南岛战役》全纪实纪录片",
+            "url": "https://www.bilibili.com/video/BV1xX4y1A7zN"
+          },
+          {
+            "label": "军事历史文献：海南岛战役详报",
+            "url": "http://www.81.cn/history/hainan"
+          }
+        ]
+      }
+    },
+    {
+      "id": "normandy",
+      "name": {
+        "zh": "诺曼底登陆",
+        "en": "D-Day / Operation Overlord",
+        "fr": "Débarquement de Normandie"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1944-06-06",
+        "end": "1944-08-25",
+        "duration": "80 天"
+      },
+      "location": {
+        "name": "法国诺曼底",
+        "lat": 49.37,
+        "lng": -0.88
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "盟军 (美、英、加等)",
+          "strength": "约 288 万"
+        },
+        "sideB": {
+          "name": "纳粹德国",
+          "strength": "约 38 万 (初期)"
+        }
+      },
+      "result": "盟军成功登陆并开辟欧洲第二战场，加速德国灭亡。",
+      "historicalSignificance": "人类战争史上规模最大的两栖登陆作战，是二战欧洲战场的决定性转折点。",
+      "details": {
+        "background": "1944年，苏联在东线发起猛烈反攻，盟军为加速二战结束并遏制苏联扩张，决定在西欧开辟第二战场。战役代号“霸王行动”。盟军在英国集结了历史上空前的兵力，包括200多万军队、6000多艘舰船和1.2万架飞机。为了迷惑德军，盟军实施了极其复杂的“保镖行动”战略欺骗，通过虚假电讯和充气坦克，诱导希特勒坚信主攻方向在加莱而非诺曼底。德军方面，由于两线作战，兵力捉襟见肘，且内部对防御策略存在巨大分歧。战前，诺曼底遭遇了数十年不遇的恶劣天气。艾森豪威尔将军在气象预报员告知短暂“窗口期”后，顶住压力，下达了那句著名的“Let's go”。",
+        "course": [
+          {
+            "phase": "第一阶段：深夜空降（D-Day 凌晨）",
+            "content": "1944年6月6日凌晨，美军第82、101空降师和英军第6空降师约2.4万名伞兵降落在德军防线后方。尽管空降极度混乱，伞兵们散落各处，但这反而造成了德军指挥系统的恐慌和误判。他们成功夺取了关键桥梁和堤道，切断了德军增援路线。"
+          },
+          {
+            "phase": "第二阶段：海空火力压制（D-Day 清晨）",
+            "content": "清晨5时许，盟军数千门海军大炮开始对大西洋壁垒进行狂轰滥炸。随后，成千上万架轰炸机对德军岸防炮台和交通枢纽进行饱和打击。虽然由于云层遮挡，部分滩头打击效果不佳，但成功压制了德军的大规模机动。"
+          },
+          {
+            "phase": "第三阶段：抢滩登陆（D-Day 上午）",
+            "content": "6时30分，美军在奥马哈和犹他滩头开始登陆。犹他滩头相对顺利，但奥马哈滩头遭遇了惨烈抵抗。德军352师凭借坚固工事，利用机枪和火炮对毫无掩护的盟军士兵进行扫射，海面被鲜血染红。在付出巨大代价后，美军通过爆破和勇气最终突破了防线。与此同时，英、加军队在黄金、朱诺、宝剑滩头也成功登陆。"
+          },
+          {
+            "phase": "第四阶段：巩固桥头堡（D-Day 结束）",
+            "content": "到6月6日深夜，盟军虽然没有达到预定的第一天占领目标，但已在诺曼底海岸建立了一个稳固的立足点。15万名士兵成功上岸。由于希特勒的犹豫（坚信加莱才是主攻点），德军装甲预备队未能及时出动，错失了将盟军赶入大海的唯一机会。"
+          },
+          {
+            "phase": "第五阶段：突破与解放巴黎（6月-8月）",
+            "content": "接下来的两个月，盟军在诺曼底丛林地带（灌木丛）进行了艰苦的拉锯战。随后，美军发起“眼镜蛇行动”实现大突破。8月，盟军在法莱斯口袋围歼德军主力。8月25日，巴黎解放，诺曼底战役正式结束。"
+          }
+        ],
+        "commanders": [
+          {
+            "name": "艾森豪威尔",
+            "role": "盟军最高统帅",
+            "decision": "顶住巨大的心理和气象压力，果断在6月6日发起进攻，是整个战役的灵魂人物。",
+            "avatar": "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "蒙哥马利",
+            "role": "地面部队指挥",
+            "decision": "制定了极其详细的五个滩头攻击计划，并亲自指挥了初期艰苦的拉锯战。",
+            "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "隆美尔",
+            "role": "德军B集团军群司令",
+            "decision": "力主将防御重点放在滩头，但因指挥权受限及天气误判回家休假，在最关键时刻缺席。",
+            "avatar": "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "布莱德利",
+            "role": "美军第1集团军司令",
+            "decision": "在奥马哈滩头遭遇最惨烈时刻时保持了冷静，并随后发起了关键的突破行动。",
+            "avatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop"
+          },
+          {
+            "name": "伦德施泰特",
+            "role": "德军西线总司令",
+            "decision": "主张机动防御，与隆美尔意见不合，且在战役中被希特勒剥夺了装甲部队控制权。",
+            "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
+          }
+        ],
+        "innovations": "桑树人工港（Mulberry harbors）解决了无大港口补给的难题；冥王星计划（海底输油管）保证了燃料供应；两栖谢尔曼坦克、大规模电子战干扰雷达、以及史无前例的战略欺骗方案，都是现代战争的巅峰之作。此外，如此大规模的海、陆、空三军协同，在人类历史上是第一次。",
+        "losses": {
+          "official": "D-Day 盟军伤亡约 1 万人，德军伤亡约 4000-9000 人。",
+          "academic": "整个诺曼底战役期间，盟军伤亡约 22.6 万，德军伤亡约 24 万，平民死亡约 2-3 万。这是一场极高烈度的消耗战。"
+        },
+        "impact": "诺曼底登陆的成功，彻底改变了二战的进程。它开辟了欧洲第二战场，迫使德军陷入东西两线作战的绝境。战后仅仅11个月，纳粹德国就宣布投降。这场战役不仅奠定了西方盟军在战后欧洲的政治地位，也为现代大规模两栖作战提供了终极蓝本。它是人类勇气的丰碑，也是跨国军事合作的最高典范。",
+        "images": [
+          "/maps/normandy-beaches.svg",
+          "/maps/normandy-advance.svg"
+        ],
+        "resources": [
+          {
+            "label": "诺曼底登陆官方纪念馆",
+            "url": "https://www.memorial-caen.fr/"
+          },
+          {
+            "label": "《拯救大兵瑞恩》- 极度真实的滩头还原",
+            "url": "https://www.imdb.com/title/tt0120815/"
+          },
+          {
+            "label": "大英百科全书-霸王行动详实记载",
+            "url": "https://www.britannica.com/event/Normandy-Invasion"
+          }
+        ]
+      }
+    },
+    {
+      "id": "maling",
+      "name": {
+        "zh": "马陵之战",
+        "en": "Battle of Maling",
+        "fr": "Bataille de Maling"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "前341",
+        "end": "前341",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "山东郯城",
+        "lat": 34.61,
+        "lng": 118.35
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "齐军 (孙膑)",
+          "strength": "约 10 万"
+        },
+        "sideB": {
+          "name": "魏军 (庞涓)",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "齐军大胜，魏将庞涓自尽，魏国失去霸权。",
+      "historicalSignificance": "著名的“减灶计”战例，确立了齐国的霸主地位。"
+    },
+    {
+      "id": "julu",
+      "name": {
+        "zh": "巨鹿之战",
+        "en": "Battle of Julu",
+        "fr": "Bataille de Julu"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "前207",
+        "end": "前207",
+        "duration": "约 1 个月"
+      },
+      "location": {
+        "name": "河北平乡",
+        "lat": 37.07,
+        "lng": 115.03
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "楚军 (项羽)",
+          "strength": "约 5 万"
+        },
+        "sideB": {
+          "name": "秦军 (章邯)",
+          "strength": "约 40 万"
+        }
+      },
+      "result": "项羽破釜沉舟，全歼秦军主力，秦朝名存实亡。",
+      "historicalSignificance": "中国古代战争史上最著名的以少胜多的歼灭战。"
+    },
+    {
+      "id": "guandu",
+      "name": {
+        "zh": "官渡之战",
+        "en": "Battle of Guandu",
+        "fr": "Bataille de Guandu"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "200",
+        "end": "200",
+        "duration": "半年"
+      },
+      "location": {
+        "name": "河南中牟",
+        "lat": 34.72,
+        "lng": 113.97
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "曹操",
+          "strength": "约 2 万"
+        },
+        "sideB": {
+          "name": "袁绍",
+          "strength": "约 11 万"
+        }
+      },
+      "result": "曹操奇袭乌巢，大败袁绍，奠定统一北方基础。",
+      "historicalSignificance": "东汉末年三大战役之一，战术奇袭的经典。"
+    },
+    {
+      "id": "kunyang",
+      "name": {
+        "zh": "昆阳之战",
+        "en": "Battle of Kunyang",
+        "fr": "Bataille de Kunyang"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "23",
+        "end": "23",
+        "duration": "数日"
+      },
+      "location": {
+        "name": "河南叶县",
+        "lat": 33.62,
+        "lng": 113.35
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "绿林军 (刘秀)",
+          "strength": "约 1 万"
+        },
+        "sideB": {
+          "name": "新莽军 (王寻)",
+          "strength": "约 42 万"
+        }
+      },
+      "result": "刘秀以少胜多，新莽主力崩溃，导致王莽政权灭亡。",
+      "historicalSignificance": "极高烈度的奇迹战役，展示了极佳的统帅力。"
+    },
+    {
+      "id": "feishui",
+      "name": {
+        "zh": "淝水之战",
+        "en": "Battle of Fei River",
+        "fr": "Bataille de la rivière Fei"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "383",
+        "end": "383",
+        "duration": "数日"
+      },
+      "location": {
+        "name": "安徽寿县",
+        "lat": 32.58,
+        "lng": 116.78
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "东晋 (谢安)",
+          "strength": "约 8 万"
+        },
+        "sideB": {
+          "name": "前秦 (苻坚)",
+          "strength": "约 87 万"
+        }
+      },
+      "result": "前秦军队由于内部混乱大败，苻坚南征失败。",
+      "historicalSignificance": "导致北方再度分裂，保全了汉文化在南方的延续。"
+    },
+    {
+      "id": "maling2",
+      "name": {
+        "zh": "长平之战",
+        "en": "Battle of Changping",
+        "fr": "Bataille de Changping"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "前262",
+        "end": "前260",
+        "duration": "2年"
+      },
+      "location": {
+        "name": "山西高平",
+        "lat": 35.8,
+        "lng": 112.92
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "秦军 (白起)",
+          "strength": "约 55 万"
+        },
+        "sideB": {
+          "name": "赵军 (赵括)",
+          "strength": "约 45 万"
+        }
+      },
+      "result": "秦军全歼赵军主力，坑杀40万赵兵，赵国国力大衰。",
+      "historicalSignificance": "中国古代规模最大的歼灭战，加速了秦统一进程。"
+    },
+    {
+      "id": "hulao",
+      "name": {
+        "zh": "虎牢关之战",
+        "en": "Battle of Hulao",
+        "fr": "Bataille de Hulao"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "621",
+        "end": "621",
+        "duration": "数月"
+      },
+      "location": {
+        "name": "河南荥阳",
+        "lat": 34.82,
+        "lng": 113.12
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "唐军 (李世民)",
+          "strength": "约 3.5 万"
+        },
+        "sideB": {
+          "name": "郑夏联军",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "李世民以围点打援战术，一举擒获王世充、窦建德。",
+      "historicalSignificance": "奠定了唐朝统一全国的胜局。"
+    },
+    {
+      "id": "jingnan",
+      "name": {
+        "zh": "靖难之役",
+        "en": "Jingnan Campaign",
+        "fr": "Campagne de Jingnan"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "1399",
+        "end": "1402",
+        "duration": "3年"
+      },
+      "location": {
+        "name": "华北、华东",
+        "lat": 32.04,
+        "lng": 118.78
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "燕王朱棣",
+          "strength": "约 10-20 万"
+        },
+        "sideB": {
+          "name": "明廷 (建文帝)",
+          "strength": "约 50-80 万"
+        }
+      },
+      "result": "朱棣夺取南京，称帝（明成祖）。",
+      "historicalSignificance": "中国历史上唯一的藩王叛乱成功案例。"
+    },
+    {
+      "id": "shanhai",
+      "name": {
+        "zh": "山海关之战",
+        "en": "Battle of Shanhai Pass",
+        "fr": "Bataille du col de Shanhai"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "1644",
+        "end": "1644",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "河北秦皇岛",
+        "lat": 40.01,
+        "lng": 119.75
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "清军 + 吴三桂",
+          "strength": "约 15 万"
+        },
+        "sideB": {
+          "name": "大顺军 (李自成)",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "清军大败李自成，清朝入主中原。",
+      "historicalSignificance": "改变了中国历史走向，清朝统治的开端。"
+    },
+    {
+      "id": "suishiyuan",
+      "name": {
+        "zh": "隋灭陈之战",
+        "en": "Sui Conquest of Chen",
+        "fr": "Conquête Sui de Chen"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "588",
+        "end": "589",
+        "duration": "4个月"
+      },
+      "location": {
+        "name": "长江下游",
+        "lat": 32.06,
+        "lng": 118.8
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "隋军",
+          "strength": "约 51 万"
+        },
+        "sideB": {
+          "name": "陈军",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "隋朝灭陈，中国重归统一。",
+      "historicalSignificance": "结束了长达数百年的分裂局面。"
+    },
+    {
+      "id": "tumu",
+      "name": {
+        "zh": "土木堡之变",
+        "en": "Tumu Crisis",
+        "fr": "Crise de Tumu"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "1449",
+        "end": "1449",
+        "duration": "数日"
+      },
+      "location": {
+        "name": "河北张家口",
+        "lat": 40.35,
+        "lng": 115.65
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "明军 (朱祁镇)",
+          "strength": "约 20-50 万"
+        },
+        "sideB": {
+          "name": "瓦剌军",
+          "strength": "约 2-5 万"
+        }
+      },
+      "result": "明军全军覆没，明英宗被俘。",
+      "historicalSignificance": "明朝由盛转衰的转折点。"
+    },
+    {
+      "id": "bohai",
+      "name": {
+        "zh": "鄱阳湖之战",
+        "en": "Battle of Lake Poyang",
+        "fr": "Bataille du lac Poyang"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "1363",
+        "end": "1363",
+        "duration": "36天"
+      },
+      "location": {
+        "name": "江西鄱阳湖",
+        "lat": 29.15,
+        "lng": 116.27
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "朱元璋",
+          "strength": "约 20 万"
+        },
+        "sideB": {
+          "name": "陈友谅",
+          "strength": "约 65 万"
+        }
+      },
+      "result": "朱元璋利用火攻全歼陈友谅主力。",
+      "historicalSignificance": "中世纪规模最大的水战，奠定明朝基业。"
+    },
+    {
+      "id": "maling3",
+      "name": {
+        "zh": "牧野之战",
+        "en": "Battle of Muye",
+        "fr": "Bataille de Muye"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "前1046",
+        "end": "前1046",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "河南新乡",
+        "lat": 35.3,
+        "lng": 113.9
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "周军 (姜子牙)",
+          "strength": "约 5 万"
+        },
+        "sideB": {
+          "name": "商军 (纣王)",
+          "strength": "约 17-70 万"
+        }
+      },
+      "result": "周军大胜，商朝灭亡。",
+      "historicalSignificance": "中国信史记载的第一次大规模战役。"
+    },
+    {
+      "id": "hangu",
+      "name": {
+        "zh": "函谷关之战",
+        "en": "Battle of Hangu Pass",
+        "fr": "Bataille du col de Hangu"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "前318",
+        "end": "前318",
+        "duration": "数月"
+      },
+      "location": {
+        "name": "河南灵宝",
+        "lat": 34.6,
+        "lng": 110.9
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "五国联军",
+          "strength": "约 20 万"
+        },
+        "sideB": {
+          "name": "秦军",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "秦军击退联军，稳固关中。",
+      "historicalSignificance": "合纵连横斗争的典型战例。"
+    },
+    {
+      "id": "yanmen",
+      "name": {
+        "zh": "雁门关之战",
+        "en": "Battle of Yanmen Pass",
+        "fr": "Bataille du col de Yanmen"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "980",
+        "end": "980",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "山西代县",
+        "lat": 39.18,
+        "lng": 112.87
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "北宋 (杨业)",
+          "strength": "约 数千"
+        },
+        "sideB": {
+          "name": "辽军",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "杨业率奇兵突袭，大败辽军。",
+      "historicalSignificance": "杨家将威震北疆的开端。"
+    },
+    {
+      "id": "ningyuan",
+      "name": {
+        "zh": "宁远之战",
+        "en": "Battle of Ningyuan",
+        "fr": "Bataille de Ningyuan"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "1626",
+        "end": "1626",
+        "duration": "2天"
+      },
+      "location": {
+        "name": "辽宁兴城",
+        "lat": 40.62,
+        "lng": 120.72
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "明军 (袁崇焕)",
+          "strength": "约 2 万"
+        },
+        "sideB": {
+          "name": "后金 (努尔哈赤)",
+          "strength": "约 6-13 万"
+        }
+      },
+      "result": "明军利用红夷大炮重创后金军，努尔哈赤受伤。",
+      "historicalSignificance": "明朝对后金取得的重大军事胜利。"
+    },
+    {
+      "id": "songshan",
+      "name": {
+        "zh": "松锦之战",
+        "en": "Battle of Song-Jin",
+        "fr": "Bataille de Song-Jin"
+      },
+      "category": "中国历代",
+      "time": {
+        "start": "1640",
+        "end": "1642",
+        "duration": "2年"
+      },
+      "location": {
+        "name": "辽宁锦州",
+        "lat": 41.1,
+        "lng": 121.1
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "清军 (皇太极)",
+          "strength": "约 10 万"
+        },
+        "sideB": {
+          "name": "明军 (洪承畴)",
+          "strength": "约 13 万"
+        }
+      },
+      "result": "清军围点打援，明军精锐全灭。",
+      "historicalSignificance": "明朝在关外的防御彻底崩溃。"
+    },
+    {
+      "id": "pingxingguan",
+      "name": {
+        "zh": "平型关大捷",
+        "en": "Battle of Pingxingguan",
+        "fr": "Bataille de Pingxingguan"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1937-09-25",
+        "end": "1937-09-25",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "山西灵丘",
+        "lat": 39.35,
+        "lng": 113.83
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "八路军 115 师",
+          "strength": "约 1.2 万"
+        },
+        "sideB": {
+          "name": "日军第 5 师团",
+          "strength": "约 4000 (运输队)"
+        }
+      },
+      "result": "八路军全歼日军精锐运输队，缴获大量物资。",
+      "historicalSignificance": "抗战以来中国军队取得的第一个大胜利，打破了日军不可战胜的神话。"
+    },
+    {
+      "id": "hundred_regiments",
+      "name": {
+        "zh": "百团大战",
+        "en": "Hundred Regiments Offensive",
+        "fr": "Offensive des cent régiments"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1940-08-20",
+        "end": "1940-12-15",
+        "duration": "3个月"
+      },
+      "location": {
+        "name": "华北地区",
+        "lat": 37.87,
+        "lng": 112.55
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "八路军",
+          "strength": "105 个团 (约 20 万)"
+        },
+        "sideB": {
+          "name": "侵华日军",
+          "strength": "约 20 万"
+        }
+      },
+      "result": "摧毁日军大量交通线和据点，沉重打击敌后统治。",
+      "historicalSignificance": "抗战时期八路军发动的规模最大、持续时间最长的进攻战役。"
+    },
+    {
+      "id": "liaoshen",
+      "name": {
+        "zh": "辽沈战役",
+        "en": "Liaoshen Campaign",
+        "fr": "Campagne de Liaoshen"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1948-09-12",
+        "end": "1948-11-02",
+        "duration": "52天"
+      },
+      "location": {
+        "name": "东北地区",
+        "lat": 41.8,
+        "lng": 123.4
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "东北野战军",
+          "strength": "约 70 万"
+        },
+        "sideB": {
+          "name": "国民党军",
+          "strength": "约 55 万"
+        }
+      },
+      "result": "解放全东北，歼灭敌军 47 万。",
+      "historicalSignificance": "三大战役之首，解放军首次在兵力上超过国民党军。"
+    },
+    {
+      "id": "huaihai",
+      "name": {
+        "zh": "淮海战役",
+        "en": "Huaihai Campaign",
+        "fr": "Campagne de Huaihai"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1948-11-06",
+        "end": "1949-01-10",
+        "duration": "66天"
+      },
+      "location": {
+        "name": "徐州为中心",
+        "lat": 34.26,
+        "lng": 117.18
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "华东、中原野战军",
+          "strength": "约 60 万"
+        },
+        "sideB": {
+          "name": "国民党军",
+          "strength": "约 80 万"
+        }
+      },
+      "result": "全歼敌军主力 55 万，解放长江以北。",
+      "historicalSignificance": "三大战役中歼敌最多、影响最深远的一战。"
+    },
+    {
+      "id": "pingjin",
+      "name": {
+        "zh": "平津战役",
+        "en": "Pingjin Campaign",
+        "fr": "Campagne de Pingjin"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1948-11-29",
+        "end": "1949-01-31",
+        "duration": "64天"
+      },
+      "location": {
+        "name": "北平、天津、张家口",
+        "lat": 39.9,
+        "lng": 116.4
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "东北、华北野战军",
+          "strength": "约 100 万"
+        },
+        "sideB": {
+          "name": "国民党军 (傅作义)",
+          "strength": "约 60 万"
+        }
+      },
+      "result": "北平和平解放，天津武力攻克，歼敌 52 万。",
+      "historicalSignificance": "基本解放华北全境。"
+    },
+    {
+      "id": "jinsha",
+      "name": {
+        "zh": "巧渡金沙江",
+        "en": "Crossing the Jinsha River",
+        "fr": "Traversée de la rivière Jinsha"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1935-05",
+        "end": "1935-05",
+        "duration": "9天"
+      },
+      "location": {
+        "name": "云南、四川交界",
+        "lat": 26.1,
+        "lng": 102.5
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "中国工农红军",
+          "strength": "约 3 万"
+        },
+        "sideB": {
+          "name": "国民党追击军",
+          "strength": "约 数十万"
+        }
+      },
+      "result": "红军成功摆脱国民党军队的围追堵截。",
+      "historicalSignificance": "长征中跳出敌人包围圈的决定性胜利。"
+    },
+    {
+      "id": "luding",
+      "name": {
+        "zh": "飞夺泸定桥",
+        "en": "Luding Bridge Crossing",
+        "fr": "Prise du pont de Luding"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1935-05-29",
+        "end": "1935-05-29",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "四川泸定",
+        "lat": 29.91,
+        "lng": 102.23
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "红二团",
+          "strength": "22 名突击队员"
+        },
+        "sideB": {
+          "name": "国民党守军",
+          "strength": "约 2 个团"
+        }
+      },
+      "result": "突击队冒着炮火爬铁索夺取桥头，主力过河。",
+      "historicalSignificance": "红军长征中极其惊险的英雄主义壮举。"
+    },
+    {
+      "id": "zhiluo",
+      "name": {
+        "zh": "直罗镇战役",
+        "en": "Battle of Zhiluo Town",
+        "fr": "Bataille de Zhiluo"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1935-11",
+        "end": "1935-11",
+        "duration": "数日"
+      },
+      "location": {
+        "name": "陕西富县",
+        "lat": 36.0,
+        "lng": 109.1
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "红一方面军",
+          "strength": "约 1.5 万"
+        },
+        "sideB": {
+          "name": "国民党军 (东北军)",
+          "strength": "约 3 万"
+        }
+      },
+      "result": "红军全歼敌 109 师，击溃 106 师。",
+      "historicalSignificance": "给党中央落脚陕北举行了“奠基礼”。"
+    },
+    {
+      "id": "shangganling",
+      "name": {
+        "zh": "诺曼底登陆",
+        "en": "Battle of Triangle Hill",
+        "fr": "Bataille de Triangle Hill"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1952-10-14",
+        "end": "1952-11-25",
+        "duration": "43天"
+      },
+      "location": {
+        "name": "朝鲜五圣山",
+        "lat": 38.33,
+        "lng": 127.47
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "中国人民志愿军",
+          "strength": "约 4 万"
+        },
+        "sideB": {
+          "name": "联合国军 (美、韩)",
+          "strength": "约 6 万"
+        }
+      },
+      "result": "志愿军守住了阵地，美军被迫停止进攻。",
+      "historicalSignificance": "抗美援朝战争中最惨烈的阵地战，打出了国威军威。"
+    },
+    {
+      "id": "changjin",
+      "name": {
+        "zh": "长津湖战役",
+        "en": "Battle of Chosin Reservoir",
+        "fr": "Bataille du réservoir de Chosin"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1950-11-27",
+        "end": "1950-12-24",
+        "duration": "28天"
+      },
+      "location": {
+        "name": "朝鲜长津湖",
+        "lat": 40.48,
+        "lng": 127.25
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "中国人民志愿军 9 兵团",
+          "strength": "约 15 万"
+        },
+        "sideB": {
+          "name": "美国陆战 1 师等",
+          "strength": "约 3 万"
+        }
+      },
+      "result": "志愿军将美军赶出北朝鲜东部，但伤亡极大。",
+      "historicalSignificance": "抗美援朝第二次战役东线转折点，扭转了朝鲜半岛局势。"
+    },
+    {
+      "id": "menglianggu",
+      "name": {
+        "zh": "孟良崮战役",
+        "en": "Battle of Menglianggu",
+        "fr": "Bataille de Menglianggu"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1947-05-13",
+        "end": "1947-05-16",
+        "duration": "3天"
+      },
+      "location": {
+        "name": "山东蒙阴",
+        "lat": 35.53,
+        "lng": 117.93
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "华东野战军",
+          "strength": "约 27 万"
+        },
+        "sideB": {
+          "name": "国民党军整编 74 师",
+          "strength": "约 3.2 万"
+        }
+      },
+      "result": "解放军“虎口拔牙”，全歼国民党王牌 74 师。",
+      "historicalSignificance": "粉碎了国民党对山东的重点进攻。"
+    },
+    {
+      "id": "dabieshan",
+      "name": {
+        "zh": "挺进大别山",
+        "en": "Marching into the Dabie Mountains",
+        "fr": "Marche vers les montagnes Dabie"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1947-08",
+        "end": "1947-09",
+        "duration": "1个月"
+      },
+      "location": {
+        "name": "鄂豫皖交界",
+        "lat": 31.2,
+        "lng": 115.5
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "中原野战军 (刘邓)",
+          "strength": "约 12 万"
+        },
+        "sideB": {
+          "name": "国民党军",
+          "strength": "约 数十万"
+        }
+      },
+      "result": "刘邓大军像尖刀插入敌腹地，建立根据地。",
+      "historicalSignificance": "解放战争由战略防御转入战略进攻的标志。"
+    },
+    {
+      "id": "nanjing",
+      "name": {
+        "zh": "渡江战役",
+        "en": "Yangtze River Crossing Campaign",
+        "fr": "Campagne de la traversée du Yangtze"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1949-04-20",
+        "end": "1949-06-02",
+        "duration": "43天"
+      },
+      "location": {
+        "name": "长江下游",
+        "lat": 32.06,
+        "lng": 118.8
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "第二、三、四野战军",
+          "strength": "约 100 万"
+        },
+        "sideB": {
+          "name": "国民党军",
+          "strength": "约 70 万"
+        }
+      },
+      "result": "解放南京、上海，宣告国民党统治覆灭。",
+      "historicalSignificance": "解放全中国的决定性战役。"
+    },
+    {
+      "id": "yanan",
+      "name": {
+        "zh": "延安保卫战",
+        "en": "Defense of Yan'an",
+        "fr": "Défense de Yan'an"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1947-03",
+        "end": "1948-04",
+        "duration": "1年"
+      },
+      "location": {
+        "name": "陕北延安",
+        "lat": 36.6,
+        "lng": 109.5
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "西北野战军",
+          "strength": "约 2.6 万"
+        },
+        "sideB": {
+          "name": "国民党军 (胡宗南)",
+          "strength": "约 23 万"
+        }
+      },
+      "result": "主动撤出延安，在运动战中消灭敌人，最终收复延安。",
+      "historicalSignificance": "展示了毛泽东杰出的军事指挥艺术。"
+    },
+    {
+      "id": "tashan",
+      "name": {
+        "zh": "塔山阻击战",
+        "en": "Battle of Tashan",
+        "fr": "Bataille de Tashan"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1948-10-10",
+        "end": "1948-10-15",
+        "duration": "6天"
+      },
+      "location": {
+        "name": "辽宁葫芦岛",
+        "lat": 40.6,
+        "lng": 120.8
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "东北野战军 4 纵等",
+          "strength": "约 8 万"
+        },
+        "sideB": {
+          "name": "国民党东进兵团",
+          "strength": "约 11 万"
+        }
+      },
+      "result": "解放军死守阵地，确保了锦州的攻克。",
+      "historicalSignificance": "辽沈战役中最关键、最惨烈的阻击战。"
+    },
+    {
+      "id": "longyuan",
+      "name": {
+        "zh": "龙源口大捷",
+        "en": "Battle of Longyuankou",
+        "fr": "Bataille de Longyuankou"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1928-06",
+        "end": "1928-06",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "江西永新",
+        "lat": 26.9,
+        "lng": 114.2
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "红四军 (朱毛)",
+          "strength": "约 数千"
+        },
+        "sideB": {
+          "name": "国民党赣军",
+          "strength": "约 2 个旅"
+        }
+      },
+      "result": "红军大败赣军，巩固了井冈山根据地。",
+      "historicalSignificance": "井冈山斗争全盛时期的重要战役。"
+    },
+    {
+      "id": "qinghuabian",
+      "name": {
+        "zh": "青化砭战役",
+        "en": "Battle of Qinghuabian",
+        "fr": "Bataille de Qinghuabian"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1947-03-25",
+        "end": "1947-03-25",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "陕北延安",
+        "lat": 36.8,
+        "lng": 109.7
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "西北野战军",
+          "strength": "约 1.5 万"
+        },
+        "sideB": {
+          "name": "国民党 31 旅",
+          "strength": "约 3000"
+        }
+      },
+      "result": "红军仅用 1 小时 40 分全歼敌军。",
+      "historicalSignificance": "撤离延安后的首战大捷，极大鼓舞了士气。"
+    },
+    {
+      "id": "shanzhibao",
+      "name": {
+        "zh": "山城堡战役",
+        "en": "Battle of Shanzhibao",
+        "fr": "Bataille de Shanzhibao"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1936-11-21",
+        "end": "1936-11-21",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "甘肃环县",
+        "lat": 36.6,
+        "lng": 107.3
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "红军三大主力联军",
+          "strength": "约 3 万"
+        },
+        "sideB": {
+          "name": "国民党军 78 师",
+          "strength": "约 1 万"
+        }
+      },
+      "result": "红军三方面军会师后的第一仗，全歼敌 1 个旅又 2 个连。",
+      "historicalSignificance": "宣告了蒋介石“围剿”红军的彻底破产。"
+    },
+    {
+      "id": "xinhuadian",
+      "name": {
+        "zh": "新华店战役",
+        "en": "Battle of Xinhuadian",
+        "fr": "Bataille de Xinhuadian"
+      },
+      "category": "解放军",
+      "time": {
+        "start": "1946-06",
+        "end": "1946-06",
+        "duration": "数日"
+      },
+      "location": {
+        "name": "湖北大悟",
+        "lat": 31.6,
+        "lng": 114.1
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "中原军区红军",
+          "strength": "约 5 万"
+        },
+        "sideB": {
+          "name": "国民党军",
+          "strength": "约 30 万"
+        }
+      },
+      "result": "红军成功突破重围，开始中原突围。",
+      "historicalSignificance": "解放战争正式爆发的标志性突围战。"
+    },
+    {
+      "id": "stalingrad",
+      "name": {
+        "zh": "斯大林格勒战役",
+        "en": "Battle of Stalingrad",
+        "fr": "Bataille de Stalingrad"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1942-07-17",
+        "end": "1943-02-02",
+        "duration": "199天"
+      },
+      "location": {
+        "name": "苏联斯大林格勒",
+        "lat": 48.7,
+        "lng": 44.5
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "苏联红军",
+          "strength": "约 110 万"
+        },
+        "sideB": {
+          "name": "纳粹德国 + 仆从国",
+          "strength": "约 100 万"
+        }
+      },
+      "result": "苏军全歼德军第 6 集团军，德军元气大伤。",
+      "historicalSignificance": "二战欧洲战场的根本转折点。"
+    },
+    {
+      "id": "marathon",
+      "name": {
+        "zh": "马拉松战役",
+        "en": "Battle of Marathon",
+        "fr": "Bataille de Marathon"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "前490",
+        "end": "前490",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "希腊马拉松平原",
+        "lat": 38.12,
+        "lng": 23.95
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "雅典联军",
+          "strength": "约 1.1 万"
+        },
+        "sideB": {
+          "name": "波斯帝国大军",
+          "strength": "约 2.5 万"
+        }
+      },
+      "result": "雅典人以少胜多，击败波斯入侵。",
+      "historicalSignificance": "保卫了希腊文明，马拉松运动的起源。"
+    },
+    {
+      "id": "cannae",
+      "name": {
+        "zh": "坎尼战役",
+        "en": "Battle of Cannae",
+        "fr": "Bataille de Cannes"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "前216",
+        "end": "前216",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "意大利坎尼",
+        "lat": 41.29,
+        "lng": 16.15
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "迦太基 (汉尼拔)",
+          "strength": "约 5 万"
+        },
+        "sideB": {
+          "name": "罗马共和国",
+          "strength": "约 8.6 万"
+        }
+      },
+      "result": "汉尼拔完成人类史上最完美的双层包围歼灭战。",
+      "historicalSignificance": "战术教科书级的歼灭战。"
+    },
+    {
+      "id": "austerlitz",
+      "name": {
+        "zh": "奥斯特里茨战役",
+        "en": "Battle of Austerlitz",
+        "fr": "Bataille d'Austerlitz"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1805-12-02",
+        "end": "1805-12-02",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "奥地利 (今捷克)",
+        "lat": 49.12,
+        "lng": 16.76
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "法兰西第一帝国",
+          "strength": "约 7.3 万"
+        },
+        "sideB": {
+          "name": "俄奥联军",
+          "strength": "约 8.5 万"
+        }
+      },
+      "result": "拿破仑通过诱敌深入，击溃反法联军。",
+      "historicalSignificance": "拿破仑军事生涯的最高峰，史称“三皇之战”。"
+    },
+    {
+      "id": "waterloo",
+      "name": {
+        "zh": "滑铁卢战役",
+        "en": "Battle of Waterloo",
+        "fr": "Bataille de Waterloo"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1815-06-18",
+        "end": "1815-06-18",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "比利时滑铁卢",
+        "lat": 50.68,
+        "lng": 4.41
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "法军 (拿破仑)",
+          "strength": "约 7.2 万"
+        },
+        "sideB": {
+          "name": "英普联军 (威灵顿)",
+          "strength": "约 11.8 万"
+        }
+      },
+      "result": "法军战败，拿破仑从此退出历史舞台。",
+      "historicalSignificance": "结束了拿破仑战争时代。"
+    },
+    {
+      "id": "midway",
+      "name": {
+        "zh": "中途岛海战",
+        "en": "Battle of Midway",
+        "fr": "Bataille de Midway"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1942-06-04",
+        "end": "1942-06-07",
+        "duration": "3天"
+      },
+      "location": {
+        "name": "太平洋中途岛",
+        "lat": 28.2,
+        "lng": -177.37
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "美国海军",
+          "strength": "3 艘航母"
+        },
+        "sideB": {
+          "name": "日本海军",
+          "strength": "4 艘航母"
+        }
+      },
+      "result": "美军击沉日军 4 艘航母，日军元气大伤。",
+      "historicalSignificance": "太平洋战争的决定性转折点。"
+    },
+    {
+      "id": "kursk",
+      "name": {
+        "zh": "库尔斯克战役",
+        "en": "Battle of Kursk",
+        "fr": "Bataille de Koursk"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1943-07-05",
+        "end": "1943-08-23",
+        "duration": "50天"
+      },
+      "location": {
+        "name": "苏联库尔斯克",
+        "lat": 51.7,
+        "lng": 36.2
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "苏联红军",
+          "strength": "约 190 万"
+        },
+        "sideB": {
+          "name": "纳粹德国",
+          "strength": "约 90 万"
+        }
+      },
+      "result": "苏军挫败德军最后一次大规模进攻。",
+      "historicalSignificance": "人类历史上规模最大的坦克会战。"
+    },
+    {
+      "id": "verdun",
+      "name": {
+        "zh": "凡尔登战役",
+        "en": "Battle of Verdun",
+        "fr": "Bataille de Verdun"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1916-02-21",
+        "end": "1916-12-18",
+        "duration": "10个月"
+      },
+      "location": {
+        "name": "法国凡尔登",
+        "lat": 49.16,
+        "lng": 5.38
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "法军",
+          "strength": "约 110 万"
+        },
+        "sideB": {
+          "name": "德军",
+          "strength": "约 125 万"
+        }
+      },
+      "result": "法军守住了阵地，德军损耗惨重。",
+      "historicalSignificance": "一战中最惨烈的阵地战，被称为“凡尔登绞肉机”。"
+    },
+    {
+      "id": "somme",
+      "name": {
+        "zh": "索姆河战役",
+        "en": "Battle of the Somme",
+        "fr": "Bataille de la Somme"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1916-07-01",
+        "end": "1916-11-18",
+        "duration": "4.5个月"
+      },
+      "location": {
+        "name": "法国索姆河",
+        "lat": 49.9,
+        "lng": 2.7
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "英法联军",
+          "strength": "约 150 万"
+        },
+        "sideB": {
+          "name": "德军",
+          "strength": "约 100 万"
+        }
+      },
+      "result": "双方伤亡合计超 130 万，战线移动微小。",
+      "historicalSignificance": "坦克首次投入实战，现代消耗战的典型。"
+    },
+    {
+      "id": "el_alamein",
+      "name": {
+        "zh": "阿拉曼战役",
+        "en": "Battle of El Alamein",
+        "fr": "Bataille d'El Alamein"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1942-10-23",
+        "end": "1942-11-11",
+        "duration": "19天"
+      },
+      "location": {
+        "name": "埃及阿拉曼",
+        "lat": 30.83,
+        "lng": 28.95
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "英军 (蒙哥马利)",
+          "strength": "约 19 万"
+        },
+        "sideB": {
+          "name": "轴心国 (隆美尔)",
+          "strength": "约 11 万"
+        }
+      },
+      "result": "英军击溃德意联军，扭转北非战局。",
+      "historicalSignificance": "北非战场的转折点。"
+    },
+    {
+      "id": "guadalcanal",
+      "name": {
+        "zh": "瓜岛战役",
+        "en": "Battle of Guadalcanal",
+        "fr": "Bataille de Guadalcanal"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1942-08-07",
+        "end": "1943-02-09",
+        "duration": "6个月"
+      },
+      "location": {
+        "name": "瓜达尔卡纳尔岛",
+        "lat": -9.44,
+        "lng": 159.97
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "盟军 (美军为主)",
+          "strength": "约 6 万"
+        },
+        "sideB": {
+          "name": "日军",
+          "strength": "约 3.6 万"
+        }
+      },
+      "result": "美军成功夺岛，日军转入战略防御。",
+      "historicalSignificance": "太平洋战场的战略反攻起点。"
+    },
+    {
+      "id": "ardennes",
+      "name": {
+        "zh": "阿登战役",
+        "en": "Battle of the Bulge",
+        "fr": "Bataille des Ardennes"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1944-12-16",
+        "end": "1945-01-25",
+        "duration": "40天"
+      },
+      "location": {
+        "name": "阿登森林",
+        "lat": 50.25,
+        "lng": 5.92
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "盟军 (美、英)",
+          "strength": "约 80 万"
+        },
+        "sideB": {
+          "name": "纳粹德国",
+          "strength": "约 40 万"
+        }
+      },
+      "result": "德军最后一次大规模反扑失败，资源耗尽。",
+      "historicalSignificance": "西线德军最后的垂死挣扎。"
+    },
+    {
+      "id": "okinawa",
+      "name": {
+        "zh": "冲绳战役",
+        "en": "Battle of Okinawa",
+        "fr": "Bataille d'Okinawa"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1945-04-01",
+        "end": "1945-06-22",
+        "duration": "82天"
+      },
+      "location": {
+        "name": "日本冲绳",
+        "lat": 26.3,
+        "lng": 127.8
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "美军",
+          "strength": "约 54 万"
+        },
+        "sideB": {
+          "name": "日军",
+          "strength": "约 10 万"
+        }
+      },
+      "result": "美军付出惨重代价夺岛，日军几乎全灭。",
+      "historicalSignificance": "二战太平洋战场最后一场大规模登陆战。"
+    },
+    {
+      "id": "leyte",
+      "name": {
+        "zh": "莱特湾海战",
+        "en": "Battle of Leyte Gulf",
+        "fr": "Bataille du golfe de Leyte"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1944-10-23",
+        "end": "1944-10-26",
+        "duration": "4天"
+      },
+      "location": {
+        "name": "菲律宾莱特湾",
+        "lat": 10.5,
+        "lng": 125.0
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "美国海军",
+          "strength": "约 800 艘舰艇"
+        },
+        "sideB": {
+          "name": "日本海军",
+          "strength": "约 70 艘舰艇"
+        }
+      },
+      "result": "日军海军主力被彻底摧毁，神风特攻队首次出现。",
+      "historicalSignificance": "历史上规模最大的海战。"
+    },
+    {
+      "id": "tsushima",
+      "name": {
+        "zh": "对马海峡海战",
+        "en": "Battle of Tsushima",
+        "fr": "Bataille de Tsushima"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1905-05-27",
+        "end": "1905-05-28",
+        "duration": "2天"
+      },
+      "location": {
+        "name": "对马海峡",
+        "lat": 34.3,
+        "lng": 129.5
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "日本联合舰队",
+          "strength": "4 艘战列舰等"
+        },
+        "sideB": {
+          "name": "俄国第二太平洋舰队",
+          "strength": "8 艘战列舰等"
+        }
+      },
+      "result": "日军几乎全歼俄国舰队。",
+      "historicalSignificance": "近代史上东方国家首次在海战中彻底击败西方大国。"
+    },
+    {
+      "id": "trafalgar",
+      "name": {
+        "zh": "特拉法尔加海战",
+        "en": "Battle of Trafalgar",
+        "fr": "Bataille de Trafalgar"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1805-10-21",
+        "end": "1805-10-21",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "西班牙特拉法尔加角",
+        "lat": 36.18,
+        "lng": -6.03
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "英国皇家海军",
+          "strength": "27 艘战列舰"
+        },
+        "sideB": {
+          "name": "法西联合舰队",
+          "strength": "33 艘战列舰"
+        }
+      },
+      "result": "纳尔逊牺牲但击溃联军，确立英国百年海权。",
+      "historicalSignificance": "拿破仑失去入侵英国的机会。"
+    },
+    {
+      "id": "jutland",
+      "name": {
+        "zh": "日德兰海战",
+        "en": "Battle of Jutland",
+        "fr": "Bataille du Jutland"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1916-05-31",
+        "end": "1916-06-01",
+        "duration": "2天"
+      },
+      "location": {
+        "name": "北海日德兰半岛",
+        "lat": 56.0,
+        "lng": 6.0
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "英国大舰队",
+          "strength": "151 艘舰艇"
+        },
+        "sideB": {
+          "name": "德国公海舰队",
+          "strength": "99 艘舰艇"
+        }
+      },
+      "result": "规模巨大但结果不分胜负，德军未能打破封锁。",
+      "historicalSignificance": "一战规模最大的海战，无畏舰时代的巅峰。"
+    },
+    {
+      "id": "adwa",
+      "name": {
+        "zh": "阿杜瓦战役",
+        "en": "Battle of Adwa",
+        "fr": "Bataille d'Adoua"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1896-03-01",
+        "end": "1896-03-01",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "埃塞俄比亚阿杜瓦",
+        "lat": 14.17,
+        "lng": 38.9
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "埃塞俄比亚帝国",
+          "strength": "约 10 万"
+        },
+        "sideB": {
+          "name": "意大利王国",
+          "strength": "约 1.8 万"
+        }
+      },
+      "result": "埃军击败意军，意军被迫承认其独立。",
+      "historicalSignificance": "近代非洲反殖民斗争的罕见胜利。"
+    },
+    {
+      "id": "isandlwana",
+      "name": {
+        "zh": "伊散德尔瓦纳战役",
+        "en": "Battle of Isandlwana",
+        "fr": "Bataille d'Isandlwana"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1879-01-22",
+        "end": "1879-01-22",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "南非伊散德尔瓦纳",
+        "lat": -28.35,
+        "lng": 30.65
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "祖鲁王国",
+          "strength": "约 2 万"
+        },
+        "sideB": {
+          "name": "英国远征军",
+          "strength": "约 1800"
+        }
+      },
+      "result": "祖鲁勇士用长矛盾牌全歼英国正规军。",
+      "historicalSignificance": "英军在殖民战争中遭受的最惨重失败之一。"
+    },
+    {
+      "id": "dien_bien_phu",
+      "name": {
+        "zh": "奠边府战役",
+        "en": "Battle of Dien Bien Phu",
+        "fr": "Bataille de Diên Biên Phu"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1954-03-13",
+        "end": "1954-05-07",
+        "duration": "55天"
+      },
+      "location": {
+        "name": "越南奠边府",
+        "lat": 21.38,
+        "lng": 103.02
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "越南独立同盟会",
+          "strength": "约 5 万"
+        },
+        "sideB": {
+          "name": "法军",
+          "strength": "约 1.6 万"
+        }
+      },
+      "result": "越军攻克要塞，法军全军覆没。",
+      "historicalSignificance": "宣告了法国在印度支那统治的终结。"
+    },
+    {
+      "id": "borodino",
+      "name": {
+        "zh": "博罗季诺战役",
+        "en": "Battle of Borodino",
+        "fr": "Bataille de la Moskova"
+      },
+      "category": "外国经典",
+      "time": {
+        "start": "1812-09-07",
+        "end": "1812-09-07",
+        "duration": "1天"
+      },
+      "location": {
+        "name": "俄罗斯博罗季诺",
+        "lat": 55.52,
+        "lng": 35.82
+      },
+      "belligerents": {
+        "sideA": {
+          "name": "法兰西第一帝国",
+          "strength": "约 13 万"
+        },
+        "sideB": {
+          "name": "俄罗斯帝国",
+          "strength": "约 12 万"
+        }
+      },
+      "result": "法军获胜但代价惨重，俄军有组织撤退。",
+      "historicalSignificance": "拿破仑征俄战争中最血腥的一战，加速了法军的崩溃。"
+    }
+  ]
+}

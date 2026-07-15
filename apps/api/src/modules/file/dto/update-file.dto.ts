@@ -1,0 +1,20 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsOptional, IsString } from 'class-validator';
+
+export class UpdateFileDto {
+  @ApiPropertyOptional({ description: '文件名称' })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiPropertyOptional({ description: '文件夹ID' })
+  @IsString()
+  @IsOptional()
+  folderId?: string;
+
+  @ApiPropertyOptional({ description: '标签', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
+}

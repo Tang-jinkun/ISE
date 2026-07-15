@@ -1,0 +1,14 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#f0f4f8" />
+  <path d="M100,100 L700,100 L700,500 L100,500 Z" fill="#fff" stroke="#94a3b8" stroke-width="2" stroke-dasharray="10,5" />
+  <text x="400" y="50" text-anchor="middle" font-family="Arial" font-size="24" fill="#1e293b" font-weight="bold">解放巴黎 (Liberation of Paris, 1944.08.25)</text>
+  <path d="M150,150 L350,250 L600,350" stroke="#ef4444" stroke-width="10" marker-end="url(#arrow)" />
+  <text x="350" y="230" text-anchor="middle" font-family="Arial" font-size="20" fill="#b91c1c">眼镜蛇行动 (Operation Cobra)</text>
+  <path d="M600,350 L750,550" stroke="#ef4444" stroke-width="6" stroke-dasharray="10,5" marker-end="url(#arrow)" />
+  <text x="650" y="500" text-anchor="middle" font-family="Arial" font-size="16" fill="#b91c1c">进军巴黎</text>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+</svg>

@@ -1,0 +1,13 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#f0f4f8" />
+  <circle cx="400" cy="300" r="150" fill="#ef4444" opacity="0.2" />
+  <path d="M300,300 L500,300" stroke="#ef4444" stroke-width="8" stroke-dasharray="10,5" />
+  <text x="400" y="280" text-anchor="middle" font-family="Arial" font-size="24" fill="#b91c1c" font-weight="bold">火烧赤壁 (乌林)</text>
+  <path d="M100,300 L300,300" stroke="#3b82f6" stroke-width="4" marker-end="url(#arrow)" />
+  <text x="120" y="330" font-family="Arial" font-size="16" fill="#1e3a8a">黄盖火船</text>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+</svg>

@@ -1,0 +1,99 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "login": "登录/注册",
+    "logout": "退出登录",
+    "workspace": "工作台",
+    "profile": "个人信息",
+    "backToHome": "返回首页"
+  },
+  "home": {
+    "title": "地理场景编辑器",
+    "createNow": "立即创作",
+    "hero": {
+      "title": "叙述地理 事绘场景",
+      "subtitle": "在线创作 · 素材共享 · 团队协作 · 共享浏览",
+      "experience": "体验场景创作",
+      "enterSpace": "进入个人空间"
+    },
+    "feature1": {
+      "tag": "地理场景模拟",
+      "title": "轻松构建场景",
+      "desc": "在线地理场景编辑器，实现场景在时间、地点、人物、事物、事件、现象、场景等信息要素方面的动态地理模拟。所见即所得的编辑体验，让您的创意快速落地。",
+      "button": "立即使用"
+    },
+    "feature2": {
+      "tag": "地理场景浏览",
+      "title": "提升场景审阅效率",
+      "desc": "通过地理场景编辑器构建的场景，可以自由分享，在网页上流畅浏览。支持多人协作与评论，让团队沟通更加高效。",
+      "button": "立即上传"
+    },
+    "stats": {
+      "users": "注册用户",
+      "scenes": "场景创建",
+      "assets": "共享素材"
+    },
+    "productivity": {
+      "title": "加速您的创作流",
+      "subtitle": "为专业地理场景设计而生的强大工具集",
+      "item1": {
+        "title": "AI 辅助生成",
+        "desc": "通过自然语言描述自动生成地形与场景元素，释放无限创意。"
+      },
+      "item2": {
+        "title": "实时协同",
+        "desc": "支持多人同时在线编辑，更改实时同步，团队协作无缝衔接。"
+      },
+      "item3": {
+        "title": "多格式导出",
+        "desc": "支持导出为 GLB, USDZ 等多种通用 3D 格式，适配各类渲染引擎。"
+      }
+    },
+    "code": {
+      "title": "开发者友好",
+      "subtitle": "通过 API 集成场景能力",
+      "comment": "// 初始化场景引擎"
+    },
+    "cta": {
+      "title": "准备好开始了吗？",
+      "subtitle": "加入数千名创作者，开始构建您的第一个智能地理场景。",
+      "button": "免费注册"
+    },
+    "footer": "© 2025 地理场景编辑器. All rights reserved."
+  },
+  "tracks": {
+    "video": "视频轨",
+    "audio": "音频轨",
+    "text": "字幕轨",
+    "geojson": "地理轨",
+    "picture": "图片轨",
+    "marker": "标注轨"
+  },
+  "notFound": {
+    "title": "404",
+    "subtitle": "页面未找到",
+    "desc": "抱歉，您访问的页面似乎迷失在浩瀚的星空中了。请检查链接或返回主页。"
+  },
+  "auth": {
+    "loginTitle": "登录",
+    "registerTitle": "注册",
+    "loginDesc": "欢迎回来，请登录您的账号",
+    "registerDesc": "创建一个新账号开始使用",
+    "username": "用户名",
+    "email": "邮箱",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "submitLogin": "登录",
+    "submitRegister": "注册",
+    "errors": {
+      "usernameRequired": "用户名为必填项",
+      "usernameMin": "用户名至少需要2个字符",
+      "emailRequired": "邮箱为必填项",
+      "emailInvalid": "请输入有效的邮箱地址",
+      "passwordRequired": "密码为必填项",
+      "passwordMin": "密码至少需要6个字符",
+      "confirmPasswordRequired": "请确认密码",
+      "passwordMismatch": "两次输入的密码不一致"
+    }
+  }
+}

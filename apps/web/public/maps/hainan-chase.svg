@@ -1,0 +1,12 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#f0f4f8" />
+  <path d="M100,100 L100,500 L700,500 L700,100 Z" fill="#d1fae5" stroke="#059669" stroke-width="4" />
+  <text x="400" y="300" text-anchor="middle" font-family="Arial" font-size="30" fill="#065f46" font-weight="bold">海南全境解放 (1950.05.01)</text>
+  <path d="M400,150 L400,450" stroke="#ef4444" stroke-width="8" marker-end="url(#arrow)" />
+  <text x="400" y="480" text-anchor="middle" font-family="Arial" font-size="20" fill="#b91c1c">全岛追击 (直抵三亚)</text>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+</svg>

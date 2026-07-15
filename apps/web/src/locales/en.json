@@ -1,0 +1,99 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "login": "Login / Register",
+    "logout": "Logout",
+    "workspace": "Workspace",
+    "profile": "Profile",
+    "backToHome": "Back to Home"
+  },
+  "home": {
+    "title": "Geo-Scene Editor",
+    "createNow": "Create Now",
+    "hero": {
+      "title": "Narrate Geography, Paint Scenes",
+      "subtitle": "Online Creation · Material Sharing · Team Collaboration · Shared Browsing",
+      "experience": "Try Scene Creation",
+      "enterSpace": "Enter Personal Space"
+    },
+    "feature1": {
+      "tag": "Geo-Scene Simulation",
+      "title": "Build Scenes Easily",
+      "desc": "An online geographic scene editor that enables dynamic simulation of scenes in terms of time, location, characters, objects, events, phenomena, and other information elements. WYSIWYG editing experience lets your creativity land quickly.",
+      "button": "Use Now"
+    },
+    "feature2": {
+      "tag": "Geo-Scene Browsing",
+      "title": "Improve Review Efficiency",
+      "desc": "Scenes built with the Geo-Scene Editor can be freely shared and browsed smoothly on the web. Supports multi-person collaboration and comments, making team communication more efficient.",
+      "button": "Upload Now"
+    },
+    "stats": {
+      "users": "Users",
+      "scenes": "Scenes Created",
+      "assets": "Shared Assets"
+    },
+    "productivity": {
+      "title": "Accelerate Your Workflow",
+      "subtitle": "Powerful tools designed for professional geographic scene design",
+      "item1": {
+        "title": "AI Generation",
+        "desc": "Automatically generate terrain and scene elements via natural language descriptions."
+      },
+      "item2": {
+        "title": "Real-time Collab",
+        "desc": "Support multi-person online editing with real-time sync for seamless teamwork."
+      },
+      "item3": {
+        "title": "Multi-format Export",
+        "desc": "Support export to GLB, USDZ, and other common 3D formats for any renderer."
+      }
+    },
+    "code": {
+      "title": "Developer Friendly",
+      "subtitle": "Integrate scene capabilities via API",
+      "comment": "// Initialize Scene Engine"
+    },
+    "cta": {
+      "title": "Ready to get started?",
+      "subtitle": "Join thousands of creators and start building your first intelligent geographic scene.",
+      "button": "Sign Up Free"
+    },
+    "footer": "© 2025 Geo-Scene Editor. All rights reserved."
+  },
+  "tracks": {
+    "video": "Video Track",
+    "audio": "Audio Track",
+    "text": "Subtitle Track",
+    "geojson": "Geo Track",
+    "picture": "Image Track",
+    "marker": "Marker Track"
+  },
+  "notFound": {
+    "title": "404",
+    "subtitle": "Page Not Found",
+    "desc": "Sorry, the page you are looking for seems to be lost in the vast starry sky. Please check the link or return to the home page."
+  },
+  "auth": {
+    "loginTitle": "Login",
+    "registerTitle": "Register",
+    "loginDesc": "Welcome back, please login to your account",
+    "registerDesc": "Create a new account to get started",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "submitLogin": "Login",
+    "submitRegister": "Register",
+    "errors": {
+      "usernameRequired": "Username is required",
+      "usernameMin": "Username must be at least 2 characters",
+      "emailRequired": "Email is required",
+      "emailInvalid": "Please enter a valid email address",
+      "passwordRequired": "Password is required",
+      "passwordMin": "Password must be at least 6 characters",
+      "confirmPasswordRequired": "Please confirm your password",
+      "passwordMismatch": "Passwords do not match"
+    }
+  }
+}
