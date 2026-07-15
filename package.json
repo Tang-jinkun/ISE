@@ -14,11 +14,14 @@
   "scripts": {
     "dev:web": "npm run dev -w @ise/web",
     "dev:api": "npm run start:dev -w @ise/api",
+    "dev:agent": "npm run start -w @ise/agent",
     "assets:validate": "npm run validate:assets -w @ise/runtime-contracts --",
     "prisma:generate": "npm run prisma:generate -w @ise/api",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "check": "npm run prisma:generate && npm run typecheck && npm run test && npm run build"
+    "check": "npm run prisma:generate && npm run typecheck && npm run test && npm run build",
+    "verify": "npm run prisma:generate && npm run typecheck --workspaces --if-present && npm run test --workspaces --if-present && npm run build --workspaces --if-present",
+    "verify:e2e": "npm run test:e2e -w @ise/web"
   }
 }
