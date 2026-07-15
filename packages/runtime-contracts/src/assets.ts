@@ -5,14 +5,9 @@ export const assetIdSchema = z.string().regex(
 );
 export const fingerprintSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 
-const safeRelativePath = z.string().trim().min(1).superRefine((value, context) => {
-  if (value.includes('\\') || value.startsWith('/') || /^[A-Za-z]:/.test(value)) {
-    context.addIssue({ code: 'custom', message: 'Path must be relative and use forward slashes' });
-  }
-  if (value.split('/').some(segment => segment === '' || segment === '.' || segment === '..')) {
-    context.addIssue({ code: 'custom', message: 'Path contains an unsafe segment' });
-  }
-});
+const safeRelativePath = z.string().trim().min(1).regex(
+  /^(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*\/\/)(?!.*\/$)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).+$/
+);
 
 export const modelAssetMetadataSchema = z.strictObject({
   scale: z.number().finite().positive(),
@@ -120,6 +115,7 @@ const assetSeedManifestBaseSchema = z.strictObject({
 
 export const assetSeedManifestSchema = assetSeedManifestBaseSchema.superRefine((manifest, context) => {
   const assetIds = new Set<string>();
+  const assetsById = new Map(manifest.assets.map(entry => [entry.assetId, entry]));
   const objectNames = new Set<string>();
   const sourcePaths = new Set<string>();
   for (const [index, entry] of manifest.assets.entries()) {
@@ -139,11 +135,38 @@ export const assetSeedManifestSchema = assetSeedManifestBaseSchema.superRefine((
       context.addIssue({ code: 'custom', path: ['assets', index, 'allowFallback'], message: 'Fallback IDs require allowFallback' });
     }
     for (const fallback of entry.fallbackAssetIds) {
-      if (!assetIds.has(fallback) || fallback === entry.assetId) {
+      const target = assetsById.get(fallback);
+      if (!target || fallback === entry.assetId) {
         context.addIssue({ code: 'custom', path: ['assets', index, 'fallbackAssetIds'], message: 'Fallback must reference another manifest asset' });
+      } else if (target.kind !== entry.kind) {
+        context.addIssue({ code: 'custom', path: ['assets', index, 'fallbackAssetIds'], message: 'Fallback must reference an asset of the same kind' });
       }
     }
   }
+
+  const visitState = new Map<string, 'visiting' | 'visited'>();
+  const visit = (entry: AssetManifestEntry) => {
+    visitState.set(entry.assetId, 'visiting');
+    const entryIndex = manifest.assets.indexOf(entry);
+    for (const [fallbackIndex, fallback] of entry.fallbackAssetIds.entries()) {
+      const target = assetsById.get(fallback);
+      if (!target || target.kind !== entry.kind) continue;
+      if (visitState.get(fallback) === 'visiting') {
+        context.addIssue({
+          code: 'custom',
+          path: ['assets', entryIndex, 'fallbackAssetIds', fallbackIndex],
+          message: 'Fallback references form a cycle'
+        });
+      } else if (visitState.get(fallback) !== 'visited') {
+        visit(target);
+      }
+    }
+    visitState.set(entry.assetId, 'visited');
+  };
+  for (const entry of manifest.assets) {
+    if (visitState.get(entry.assetId) === undefined) visit(entry);
+  }
+
   for (const [index, mapping] of manifest.nameMappings.entries()) {
     if (!assetIds.has(mapping.assetId)) {
       context.addIssue({ code: 'custom', path: ['nameMappings', index, 'assetId'], message: 'Mapping references an unknown assetId' });
@@ -152,34 +175,63 @@ export const assetSeedManifestSchema = assetSeedManifestBaseSchema.superRefine((
 });
 export type AssetSeedManifest = z.infer<typeof assetSeedManifestSchema>;
 
-const resolvedAssetAccessBaseSchema = z.strictObject({
-  assetId: assetIdSchema,
+const resolvedAssetAccessCommonShape = {
   url: z.url(),
   fingerprint: fingerprintSchema,
-  mediaType: z.string().regex(/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/),
   size: z.number().int().nonnegative(),
-  expiresAt: z.iso.datetime({ offset: true }),
-  model: modelAssetMetadataSchema.optional(),
-  trajectory: trajectoryAssetMetadataSchema.optional(),
-  video: videoAssetMetadataSchema.optional(),
-  image: imageAssetMetadataSchema.optional()
-});
+  expiresAt: z.iso.datetime({ offset: true })
+};
 
-export const resolvedAssetAccessSchema = resolvedAssetAccessBaseSchema.superRefine((value, context) => {
-  const metadataKeys = ['model', 'trajectory', 'video', 'image'] as const;
-  const present = metadataKeys.filter(key => value[key] !== undefined);
-  const expected = value.assetId.split(':', 1)[0];
-  if (expected === 'geojson' && present.length !== 0) {
-    context.addIssue({ code: 'custom', message: 'GeoJSON access must not include typed media metadata' });
-  } else if (expected !== 'geojson' && (present.length !== 1 || present[0] !== expected)) {
-    context.addIssue({ code: 'custom', message: `Resolved metadata must match ${expected}` });
-  }
-});
+const resolvedAssetAccessSchemaVariants = [
+  z.strictObject({
+    ...resolvedAssetAccessCommonShape,
+    assetId: z.string().regex(/^model:[a-z0-9][a-z0-9._-]*$/),
+    mediaType: z.literal('model/gltf-binary'),
+    model: modelAssetMetadataSchema
+  }),
+  z.strictObject({
+    ...resolvedAssetAccessCommonShape,
+    assetId: z.string().regex(/^trajectory:[a-z0-9][a-z0-9._-]*$/),
+    mediaType: z.literal('application/vnd.ise.trajectory+json'),
+    trajectory: trajectoryAssetMetadataSchema
+  }),
+  z.strictObject({
+    ...resolvedAssetAccessCommonShape,
+    assetId: z.string().regex(/^video:[a-z0-9][a-z0-9._-]*$/),
+    mediaType: z.literal('video/mp4'),
+    video: videoAssetMetadataSchema
+  }),
+  z.strictObject({
+    ...resolvedAssetAccessCommonShape,
+    assetId: z.string().regex(/^image:[a-z0-9][a-z0-9._-]*$/),
+    mediaType: z.enum(['image/png', 'image/jpeg']),
+    image: imageAssetMetadataSchema
+  }),
+  z.strictObject({
+    ...resolvedAssetAccessCommonShape,
+    assetId: z.string().regex(/^geojson:[a-z0-9][a-z0-9._-]*$/),
+    mediaType: z.literal('application/geo+json')
+  })
+];
+
+export const resolvedAssetAccessSchema = z.union([
+  resolvedAssetAccessSchemaVariants[0]!,
+  resolvedAssetAccessSchemaVariants[1]!,
+  resolvedAssetAccessSchemaVariants[2]!,
+  resolvedAssetAccessSchemaVariants[3]!,
+  resolvedAssetAccessSchemaVariants[4]!
+]);
 export type ResolvedAssetAccess = z.infer<typeof resolvedAssetAccessSchema>;
 
-export const assetSeedManifestJsonSchema = z.toJSONSchema(assetSeedManifestBaseSchema, {
-  target: 'draft-2020-12'
-});
-export const resolvedAssetAccessJsonSchema = z.toJSONSchema(resolvedAssetAccessBaseSchema, {
-  target: 'draft-2020-12'
-});
+export const assetSeedManifestJsonSchema = {
+  ...z.toJSONSchema(assetSeedManifestBaseSchema, {
+    target: 'draft-2020-12'
+  }),
+  $comment: 'The runtime parser is authoritative for relational invariants including duplicate IDs, cross-record references, fallback cycles, and trimmed path normalization.'
+};
+export const resolvedAssetAccessJsonSchema = {
+  ...z.toJSONSchema(resolvedAssetAccessSchema, {
+    target: 'draft-2020-12'
+  }),
+  $comment: 'This JSON Schema expresses the strict per-kind resolved-access structure; the runtime parser remains authoritative for relational invariants outside this record.'
+};

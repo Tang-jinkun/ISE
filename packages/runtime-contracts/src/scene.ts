@@ -47,7 +47,6 @@ const baseItemShape = {
   eventUnitId: nonEmptyId,
   startMs: milliseconds,
   durationMs: milliseconds,
-  assetId: assetId.optional(),
   evidenceRefs: z.array(nonEmptyId).min(1)
 };
 
@@ -105,10 +104,22 @@ export const modelActionSchema = z.discriminatedUnion('action', [
 ]);
 
 const subtitleItemSchema = z.strictObject({ ...baseItemShape, params: subtitleParamsSchema });
-const imageItemSchema = z.strictObject({ ...baseItemShape, params: imageParamsSchema });
-const videoItemSchema = z.strictObject({ ...baseItemShape, params: videoParamsSchema });
+const imageItemSchema = z.strictObject({
+  ...baseItemShape,
+  assetId: assetId.regex(/^image:/),
+  params: imageParamsSchema
+});
+const videoItemSchema = z.strictObject({
+  ...baseItemShape,
+  assetId: assetId.regex(/^video:/),
+  params: videoParamsSchema
+});
 const markerItemSchema = z.strictObject({ ...baseItemShape, params: markerParamsSchema });
-const geojsonItemSchema = z.strictObject({ ...baseItemShape, params: geojsonParamsSchema });
+const geojsonItemSchema = z.strictObject({
+  ...baseItemShape,
+  assetId: assetId.regex(/^geojson:/),
+  params: geojsonParamsSchema
+});
 const cameraItemSchema = z.strictObject({ ...baseItemShape, params: cameraParamsSchema });
 const modelItemSchema = z.strictObject({ ...baseItemShape, params: modelActionSchema });
 
@@ -187,6 +198,9 @@ export const sceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine
 });
 export type SceneProjectConfig = z.infer<typeof sceneProjectConfigSchema>;
 
-export const sceneProjectConfigJsonSchema = z.toJSONSchema(baseSceneProjectConfigSchema, {
-  target: 'draft-2020-12'
-});
+export const sceneProjectConfigJsonSchema = {
+  ...z.toJSONSchema(baseSceneProjectConfigSchema, {
+    target: 'draft-2020-12'
+  }),
+  $comment: 'The runtime parser is authoritative for relational invariants including duplicate IDs, item-overrun arithmetic, and entity references.'
+};

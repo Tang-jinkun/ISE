@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -24,6 +24,12 @@ test('reports a schema error without uploading or rewriting the file', async () 
   const source = '{"schemaVersion":"ise-assets/v2","assets":[],"nameMappings":[]}\n';
   await writeFile(file, source);
   await assert.rejects(validateAssetSeedFile(file), /ise-assets\/v1|Too small/);
+  assert.equal(await readFile(file, 'utf8'), source);
+});
+
+test('exports validateAssetSeedFile from the package root', async () => {
+  const contracts = await import('@ise/runtime-contracts');
+  assert.equal(contracts.validateAssetSeedFile, validateAssetSeedFile);
 });
 
 test('CLI rejects manifest paths outside INIT_CWD', async () => {
@@ -37,6 +43,30 @@ test('CLI rejects manifest paths outside INIT_CWD', async () => {
   const assetSeedCli = fileURLToPath(new URL('../src/validateAssetSeedCli.ts', import.meta.url));
   await assert.rejects(
     execFileAsync(process.execPath, [tsxCli, assetSeedCli, outsideManifest], {
+      env: { ...process.env, INIT_CWD: invokingDirectory }
+    }),
+    (error: unknown) => {
+      const stderr = (error as { stderr?: string }).stderr ?? '';
+      assert.match(stderr, /below the invoking working directory/i);
+      return true;
+    }
+  );
+});
+
+test('CLI rejects a junction that escapes INIT_CWD', async () => {
+  const invokingDirectory = await mkdtemp(path.join(tmpdir(), 'ise-cli-junction-root-'));
+  const outsideDirectory = await mkdtemp(path.join(tmpdir(), 'ise-cli-junction-outside-'));
+  const outsideManifest = path.join(outsideDirectory, 'asset-seed.json');
+  const fixture = new URL('./fixtures/asset-seed.valid.json', import.meta.url);
+  await writeFile(outsideManifest, await readFile(fixture, 'utf8'));
+
+  const junction = path.join(invokingDirectory, 'linked-assets');
+  await symlink(outsideDirectory, junction, 'junction');
+
+  const tsxCli = fileURLToPath(new URL('../../../node_modules/tsx/dist/cli.mjs', import.meta.url));
+  const assetSeedCli = fileURLToPath(new URL('../src/validateAssetSeedCli.ts', import.meta.url));
+  await assert.rejects(
+    execFileAsync(process.execPath, [tsxCli, assetSeedCli, path.join(junction, 'asset-seed.json')], {
       env: { ...process.env, INIT_CWD: invokingDirectory }
     }),
     (error: unknown) => {

@@ -7,6 +7,7 @@ import {
   resolvedAssetAccessSchema,
   type AssetSeedManifest
 } from '../src/index.js';
+import { compileJsonSchema } from './json-schema.js';
 
 const fingerprint = `sha256:${'a'.repeat(64)}`;
 
@@ -40,6 +41,37 @@ function validManifest(): AssetSeedManifest {
       assetId: 'model:jf17',
       note: 'The GLB source is authoritative for this mapping.'
     }]
+  };
+}
+
+function addModelEntry(manifest: AssetSeedManifest, assetId: string) {
+  const entry = structuredClone(manifest.assets[0]!);
+  if (entry.kind !== 'model') assert.fail('Expected model entry');
+  const slug = assetId.split(':')[1]!;
+  entry.assetId = assetId;
+  entry.displayName = slug;
+  entry.aliases = [];
+  entry.sourceRelativePath = `models/${slug}.glb`;
+  entry.objectName = `demo/models/${slug}.glb`;
+  entry.fallbackAssetIds = [];
+  manifest.assets.push(entry);
+  return entry;
+}
+
+function validResolvedAccess() {
+  return {
+    assetId: 'model:jf17',
+    url: 'https://minio.example.test/signed-object',
+    fingerprint,
+    mediaType: 'model/gltf-binary',
+    size: 1466636,
+    expiresAt: '2026-07-15T12:05:00.000Z',
+    model: {
+      scale: 1,
+      rotationOffsetDeg: [0, 0, 90] as [number, number, number],
+      altitudeOffsetM: 0,
+      entityTypes: ['aircraft'] as const
+    }
   };
 }
 
@@ -85,27 +117,66 @@ test('rejects duplicate assets and unresolved fallbacks or name mappings', () =>
   assert.equal(assetSeedManifestSchema.safeParse(mapping).success, false);
 });
 
+test('rejects fallback targets of another kind and cycles of any length', () => {
+  const crossKind = validManifest() as AssetSeedManifest & { assets: any[] };
+  const image = structuredClone(crossKind.assets[0]);
+  delete image.model;
+  Object.assign(image, {
+    assetId: 'image:ground-radar',
+    kind: 'image',
+    displayName: 'Ground radar',
+    sourceRelativePath: 'images/ground-radar.png',
+    objectName: 'demo/images/ground-radar.png',
+    mediaType: 'image/png',
+    image: { width: 1, height: 1, fit: 'contain' }
+  });
+  crossKind.assets.push(image);
+  crossKind.assets[0].allowFallback = true;
+  crossKind.assets[0].fallbackAssetIds = ['image:ground-radar'];
+  assert.equal(assetSeedManifestSchema.safeParse(crossKind).success, false);
+
+  const cyclic = validManifest();
+  const second = addModelEntry(cyclic, 'model:mig29');
+  const third = addModelEntry(cyclic, 'model:rafale');
+  const first = cyclic.assets[0]!;
+  first.allowFallback = true;
+  first.fallbackAssetIds = [second.assetId];
+  second.allowFallback = true;
+  second.fallbackAssetIds = [third.assetId];
+  third.allowFallback = true;
+  third.fallbackAssetIds = [first.assetId];
+  assert.equal(assetSeedManifestSchema.safeParse(cyclic).success, false);
+});
+
 test('accepts resolved access but rejects storage and seed-only fields', () => {
-  const access = {
-    assetId: 'model:jf17',
-    url: 'https://minio.example.test/signed-object',
-    fingerprint,
-    mediaType: 'model/gltf-binary',
-    size: 1466636,
-    expiresAt: '2026-07-15T12:05:00.000Z',
-    model: {
-      scale: 1,
-      rotationOffsetDeg: [0, 0, 90],
-      altitudeOffsetM: 0,
-      entityTypes: ['aircraft']
-    }
-  };
+  const access = validResolvedAccess();
   assert.equal(resolvedAssetAccessSchema.safeParse(access).success, true);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, objectName: 'secret/key' }).success, false);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, availability: 'available' }).success, false);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, criticality: 'required' }).success, false);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, fallbackAssetIds: [] }).success, false);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, allowFallback: false }).success, false);
+});
+
+test('rejects resolved access when asset kind, metadata, or media type disagree', () => {
+  const model = validResolvedAccess();
+  assert.equal(
+    resolvedAssetAccessSchema.safeParse({ ...model, mediaType: 'video/mp4' }).success,
+    false
+  );
+
+  const { model: _model, ...common } = model;
+  const video = {
+    ...common,
+    assetId: 'video:missile-impact',
+    mediaType: 'video/mp4',
+    video: { durationMs: 1000, codec: 'h264' }
+  };
+  assert.equal(resolvedAssetAccessSchema.safeParse(video).success, true);
+  assert.equal(
+    resolvedAssetAccessSchema.safeParse({ ...video, assetId: 'model:jf17' }).success,
+    false
+  );
 });
 
 test('exports strict seed and resolved-access JSON Schemas', () => {
@@ -115,5 +186,22 @@ test('exports strict seed and resolved-access JSON Schemas', () => {
     typeof schemaVersion === 'object' && schemaVersion !== null ? schemaVersion.const : undefined,
     'ise-assets/v1'
   );
-  assert.equal(resolvedAssetAccessJsonSchema.additionalProperties, false);
+  assert.match(assetSeedManifestJsonSchema.$comment ?? '', /runtime parser.*relational/i);
+
+  const validateSeed = compileJsonSchema(assetSeedManifestJsonSchema);
+  assert.equal(validateSeed(validManifest()), true, JSON.stringify(validateSeed.errors));
+  const traversal = validManifest() as AssetSeedManifest & { assets: any[] };
+  traversal.assets[0].sourceRelativePath = '../models/JF-17.glb';
+  assert.equal(validateSeed(traversal), false);
+
+  const validateAccess = compileJsonSchema(resolvedAssetAccessJsonSchema);
+  const model = validResolvedAccess();
+  assert.equal(validateAccess(model), true, JSON.stringify(validateAccess.errors));
+  assert.equal(validateAccess({ ...model, mediaType: 'video/mp4' }), false);
+  assert.equal(
+    validateAccess({ ...model, assetId: 'video:missile-impact' }),
+    false
+  );
+  assert.equal(validateAccess({ ...model, objectName: 'secret/key' }), false);
+  assert.match(resolvedAssetAccessJsonSchema.$comment ?? '', /per-kind.*runtime.*relational/i);
 });

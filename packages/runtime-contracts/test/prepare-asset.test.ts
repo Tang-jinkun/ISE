@@ -114,3 +114,24 @@ test('validates MP4, PNG/JPEG, and GeoJSON magic before returning bytes', async 
     assert.equal(await prepareAssetForUpload(entry, bytes), bytes);
   }
 });
+
+test('rejects invalid MP4, PNG, JPEG, and GeoJSON bytes before fingerprint acceptance', async () => {
+  const invalidMp4 = new Uint8Array(12);
+  const invalidPng = Uint8Array.from([0, 80, 78, 71, 13, 10, 26, 10]);
+  const invalidJpeg = Uint8Array.from([0xff, 0xd8, 0, 0]);
+  const invalidGeoJson = new TextEncoder().encode('{"type":"Topology","objects":{}}');
+  const common = {
+    displayName: 'invalid fixture', aliases: [], availability: 'invalid' as const,
+    criticality: 'optional' as const, fallbackAssetIds: [], allowFallback: false
+  };
+  const cases: Array<[AssetManifestEntry, Uint8Array, RegExp]> = [
+    [{ ...common, assetId: 'video:invalid', kind: 'video', fingerprint: fingerprint(invalidMp4), sourceRelativePath: 'video/invalid.mp4', objectName: 'demo/video/invalid.mp4', mediaType: 'video/mp4', size: invalidMp4.byteLength, video: { durationMs: 1000, codec: 'h264' } }, invalidMp4, /MP4/],
+    [{ ...common, assetId: 'image:invalid-png', kind: 'image', fingerprint: fingerprint(invalidPng), sourceRelativePath: 'image/invalid.png', objectName: 'demo/image/invalid.png', mediaType: 'image/png', size: invalidPng.byteLength, image: { width: 1, height: 1, fit: 'contain' } }, invalidPng, /PNG/],
+    [{ ...common, assetId: 'image:invalid-jpeg', kind: 'image', fingerprint: fingerprint(invalidJpeg), sourceRelativePath: 'image/invalid.jpg', objectName: 'demo/image/invalid.jpg', mediaType: 'image/jpeg', size: invalidJpeg.byteLength, image: { width: 1, height: 1, fit: 'contain' } }, invalidJpeg, /JPEG/],
+    [{ ...common, assetId: 'geojson:invalid', kind: 'geojson', fingerprint: fingerprint(invalidGeoJson), sourceRelativePath: 'geo/invalid.geojson', objectName: 'demo/geo/invalid.geojson', mediaType: 'application/geo+json', size: invalidGeoJson.byteLength }, invalidGeoJson, /GeoJSON/]
+  ];
+
+  for (const [entry, bytes, expectedError] of cases) {
+    await assert.rejects(prepareAssetForUpload(entry, bytes), expectedError);
+  }
+});

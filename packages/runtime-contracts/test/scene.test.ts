@@ -5,6 +5,7 @@ import {
   sceneProjectConfigSchema,
   type SceneProjectConfig
 } from '../src/index.js';
+import { compileJsonSchema } from './json-schema.js';
 
 const item = {
   id: 'item-1',
@@ -88,10 +89,51 @@ test('rejects duplicate ids, items beyond duration, and unknown model entities',
   assert.equal(sceneProjectConfigSchema.safeParse(unknownEntity).success, false);
 });
 
+test('requires kind-specific asset IDs only on image, video, and geojson items', () => {
+  for (const trackIndex of [1, 2, 4]) {
+    const missing = validConfig() as SceneProjectConfig & { tracks: any[] };
+    delete missing.tracks[trackIndex].items[0].assetId;
+    assert.equal(sceneProjectConfigSchema.safeParse(missing).success, false);
+  }
+
+  const wrongKinds = [
+    [1, 'video:missile-impact'],
+    [2, 'image:ground-radar'],
+    [4, 'image:ground-radar']
+  ] as const;
+  for (const [trackIndex, wrongAssetId] of wrongKinds) {
+    const wrong = validConfig() as SceneProjectConfig & { tracks: any[] };
+    wrong.tracks[trackIndex].items[0].assetId = wrongAssetId;
+    assert.equal(sceneProjectConfigSchema.safeParse(wrong).success, false);
+  }
+
+  for (const trackIndex of [0, 3, 5, 6]) {
+    const irrelevant = validConfig() as SceneProjectConfig & { tracks: any[] };
+    irrelevant.tracks[trackIndex].items[0].assetId = 'image:ground-radar';
+    assert.equal(sceneProjectConfigSchema.safeParse(irrelevant).success, false);
+  }
+});
+
 test('exports a strict JSON Schema', () => {
   assert.equal(sceneProjectConfigJsonSchema.additionalProperties, false);
   assert.deepEqual(sceneProjectConfigJsonSchema.properties?.schemaVersion, {
     type: 'string',
     const: 'ise-scene/v1'
   });
+  assert.match(sceneProjectConfigJsonSchema.$comment ?? '', /runtime parser.*relational/i);
+
+  const validate = compileJsonSchema(sceneProjectConfigJsonSchema);
+  assert.equal(validate(validConfig()), true, JSON.stringify(validate.errors));
+
+  const missing = validConfig() as SceneProjectConfig & { tracks: any[] };
+  delete missing.tracks[1].items[0].assetId;
+  assert.equal(validate(missing), false);
+
+  const wrongKind = validConfig() as SceneProjectConfig & { tracks: any[] };
+  wrongKind.tracks[2].items[0].assetId = 'image:ground-radar';
+  assert.equal(validate(wrongKind), false);
+
+  const irrelevant = validConfig() as SceneProjectConfig & { tracks: any[] };
+  irrelevant.tracks[6].items[0].assetId = 'model:jf17';
+  assert.equal(validate(irrelevant), false);
 });
