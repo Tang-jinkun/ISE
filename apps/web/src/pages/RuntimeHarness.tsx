@@ -23,7 +23,10 @@ export function RuntimeHarness() {
   const { search } = useLocation();
   const searchParams = new URLSearchParams(search);
   const sceneId = searchParams.get('sceneId');
-  if (sceneId) {
+  if (searchParams.has('sceneId')) {
+    if (!sceneId) {
+      return <div role="alert">Invalid persisted scene ID.</div>;
+    }
     return <PersistedSceneRuntimeHarness key={sceneId} sceneId={sceneId} />;
   }
 

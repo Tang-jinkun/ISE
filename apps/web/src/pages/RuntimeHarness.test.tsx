@@ -86,6 +86,16 @@ describe('RuntimeHarness source selection', () => {
     expect(getScene).toHaveBeenCalledWith('invalid-scene');
   });
 
+  it('blocks an empty sceneId instead of falling back to a fixture', () => {
+    renderHarness('?sceneId=&fixture=runtime-main');
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Invalid persisted scene ID.',
+    );
+    expect(getScene).not.toHaveBeenCalled();
+    expect(useSceneRuntime).not.toHaveBeenCalled();
+  });
+
   it('uses runtime-main without calling the scene API', () => {
     renderHarness('?fixture=runtime-main');
 

@@ -257,10 +257,10 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
       if (event.type === 'run.completed') {
         next.status = 'completed';
         const runtimeArtifactId = stringField(event.data, 'runtimeArtifactId');
-        if (runtimeArtifactId) {
-          next.latestCompletedRuntimeArtifactId = runtimeArtifactId;
-          next.compiledConfig = compiledConfigFrom(state.artifacts, runtimeArtifactId);
-        }
+        next.latestCompletedRuntimeArtifactId = runtimeArtifactId ?? null;
+        next.compiledConfig = runtimeArtifactId
+          ? compiledConfigFrom(state.artifacts, runtimeArtifactId)
+          : null;
       }
       if (event.type === 'run.failed') {
         next.status = event.data.status === 'cancelled' ? 'cancelled' : 'failed';
