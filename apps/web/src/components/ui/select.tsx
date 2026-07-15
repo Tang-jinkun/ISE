@@ -54,19 +54,19 @@ Select.displayName = 'Select';
 const SelectTrigger = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(() => null);
+>((_props, _ref) => null);
 SelectTrigger.displayName = 'SelectTrigger';
 
 const SelectValue = React.forwardRef<
   HTMLSpanElement,
   React.HTMLAttributes<HTMLSpanElement> & { placeholder?: string }
->(() => null);
+>((_props, _ref) => null);
 SelectValue.displayName = 'SelectValue';
 
 const SelectContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ children }) => <React.Fragment>{children}</React.Fragment>);
+>(({ children }, _ref) => <React.Fragment>{children}</React.Fragment>);
 SelectContent.displayName = 'SelectContent';
 
 const SelectItem = React.forwardRef<

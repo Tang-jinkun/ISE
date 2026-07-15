@@ -33,17 +33,23 @@ type NarrativePanelProps = {
 
 type LayoutType = 'grid' | 'waterfall' | 'carousel' | 'timeline';
 
+type LayoutConfig = {
+  fontSize: number;
+  fontFamily: string;
+  animationDuration: number;
+  themeColor?: string;
+};
+
 export const NarrativePanel: React.FC<NarrativePanelProps> = ({
   selectedNode,
   nowText,
   onCopy
 }) => {
   const [layout, setLayout] = useState<LayoutType>('timeline');
-  const [config, setConfig] = useState({
+  const [config, setConfig] = useState<LayoutConfig>({
     fontSize: 14,
     fontFamily: 'sans-serif',
-    animationDuration: 0.5,
-    themeColor: '#06b6d4'
+    animationDuration: 0.5
   });
   const [showConfig, setShowConfig] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(

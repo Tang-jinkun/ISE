@@ -37,11 +37,17 @@ describe('Script Page - Q&A Analysis Flow', () => {
     );
   };
 
+  const getSendButton = () => {
+    const button = document.querySelector('.lucide-send')?.closest('button');
+    expect(button).not.toBeNull();
+    return button!;
+  };
+
   it('should show 4-stage analysis flow after submitting a question', async () => {
     renderScript();
 
     const input = screen.getByPlaceholderText('输入你的问题...');
-    const sendButton = screen.getByRole('button', { name: '' }); // The button with Send icon
+    const sendButton = getSendButton();
 
     fireEvent.change(input, { target: { value: '如何进行赤壁之战？' } });
     fireEvent.click(sendButton);
@@ -70,7 +76,7 @@ describe('Script Page - Q&A Analysis Flow', () => {
     renderScript();
 
     const input = screen.getByPlaceholderText('输入你的问题...');
-    const sendButton = screen.getByRole('button', { name: '' });
+    const sendButton = getSendButton();
 
     fireEvent.change(input, { target: { value: '取消测试' } });
     fireEvent.click(sendButton);
@@ -90,7 +96,7 @@ describe('Script Page - Q&A Analysis Flow', () => {
     renderScript();
 
     const input = screen.getByPlaceholderText('输入你的问题...');
-    const sendButton = screen.getByRole('button', { name: '' });
+    const sendButton = getSendButton();
 
     fireEvent.change(input, { target: { value: '错误测试' } });
     fireEvent.click(sendButton);
