@@ -6,6 +6,8 @@ import type {
   SceneTrack,
 } from '@ise/runtime-contracts';
 import { expect, expectTypeOf, it, vi } from 'vitest';
+import { MapRuntime } from '../MapRuntime';
+import type { LoadedAsset } from '../ResourceManager';
 import { SceneRuntimeImpl, type SceneRuntimeDependencies } from '../SceneRuntime';
 import {
   createSceneRuntime,
@@ -13,6 +15,7 @@ import {
   type SceneRuntimeOptions,
 } from '../index';
 import type { RuntimeFrame } from '../types';
+import { FakeMap } from './helpers/fakes';
 
 const validConfig: SceneProjectConfig = {
   schemaVersion: 'ise-scene/v1',
@@ -48,7 +51,10 @@ function sceneRuntimeHarness(
     modelLoadError?: Error;
     modelLoadGate?: Promise<void>;
     unlockError?: Error;
+    unlockGates?: Promise<void>[];
     modelApplyErrorAtMs?: number;
+    mapRuntime?: SceneRuntimeDependencies['mapRuntime'];
+    resources?: SceneRuntimeDependencies['resources'];
   } = {},
 ) {
   const calls: string[] = [];
@@ -144,12 +150,17 @@ function sceneRuntimeHarness(
     }),
     dispose: vi.fn(),
   };
+  let unlockAttempt = 0;
   const overlayRuntime = {
     load: vi.fn(async (_tracks: SceneTrack[], _signal?: AbortSignal) => {
       calls.push('overlay.load');
     }),
     unlockMedia: vi.fn(async () => {
       calls.push('overlay.unlock');
+      const gate = options.unlockGates?.[unlockAttempt++];
+      if (gate) {
+        await gate;
+      }
       if (options.unlockError) {
         throw options.unlockError;
       }
@@ -164,10 +175,10 @@ function sceneRuntimeHarness(
   const resources = { dispose: vi.fn() };
   const dependencies = {
     clock,
-    mapRuntime,
+    mapRuntime: options.mapRuntime ?? mapRuntime,
     modelRuntime,
     overlayRuntime,
-    resources,
+    resources: options.resources ?? resources,
   } as unknown as SceneRuntimeDependencies;
   const overlayRoot = document.createElement('div');
   const runtimeOptions: SceneRuntimeOptions = {
@@ -295,6 +306,77 @@ it('keeps the clock paused when media unlock rejects', async () => {
   expect(harness.clock.isPlaying).toBe(false);
 });
 
+it('does not start a pending play after pause supersedes its media unlock', async () => {
+  const gate = deferred<void>();
+  const harness = sceneRuntimeHarness({ unlockGates: [gate.promise] });
+  await harness.runtime.load(validConfig);
+  harness.calls.length = 0;
+
+  const playing = harness.runtime.play();
+  await Promise.resolve();
+  harness.runtime.pause();
+  gate.resolve();
+  await playing;
+
+  expect(harness.clock.play).not.toHaveBeenCalled();
+  expect(harness.clock.isPlaying).toBe(false);
+  expect(harness.calls.at(-1)).toBe('overlay.apply:0:paused:seek');
+});
+
+it('does not start a pending play after seek supersedes its media unlock', async () => {
+  const gate = deferred<void>();
+  const harness = sceneRuntimeHarness({ unlockGates: [gate.promise] });
+  await harness.runtime.load(validConfig);
+  harness.calls.length = 0;
+
+  const playing = harness.runtime.play();
+  await Promise.resolve();
+  await harness.runtime.seek(2_000);
+  gate.resolve();
+  await playing;
+
+  expect(harness.clock.play).not.toHaveBeenCalled();
+  expect(harness.clock.isPlaying).toBe(false);
+  expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('2000');
+});
+
+it('rejects a pending play as disposed without starting its clock', async () => {
+  const gate = deferred<void>();
+  const harness = sceneRuntimeHarness({ unlockGates: [gate.promise] });
+  await harness.runtime.load(validConfig);
+  harness.calls.length = 0;
+
+  const playing = harness.runtime.play();
+  await Promise.resolve();
+  harness.runtime.dispose();
+  gate.resolve();
+
+  await expect(playing).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+  expect(harness.clock.play).not.toHaveBeenCalled();
+});
+
+it('lets only the newest pending play start the clock', async () => {
+  const firstGate = deferred<void>();
+  const secondGate = deferred<void>();
+  const harness = sceneRuntimeHarness({
+    unlockGates: [firstGate.promise, secondGate.promise],
+  });
+  await harness.runtime.load(validConfig);
+  harness.calls.length = 0;
+
+  const firstPlay = harness.runtime.play();
+  await Promise.resolve();
+  const secondPlay = harness.runtime.play();
+  await Promise.resolve();
+  firstGate.resolve();
+  await firstPlay;
+  expect(harness.clock.play).not.toHaveBeenCalled();
+
+  secondGate.resolve();
+  await secondPlay;
+  expect(harness.clock.play).toHaveBeenCalledTimes(1);
+});
+
 it('pauses, seeks exactly once, applies a paused frame, and resumes prior playback', async () => {
   const harness = sceneRuntimeHarness();
   await harness.runtime.load(validConfig);
@@ -403,6 +485,61 @@ it('aborts and rolls back once when disposed during an in-flight load', async ()
   expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
 });
 
+it('does not let a real MapRuntime register state after SceneRuntime disposal during readJson', async () => {
+  const map = new FakeMap();
+  const json = deferred<unknown>();
+  const readJson = vi.fn(() => json.promise);
+  const resources = {
+    acquire: vi.fn(async () => ({ readJson }) as unknown as LoadedAsset),
+    release: vi.fn(),
+    dispose: vi.fn(),
+  };
+  const mapRuntime = new MapRuntime(map as never, resources as never, {
+    createMarker: vi.fn(),
+  });
+  const harness = sceneRuntimeHarness({ mapRuntime, resources });
+  const loading = harness.runtime.load({
+    ...validConfig,
+    tracks: [
+      {
+        trackId: 'geo',
+        type: 'geojson',
+        label: 'GeoJSON',
+        visible: true,
+        items: [
+          {
+            id: 'geo-item',
+            eventUnitId: 'event-1',
+            startMs: 0,
+            durationMs: 1_000,
+            assetId: 'geojson:border',
+            evidenceRefs: ['fixture:evidence'],
+            params: {
+              lineColor: '#22ccff',
+              lineWidth: 2,
+              fillColor: '#225577',
+              fillOpacity: 0.25,
+              circleColor: '#ffffff',
+              circleRadius: 4,
+              keepAfterEnd: true,
+            },
+          },
+        ],
+      },
+    ],
+  });
+  await vi.waitFor(() => expect(readJson).toHaveBeenCalledTimes(1));
+
+  harness.runtime.dispose();
+  json.resolve({ type: 'FeatureCollection', features: [] });
+
+  await expect(loading).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+  expect(resources.release.mock.calls).toEqual([['geojson:border']]);
+  expect(map.listenerCount('style.load')).toBe(0);
+  expect(map.layerIds()).toEqual([]);
+  expect(map.sourceData('ise:geo:geo:geo-item')).toBeUndefined();
+});
+
 it('diagnoses a clock-frame apply error and pauses without running later frame stages', async () => {
   const harness = sceneRuntimeHarness({ modelApplyErrorAtMs: 500 });
   const diagnostics: Diagnostic[] = [];
@@ -445,4 +582,32 @@ it('guards pre-load lifecycle calls and disposes every owner exactly once', asyn
   expect(harness.listenerCount()).toBe(0);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBeUndefined();
   await expect(harness.runtime.play()).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+});
+
+it('attempts every owner disposal exactly once when multiple owners throw', async () => {
+  const harness = sceneRuntimeHarness();
+  const overlayError = new Error('overlay dispose failed');
+  const mapError = new Error('map dispose failed');
+  harness.overlayRuntime.dispose.mockImplementation(() => {
+    throw overlayError;
+  });
+  harness.mapRuntime.dispose.mockImplementation(() => {
+    throw mapError;
+  });
+  await harness.runtime.load(validConfig);
+
+  let disposalError: unknown;
+  try {
+    harness.runtime.dispose();
+  } catch (error) {
+    disposalError = error;
+  }
+
+  expect(disposalError).toBeInstanceOf(AggregateError);
+  expect((disposalError as AggregateError).errors).toEqual([overlayError, mapError]);
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
+  expect(harness.listenerCount()).toBe(0);
+  expect(harness.overlayRoot.dataset.runtimeTimeMs).toBeUndefined();
+  expect(() => harness.runtime.dispose()).not.toThrow();
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
 });

@@ -236,11 +236,13 @@ export class ModelRuntime {
         referencedEntityIds.map((entityId) => entityById.get(entityId)!),
         signal,
       );
+      this.assertLoadActive(signal);
       await this.loadTrajectories(
         referencedEntityIds.map((entityId) => entityById.get(entityId)!),
         items,
         signal,
       );
+      this.assertLoadActive(signal);
 
       for (const entityId of referencedEntityIds) {
         const entity = entityById.get(entityId)!;
@@ -274,6 +276,7 @@ export class ModelRuntime {
         });
       }
 
+      this.assertLoadActive(signal);
       this.map.on('style.load', this.handleStyleLoad);
       this.listenerRegistered = true;
       this.loaded = true;
@@ -335,7 +338,9 @@ export class ModelRuntime {
       const metadata = modelMetadata(asset, assetId);
       let template = templates.get(asset.access.fingerprint);
       if (!template) {
-        template = (await asset.readGltf()).scene;
+        const gltf = await asset.readGltf();
+        this.assertLoadActive(signal);
+        template = gltf.scene;
         templates.set(asset.access.fingerprint, template);
       }
       models.set(assetId, { metadata, template });
@@ -373,11 +378,14 @@ export class ModelRuntime {
         );
       }
       try {
+        const document = await asset.readJson();
+        this.assertLoadActive(signal);
         this.trajectories.set(
           assetId,
-          prepareTrajectory(await asset.readJson(), asset.access.trajectory),
+          prepareTrajectory(document, asset.access.trajectory),
         );
       } catch (error) {
+        this.assertLoadActive(signal);
         if (error instanceof SceneRuntimeError) {
           throw error;
         }
@@ -397,6 +405,12 @@ export class ModelRuntime {
     signal?: AbortSignal,
   ) {
     const asset = await this.resources.acquire(assetId, role, signal);
+    try {
+      this.assertLoadActive(signal);
+    } catch (error) {
+      this.resources.release(assetId);
+      throw error;
+    }
     this.acquiredAssetIds.push(assetId);
     return asset;
   }
@@ -478,6 +492,13 @@ export class ModelRuntime {
   private assertUsable() {
     if (this.disposed) {
       throw new SceneRuntimeError('RUNTIME_DISPOSED', 'Model runtime is disposed');
+    }
+  }
+
+  private assertLoadActive(signal?: AbortSignal) {
+    this.assertUsable();
+    if (signal?.aborted) {
+      throw signal.reason ?? new DOMException('Model load aborted', 'AbortError');
     }
   }
 }

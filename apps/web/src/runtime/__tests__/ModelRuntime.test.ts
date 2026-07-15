@@ -41,6 +41,16 @@ const trajectoryDocument = {
 };
 const eastboundTrajectory = prepareTrajectory(trajectoryDocument, trajectoryMetadata);
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function rafale(entityId: string): SceneEntity {
   return {
     entityId,
@@ -93,6 +103,7 @@ function modelHarness(
   options: {
     modelMetadata?: ModelMetadata;
     template?: THREE.Object3D;
+    readGltfGate?: Promise<void>;
   } = {},
 ) {
   const map = new FakeMap();
@@ -115,7 +126,10 @@ function modelHarness(
     return renderer as never;
   });
   const template = options.template ?? new THREE.Group();
-  const readGltf = vi.fn(async () => ({ scene: template }));
+  const readGltf = vi.fn(async () => {
+    await options.readGltfGate;
+    return { scene: template };
+  });
   const readJson = vi.fn(async () => trajectoryDocument);
   const modelMetadata = Object.hasOwn(options, 'modelMetadata')
     ? options.modelMetadata
@@ -196,6 +210,25 @@ it('loads one GLB template and clones an instance per entity', async () => {
       renderingMode: '3d',
     }),
   );
+});
+
+it('does not resume loading or leak ownership after disposal during readGltf', async () => {
+  const gate = deferred<void>();
+  const { map, resources, runtime, readGltf, clones } = modelHarness({
+    readGltfGate: gate.promise,
+  });
+  const loading = runtime.load([rafale('one')], [modelTrackFor('one')]);
+  await vi.waitFor(() => expect(readGltf).toHaveBeenCalledTimes(1));
+
+  runtime.dispose();
+  gate.resolve();
+
+  await expect(loading).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+  expect(resources.acquire.mock.calls).toEqual([['model:rafale', 'model', undefined]]);
+  expect(resources.release.mock.calls).toEqual([['model:rafale']]);
+  expect(clones).toEqual([]);
+  expect(map.listenerCount('style.load')).toBe(0);
+  expect(map.layerIds()).not.toContain('ise-model-runtime');
 });
 
 it('reduces spawn, follow, state, and hide at any seek time', () => {

@@ -80,12 +80,14 @@ export class MapRuntime {
     );
     for (const track of geojsonTracks) {
       for (const item of track.items) {
-        const asset = await this.resources.acquire(item.assetId, 'geojson', signal);
-        this.acquiredGeojsonAssetIds.push(item.assetId);
+        const asset = await this.acquire(item.assetId, signal);
         let data: unknown;
         try {
-          data = geojsonDocumentSchema.parse(await asset.readJson());
+          const document = await asset.readJson();
+          this.assertLoadActive(signal);
+          data = geojsonDocumentSchema.parse(document);
         } catch (error) {
+          this.assertLoadActive(signal);
           throw new SceneRuntimeError(
             'GEOJSON_INVALID',
             `GeoJSON document is invalid: ${item.assetId}`,
@@ -97,6 +99,7 @@ export class MapRuntime {
       }
     }
 
+    this.assertLoadActive(signal);
     this.initialCamera = {
       center: [this.map.getCenter().lng, this.map.getCenter().lat],
       zoom: this.map.getZoom(),
@@ -127,6 +130,7 @@ export class MapRuntime {
     }
 
     if (!this.listenerRegistered) {
+      this.assertLoadActive(signal);
       this.map.on('style.load', this.handleStyleLoad);
       this.listenerRegistered = true;
     }
@@ -228,6 +232,18 @@ export class MapRuntime {
     this.applyBase(this.lastTimeMs);
     this.applyTrails(this.lastTrails);
   };
+
+  private async acquire(assetId: string, signal?: AbortSignal) {
+    const asset = await this.resources.acquire(assetId, 'geojson', signal);
+    try {
+      this.assertLoadActive(signal);
+    } catch (error) {
+      this.resources.release(assetId);
+      throw error;
+    }
+    this.acquiredGeojsonAssetIds.push(assetId);
+    return asset;
+  }
 
   private applyMarkers(timeMs: number) {
     const desired = new Set<string>();
@@ -388,6 +404,13 @@ export class MapRuntime {
   private assertUsable() {
     if (this.disposed) {
       throw new SceneRuntimeError('RUNTIME_DISPOSED', 'Map runtime is disposed');
+    }
+  }
+
+  private assertLoadActive(signal?: AbortSignal) {
+    this.assertUsable();
+    if (signal?.aborted) {
+      throw signal.reason ?? new DOMException('Map load aborted', 'AbortError');
     }
   }
 }

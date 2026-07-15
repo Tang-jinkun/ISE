@@ -65,6 +65,8 @@ export class SceneRuntimeImpl implements SceneRuntime {
   private unsubscribeClock: (() => void) | undefined;
   private suppressClockFrame = false;
   private mediaUnlocked = false;
+  private playIntentGeneration = 0;
+  private playbackDesired = false;
   private ownersDisposed = false;
 
   constructor(
@@ -122,7 +124,14 @@ export class SceneRuntimeImpl implements SceneRuntime {
       }
       this.state = 'disposed';
       controller.abort(error);
-      this.disposeOwners();
+      try {
+        this.disposeOwners();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Scene runtime load failed and cleanup also failed',
+        );
+      }
       throw error;
     } finally {
       if (this.loadController === controller) {
@@ -133,13 +142,30 @@ export class SceneRuntimeImpl implements SceneRuntime {
 
   async play() {
     this.assertReady();
+    const intentGeneration = ++this.playIntentGeneration;
+    this.playbackDesired = true;
     if (this.clock.currentTimeMs >= this.config!.totalDurationMs) {
+      this.playbackDesired = false;
       return;
     }
     if (!this.mediaUnlocked) {
-      await this.overlayRuntime.unlockMedia();
+      try {
+        await this.overlayRuntime.unlockMedia();
+      } catch (error) {
+        if (!this.isCurrentPlayIntent(intentGeneration)) {
+          if (this.isDisposed()) {
+            throw disposedError(error);
+          }
+          return;
+        }
+        this.playbackDesired = false;
+        throw error;
+      }
       this.assertReady();
       this.mediaUnlocked = true;
+    }
+    if (!this.isCurrentPlayIntent(intentGeneration)) {
+      return;
     }
     this.clock.play();
     this.applyLifecycleFrame({
@@ -150,6 +176,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
   }
 
   pause() {
+    this.cancelPlayIntent();
     if (this.state !== 'ready') {
       return;
     }
@@ -164,6 +191,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
   async seek(timeMs: number) {
     this.assertReady();
     const resume = this.clock.isPlaying;
+    this.cancelPlayIntent(resume);
     this.withSuppressedClockFrame(() => {
       if (resume) {
         this.clock.pause();
@@ -182,6 +210,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
 
   async replay() {
     this.assertReady();
+    this.cancelPlayIntent();
     this.withSuppressedClockFrame(() => {
       this.clock.pause();
       this.clock.seek(0);
@@ -195,6 +224,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
       return;
     }
     this.state = 'disposed';
+    this.cancelPlayIntent();
     this.loadController?.abort(
       new SceneRuntimeError('RUNTIME_DISPOSED', 'Scene runtime is disposed'),
     );
@@ -231,6 +261,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
   }
 
   private handleFrameError(error: unknown) {
+    this.cancelPlayIntent();
     if (this.state === 'ready' && this.clock.isPlaying) {
       this.withSuppressedClockFrame(() => this.clock.pause());
     }
@@ -285,21 +316,47 @@ export class SceneRuntimeImpl implements SceneRuntime {
     return this.state === 'disposed';
   }
 
+  private cancelPlayIntent(playbackDesired = false) {
+    this.playIntentGeneration += 1;
+    this.playbackDesired = playbackDesired;
+  }
+
+  private isCurrentPlayIntent(generation: number) {
+    return this.playbackDesired && generation === this.playIntentGeneration;
+  }
+
   private disposeOwners() {
     if (this.ownersDisposed) {
       return;
     }
     this.ownersDisposed = true;
-    this.unsubscribeClock?.();
+    const errors: unknown[] = [];
+    const attempt = (operation: () => void) => {
+      try {
+        operation();
+      } catch (error) {
+        errors.push(error);
+      }
+    };
+    const unsubscribeClock = this.unsubscribeClock;
     this.unsubscribeClock = undefined;
-    this.overlayRuntime.dispose();
-    this.modelRuntime.dispose();
-    this.mapRuntime.dispose();
-    this.resources.dispose();
-    this.clock.dispose();
     this.config = undefined;
     this.mediaUnlocked = false;
     delete this.options.overlayRoot.dataset.runtimeTimeMs;
+
+    attempt(() => unsubscribeClock?.());
+    attempt(() => this.overlayRuntime.dispose());
+    attempt(() => this.modelRuntime.dispose());
+    attempt(() => this.mapRuntime.dispose());
+    attempt(() => this.resources.dispose());
+    attempt(() => this.clock.dispose());
+
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, 'Failed to dispose scene runtime owners');
+    }
   }
 }
 
