@@ -442,6 +442,48 @@ describe('Agent SSE client', () => {
     expect(stream.locked).toBe(false);
   });
 
+  it('rejects abort before yielding a second frame buffered in the same chunk', async () => {
+    const cancel = vi.fn();
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'id: 14\nevent: run.started\ndata: {}\n\n' +
+              'id: 15\nevent: run.completed\ndata: {}\n\n'
+          )
+        );
+      },
+      cancel
+    });
+    fetchMock.mockResolvedValueOnce(
+      new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' }
+      })
+    );
+    const controller = new AbortController();
+    const reason = new DOMException('Session replaced', 'AbortError');
+    const iterator = streamAgentEvents('session-1', {
+      signal: controller.signal
+    });
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { id: '14', type: 'run.started', data: {} }
+    });
+    controller.abort(reason);
+    const outcome = await iterator.next().then(
+      (value) => ({ status: 'resolved' as const, value }),
+      (error: unknown) => ({ status: 'rejected' as const, error })
+    );
+    await iterator.return(undefined);
+
+    expect(outcome).toEqual({ status: 'rejected', error: reason });
+    expect(cancel).toHaveBeenCalledWith(reason);
+    expect(stream.locked).toBe(false);
+  });
+
   it('cancels and unlocks the reader when the request is aborted', async () => {
     const cancel = vi.fn();
     let markReadStarted!: () => void;

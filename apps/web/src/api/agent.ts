@@ -363,6 +363,11 @@ async function* parseSseStream(
     aborted = true;
     void cancelReader(abortReason(signal!));
   };
+  const throwIfAborted = () => {
+    if (!signal || (!aborted && !signal.aborted)) return;
+    aborted = true;
+    throw abortReason(signal);
+  };
 
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
@@ -374,7 +379,7 @@ async function* parseSseStream(
 
     while (true) {
       const { done, value } = await reader.read();
-      if (aborted) throw abortReason(signal!);
+      throwIfAborted();
       if (value) buffer += decoder.decode(value, { stream: true });
       if (done) {
         buffer += decoder.decode();
@@ -383,10 +388,15 @@ async function* parseSseStream(
 
       let boundary = /\r?\n\r?\n/.exec(buffer);
       while (boundary?.index !== undefined) {
+        throwIfAborted();
         const frame = buffer.slice(0, boundary.index);
         buffer = buffer.slice(boundary.index + boundary[0].length);
         const event = parseSseFrame(frame);
-        if (event) yield event;
+        throwIfAborted();
+        if (event) {
+          yield event;
+          throwIfAborted();
+        }
         boundary = /\r?\n\r?\n/.exec(buffer);
       }
 
