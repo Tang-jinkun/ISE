@@ -12,6 +12,7 @@ import {
   type CompiledRuntimeArtifactData,
 } from '../contracts/artifactTypes.ts'
 import type { AgentRepositories, RunRecord } from '../persistence/repositories.ts'
+import { SqlJsPersistenceError } from '../persistence/sqlJsDatabase.ts'
 import { PersistentArtifactStore } from '../persistence/persistentArtifactStore.ts'
 import { PersistentDomainStateStore } from '../persistence/persistentDomainStateStore.ts'
 import { IseAgentHost } from '../runtime/IseAgentHost.ts'
@@ -117,18 +118,18 @@ export class SessionAgentRunner {
     if (!session.activeRunId) throw agentError(409, 'NO_ACTIVE_RUN')
     const run = this.options.repositories.runs.get(session.activeRunId)
     if (!run || !['queued', 'running'].includes(run.status)) throw agentError(409, 'NO_ACTIVE_RUN')
-    this.#controllers.get(run.id)?.abort(new DOMException('Run cancelled', 'AbortError'))
     this.options.repositories.transaction(() => {
       this.options.repositories.runs.finish(run.id, 'cancelled', {
         code: 'RUN_CANCELLED', message: 'Run cancelled by the session owner',
       })
       this.options.repositories.sessions.transition(sessionId, ['queued', 'running'], 'cancelled')
-      this.events.append(sessionId, run.id, 'run.failed', {
+      this.appendTerminalAfterCommit(sessionId, run.id, 'run.failed', {
         runId: run.id,
         status: 'cancelled',
         diagnostics: [{ code: 'RUN_CANCELLED', message: 'Run cancelled by the session owner', severity: 'error' }],
       })
     })
+    this.#controllers.get(run.id)?.abort(new DOMException('Run cancelled', 'AbortError'))
     return { runId: run.id, status: 'cancelled' }
   }
 
@@ -166,7 +167,7 @@ export class SessionAgentRunner {
         workspace: this.options.workspace,
         artifacts,
         domainState: new PersistentDomainStateStore(run.sessionId, this.options.repositories.sessions),
-        eventSink: new PublicEventSink(run.sessionId, this.events, run.id),
+        eventSink: new PublicEventSink(run.sessionId, this.events, run.id, false),
         signal: controller.signal,
       }).run(run.objective)
       if (result.goal.status !== 'completed') {
@@ -185,7 +186,13 @@ export class SessionAgentRunner {
       const draft = drafts[0]
       await this.finishFromResult(run, result, compiled, draft)
     } catch (error) {
-      await this.finishFromThrownError(runId, error, controller.signal.aborted)
+      if (!(error instanceof SqlJsPersistenceError)) {
+        try {
+          await this.finishFromThrownError(runId, error, controller.signal.aborted)
+        } catch (terminalError) {
+          if (!(terminalError instanceof SqlJsPersistenceError)) throw terminalError
+        }
+      }
     } finally {
       this.#controllers.delete(runId)
     }
@@ -205,7 +212,7 @@ export class SessionAgentRunner {
         if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
         this.options.repositories.runs.finish(run.id, 'completed')
         this.options.repositories.sessions.transition(run.sessionId, ['running'], 'completed')
-        this.events.append(run.sessionId, run.id, 'run.completed', {
+        this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.completed', {
           runId: run.id,
           status: 'completed',
           runtimeArtifactId: compiled.id,
@@ -219,6 +226,10 @@ export class SessionAgentRunner {
       this.options.repositories.runs.finish(run.id, 'completed')
       if (draft && this.#draftObserver) this.#draftObserver({ sessionId: run.sessionId, runId: run.id, draft })
       else this.options.repositories.sessions.transition(run.sessionId, ['running'], draft ? 'awaiting_review' : 'completed')
+      if (!draft) this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.completed', {
+        runId: run.id,
+        status: 'completed',
+      })
     })
   }
 
@@ -236,7 +247,7 @@ export class SessionAgentRunner {
         ['queued', 'running'],
         aborted ? 'cancelled' : 'failed',
       )
-      this.events.append(run.sessionId, run.id, 'run.failed', {
+      this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.failed', {
         runId: run.id,
         status: aborted ? 'cancelled' : 'failed',
         diagnostics,
@@ -323,6 +334,16 @@ export class SessionAgentRunner {
       artifacts,
       domainState: new PersistentDomainStateStore(run.sessionId, this.options.repositories.sessions),
     }
+  }
+
+  private appendTerminalAfterCommit(
+    sessionId: string,
+    runId: string,
+    type: 'run.completed' | 'run.failed',
+    data: Record<string, unknown>,
+  ): void {
+    const event = this.events.record(sessionId, runId, type, data)
+    this.options.repositories.afterCommit(() => this.events.publish(sessionId, event))
   }
 
   private currentNarrative(run: RunRecord, artifacts: readonly Artifact[]): Artifact | undefined {

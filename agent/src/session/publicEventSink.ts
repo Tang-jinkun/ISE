@@ -11,7 +11,7 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-function publicArtifactMetadata(value: unknown): Record<string, unknown> | undefined {
+export function publicArtifactMetadata(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object') return undefined
   const input = value as Record<string, unknown>
   const allowed = ['documentId', 'planId', 'version', 'fingerprint', 'sourceHash', 'sourceEventPlan']
@@ -24,6 +24,7 @@ export class PublicEventSink implements AgentEventSink {
     readonly sessionId: string,
     readonly broker: EventBroker,
     readonly persistentRunId?: string,
+    readonly includeTerminalEvents = true,
   ) {}
 
   async emit(event: AgentActionEvent): Promise<void> {
@@ -69,6 +70,7 @@ export class PublicEventSink implements AgentEventSink {
         return
       }
       case 'run.failed':
+        if (!this.includeTerminalEvents) return
         this.broker.append(this.sessionId, runId, 'run.failed', {
           runId,
           status: 'failed',

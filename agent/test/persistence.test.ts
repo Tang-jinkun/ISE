@@ -95,11 +95,23 @@ test('a persistence flush failure restores live state and cannot reappear after 
       if (flushes === 2) throw new Error('INJECTED_FLUSH_FAILURE')
     },
   })
-  database.transaction(() => database.exec('CREATE TABLE records (id TEXT PRIMARY KEY)'))
+  database.transaction(() => database.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE records (id TEXT PRIMARY KEY);
+    CREATE TABLE child_records (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT NOT NULL REFERENCES records(id)
+    );
+  `))
+  assert.equal(Number(database.prepare('PRAGMA foreign_keys').get()!.foreign_keys), 1)
   assert.throws(() => database.transaction(() => {
     database.prepare('INSERT INTO records(id) VALUES(?)').run(['failed-row'])
   }), /INJECTED_FLUSH_FAILURE/)
   assert.equal(database.prepare('SELECT id FROM records WHERE id = ?').get(['failed-row']), undefined)
+  assert.equal(Number(database.prepare('PRAGMA foreign_keys').get()!.foreign_keys), 1)
+  assert.throws(() => {
+    database.prepare('INSERT INTO child_records(id,parent_id) VALUES(?,?)').run(['orphan', 'missing-parent'])
+  }, /FOREIGN KEY constraint failed/)
   database.close()
 
   const reopened = await SqlJsDatabaseAdapter.open(path)

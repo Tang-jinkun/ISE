@@ -13,6 +13,15 @@ import { AgentDatabase } from '../src/persistence/database.ts'
 import { PersistentArtifactStore } from '../src/persistence/persistentArtifactStore.ts'
 import { AgentRepositories } from '../src/persistence/repositories.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
+import { EventBroker } from '../src/session/eventBroker.ts'
+
+class RecordingEventBroker extends EventBroker {
+  readonly published: Array<{ id: string; type: string; data: Record<string, unknown> }> = []
+  override publish(sessionId: string, event: Parameters<EventBroker['publish']>[1]): void {
+    this.published.push(event)
+    super.publish(sessionId, event)
+  }
+}
 
 const model: ModelAdapter = { complete: async () => ({ content: 'downstream queued' }) }
 const nest: NestGateway = {
@@ -61,8 +70,9 @@ async function fixture() {
   const review = repositories.reviews.createPending({
     sessionId: session.id, artifactId: draft.id, artifactVersion: 1, fingerprint: planFingerprint,
   })
-  const app = await createHttpApp({ repositories, nest, modelFactory: () => model })
-  return { app, database, repositories, sessionId: session.id, draft, review, plan }
+  const events = new RecordingEventBroker(repositories.events)
+  const app = await createHttpApp({ repositories, nest, modelFactory: () => model, events })
+  return { app, database, repositories, events, sessionId: session.id, draft, review, plan }
 }
 
 function bearer() { return { authorization: 'Bearer user-1' } }
@@ -78,6 +88,10 @@ test('approve invokes accept_event_plan with a trusted exact binding', async () 
   assert.equal(accepted?.createdBy, 'user')
   assert.equal(accepted?.metadata?.confirmationId, `review:${f.review.id}:user-1`)
   assert.equal(accepted?.metadata?.acceptedDraftArtifactId, f.draft.id)
+  const reviewEvents = f.events.published.filter(event => ['artifact.created', 'review.resolved'].includes(event.type))
+  assert.deepEqual(reviewEvents.map(event => event.type), ['artifact.created', 'review.resolved'])
+  assert.deepEqual(Object.keys((reviewEvents[0]!.data.metadata ?? {}) as Record<string, unknown>).sort(),
+    ['documentId', 'fingerprint', 'planId', 'version'])
   await f.app.close()
   f.database.close()
 })
@@ -107,6 +121,8 @@ test('revision creates version two and supersedes but does not mutate version on
   assert.deepEqual(f.repositories.artifacts.get(f.sessionId, f.draft.id)?.data, before)
   assert.equal(f.repositories.artifacts.get(f.sessionId, f.draft.id)?.superseded, true)
   assert.deepEqual(response.json().artifact.data.eventUnits, eventUnits)
+  assert.deepEqual(f.events.published.filter(event => ['artifact.created', 'review.requested'].includes(event.type))
+    .map(event => event.type), ['artifact.created', 'review.requested'])
   await f.app.close()
   f.database.close()
 })
@@ -178,6 +194,7 @@ test('approval rolls back accepted artifact, event, and decision when queued run
   assert.equal(f.repositories.reviews.get(f.sessionId, f.review.id)?.status, 'pending')
   assert.equal(f.repositories.artifacts.list(f.sessionId).some(item => item.type === EVENT_PLAN_ACCEPTED_ARTIFACT), false)
   assert.equal(f.repositories.events.after(f.sessionId, '0').some(event => event.type === 'review.resolved'), false)
+  assert.equal(f.repositories.events.after(f.sessionId, '0').some(event => event.type === 'artifact.created'), false)
   assert.equal(Number(f.repositories.database.prepare('SELECT COUNT(*) AS count FROM runs').get()!.count), 0)
   await f.app.close()
   f.database.close()
@@ -195,6 +212,7 @@ test('revision rolls back its artifact and old review mutation when pending revi
   assert.deepEqual(f.repositories.artifacts.listLedger(f.sessionId)
     .filter(item => item.type === EVENT_PLAN_DRAFT_ARTIFACT).map(item => item.version), [1])
   assert.equal(f.repositories.events.after(f.sessionId, '0').some(event => event.type === 'review.requested'), false)
+  assert.equal(f.repositories.events.after(f.sessionId, '0').some(event => event.type === 'artifact.created'), false)
   await f.app.close()
   f.database.close()
 })

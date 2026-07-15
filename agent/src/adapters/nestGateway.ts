@@ -144,20 +144,21 @@ export class FetchNestGateway implements NestGateway {
   async readOwnedFile(fileId: string, authorization: string): Promise<AuthorizedFile> {
     assertOpaqueId(fileId)
     const response = await this.request(`/file/${encodeURIComponent(fileId)}/content`, authorization)
+    const declaredSize = parseBoundedContentLength(response.headers.get('content-length'))
+    let bytes: Buffer
     try {
-      const declaredSize = parseBoundedContentLength(response.headers.get('content-length'))
-      const bytes = Buffer.from(await response.arrayBuffer())
-      if (bytes.length !== declaredSize) throw bridgeError()
-      return validateDocxIdentity({
-        fileId,
-        name: parseAttachmentFilename(response.headers.get('content-disposition')),
-        mimeType: response.headers.get('content-type') ?? '',
-        headerFingerprint: response.headers.get('x-content-sha256') ?? '',
-        bytes,
-      })
+      bytes = Buffer.from(await response.arrayBuffer())
     } catch {
       throw bridgeError()
     }
+    if (bytes.length !== declaredSize) throw agentError(415, 'ATTACHMENT_SIZE_MISMATCH')
+    return validateDocxIdentity({
+      fileId,
+      name: parseAttachmentFilename(response.headers.get('content-disposition')),
+      mimeType: response.headers.get('content-type') ?? '',
+      headerFingerprint: response.headers.get('x-content-sha256') ?? '',
+      bytes,
+    })
   }
 
   async listAssetMetadata(authorization: string): Promise<unknown> {

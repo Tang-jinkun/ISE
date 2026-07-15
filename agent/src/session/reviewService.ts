@@ -19,6 +19,7 @@ import { eventPlanSchema, type EventPlan } from '../contracts/eventPlan.ts'
 import type { AgentRepositories, ReviewRecord } from '../persistence/repositories.ts'
 import { createEventPlanTools } from '../tools/eventPlanTools.ts'
 import type { EventBroker } from './eventBroker.ts'
+import { publicArtifactMetadata } from './publicEventSink.ts'
 import type { SessionAgentRunner } from './sessionAgentRunner.ts'
 
 function requireTool(tools: readonly AgentTool[], name: string): AgentTool {
@@ -131,6 +132,7 @@ export class ReviewService {
           subject: input.subject,
           acceptedArtifactId: accepted.id,
         })
+        this.appendArtifactAfterCommit(input.sessionId, `approval-${review.id}`, accepted)
         this.appendAfterCommit(input.sessionId, `approval-${review.id}`, 'review.resolved', {
           ...tuple(review), decision: 'approved',
         })
@@ -218,6 +220,7 @@ export class ReviewService {
           fingerprint: String(revised.metadata?.fingerprint),
         })
         this.repositories.sessions.transition(input.sessionId, ['awaiting_review'], 'awaiting_review')
+        this.appendArtifactAfterCommit(input.sessionId, runId, revised)
         this.appendAfterCommit(input.sessionId, runId, 'review.requested', tuple(created))
         return created
       })
@@ -269,6 +272,18 @@ export class ReviewService {
     data: Record<string, unknown>,
   ): void {
     const event = this.events.record(sessionId, runId, type, data)
+    this.repositories.afterCommit(() => this.events.publish(sessionId, event))
+  }
+
+  private appendArtifactAfterCommit(sessionId: string, runId: string, artifact: Artifact): void {
+    const metadata = publicArtifactMetadata(artifact.metadata)
+    const event = this.events.record(sessionId, runId, 'artifact.created', {
+      runId,
+      artifactId: artifact.id,
+      artifactType: artifact.type,
+      ...(artifact.logicalKey ? { logicalKey: artifact.logicalKey } : {}),
+      ...(metadata ? { metadata } : {}),
+    })
     this.repositories.afterCommit(() => this.events.publish(sessionId, event))
   }
 

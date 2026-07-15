@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import test, { type TestContext } from 'node:test'
 import type { ModelAdapter, ModelRequest, ModelResponse } from '@ise/agent-core'
+import { SkillRegistry } from '@ise/skills-core'
 import type { AuthorizedFile, NestGateway } from '../src/adapters/nestGateway.ts'
 import { createHttpApp } from '../src/api/httpApp.ts'
 import { AgentDatabase } from '../src/persistence/database.ts'
@@ -12,6 +16,8 @@ import {
   NARRATIVE_PLAN_ARTIFACT,
 } from '../src/contracts/artifactTypes.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
+import { EventBroker } from '../src/session/eventBroker.ts'
+import { SessionAgentRunner } from '../src/session/sessionAgentRunner.ts'
 
 class TestNestGateway implements NestGateway {
   readonly file: AuthorizedFile = {
@@ -47,6 +53,31 @@ class BlockingModel implements ModelAdapter {
   }
 }
 
+class ControllableModel implements ModelAdapter {
+  readonly started: Promise<void>
+  #resolveStarted!: () => void
+  #resolve?: (response: ModelResponse) => void
+  #reject?: (error: Error) => void
+
+  constructor() {
+    this.started = new Promise(resolve => { this.#resolveStarted = resolve })
+  }
+
+  async complete(request: ModelRequest): Promise<ModelResponse> {
+    this.#resolveStarted()
+    return new Promise<ModelResponse>((resolve, reject) => {
+      this.#resolve = resolve
+      this.#reject = reject
+      const abort = () => reject(request.signal?.reason ?? new DOMException('Aborted', 'AbortError'))
+      if (request.signal?.aborted) abort()
+      else request.signal?.addEventListener('abort', abort, { once: true })
+    })
+  }
+
+  succeed(): void { this.#resolve?.({ content: 'completed' }) }
+  fail(): void { this.#reject?.(new Error('model failed')) }
+}
+
 async function fixture(model: ModelAdapter = { complete: async () => ({ content: 'done' }) }) {
   const database = await AgentDatabase.open(':memory:', 'sql.js')
   const repositories = new AgentRepositories(database)
@@ -70,6 +101,57 @@ async function waitForTerminal(repositories: AgentRepositories, sessionId: strin
     await new Promise(resolve => setTimeout(resolve, 10))
   }
   throw new Error('Timed out waiting for terminal session')
+}
+
+async function waitFor(predicate: () => boolean, message: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  throw new Error(message)
+}
+
+async function terminalFixture(t: TestContext, model: ControllableModel, persisted: boolean) {
+  let failNextFlush = false
+  let flushFaults = 0
+  const path = persisted
+    ? join(await mkdtemp(join(tmpdir(), 'ise-agent-terminal-')), 'agent.sqlite')
+    : ':memory:'
+  if (persisted) t.after(() => rm(join(path, '..'), { recursive: true, force: true }))
+  const database = await AgentDatabase.open(path, 'sql.js', {
+    beforeRename: () => {
+      if (!failNextFlush) return
+      failNextFlush = false
+      flushFaults += 1
+      throw new Error('INJECTED_TERMINAL_FLUSH_FAILURE')
+    },
+  })
+  const repositories = new AgentRepositories(database)
+  const session = repositories.sessions.create('user-1')
+  const events = new EventBroker(repositories.events)
+  const runner = new SessionAgentRunner({
+    repositories,
+    nest: new TestNestGateway(),
+    modelFactory: () => model,
+    skills: new SkillRegistry(),
+    workspace: process.cwd(),
+    events,
+  })
+  return {
+    database, repositories, session, events, runner,
+    armFault: () => { failNextFlush = true },
+    flushFaults: () => flushFaults,
+  }
+}
+
+function collectEvents(events: EventBroker, sessionId: string) {
+  const controller = new AbortController()
+  const values: Array<{ id: string; type: string }> = []
+  const done = (async () => {
+    for await (const event of events.subscribe(sessionId, '0', controller.signal)) values.push(event)
+  })()
+  return { values, stop: async () => { controller.abort(); await done } }
 }
 
 function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
@@ -208,5 +290,69 @@ test('ordinary and failed runs never compile a NarrativePlan left by an older ru
     })), false)
     await app.close()
     database.close()
+  }
+})
+
+test('terminal flush failures publish no completed, failed, or interrupt event', async (t) => {
+  for (const outcome of ['completed', 'failed', 'interrupt'] as const) {
+    const model = new ControllableModel()
+    const f = await terminalFixture(t, model, true)
+    const live = collectEvents(f.events, f.session.id)
+    await new Promise(resolve => setImmediate(resolve))
+    const queued = f.runner.enqueue({
+      sessionId: f.session.id,
+      subject: 'user-1',
+      authorization: 'Bearer user-1',
+      content: outcome,
+    })
+    await model.started
+    f.armFault()
+    if (outcome === 'completed') model.succeed()
+    else if (outcome === 'failed') model.fail()
+    else assert.throws(() => f.runner.interrupt(f.session.id, 'user-1'), /INJECTED_TERMINAL_FLUSH_FAILURE/)
+    await waitFor(() => f.flushFaults() > 0 || ['completed', 'failed', 'cancelled'].includes(
+      f.repositories.runs.get(queued.runId)?.status ?? ''), `No terminal outcome for ${outcome}`)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const isTerminal = (event: { type: string }) => ['run.completed', 'run.failed'].includes(event.type)
+    assert.equal(f.flushFaults(), 1, outcome)
+    assert.deepEqual(live.values.filter(isTerminal), [], `${outcome} live`)
+    assert.deepEqual(f.repositories.events.after(f.session.id, '0').filter(isTerminal), [], `${outcome} durable`)
+    assert.deepEqual(f.events.replayAfter(f.session.id, '0').filter(isTerminal), [], `${outcome} replay`)
+    await live.stop()
+    if (['queued', 'running'].includes(f.repositories.runs.get(queued.runId)?.status ?? '')) {
+      f.runner.interrupt(f.session.id, 'user-1')
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    f.database.close()
+  }
+})
+
+test('successful completed, failed, and interrupt paths publish one ordered terminal event', async (t) => {
+  for (const outcome of ['completed', 'failed', 'interrupt'] as const) {
+    const model = new ControllableModel()
+    const f = await terminalFixture(t, model, false)
+    const live = collectEvents(f.events, f.session.id)
+    await new Promise(resolve => setImmediate(resolve))
+    const queued = f.runner.enqueue({
+      sessionId: f.session.id,
+      subject: 'user-1',
+      authorization: 'Bearer user-1',
+      content: outcome,
+    })
+    await model.started
+    if (outcome === 'completed') model.succeed()
+    else if (outcome === 'failed') model.fail()
+    else f.runner.interrupt(f.session.id, 'user-1')
+    await waitFor(() => ['completed', 'failed', 'cancelled'].includes(
+      f.repositories.runs.get(queued.runId)?.status ?? ''), `No successful terminal outcome for ${outcome}`)
+    await waitFor(() => live.values.some(event => ['run.completed', 'run.failed'].includes(event.type)), `No live terminal event for ${outcome}`)
+    const durable = f.repositories.events.after(f.session.id, '0')
+    const terminals = durable.filter(event => ['run.completed', 'run.failed'].includes(event.type))
+    assert.equal(terminals.length, 1, outcome)
+    assert.equal(terminals[0]!.type, outcome === 'completed' ? 'run.completed' : 'run.failed', outcome)
+    assert.ok(BigInt(terminals[0]!.id) > BigInt(durable.find(event => event.type === 'run.started')!.id), outcome)
+    assert.equal(live.values.filter(event => ['run.completed', 'run.failed'].includes(event.type)).length, 1, outcome)
+    await live.stop()
+    f.database.close()
   }
 })

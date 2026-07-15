@@ -31,7 +31,15 @@ export interface SqlJsPersistenceOptions {
   beforeRename?: () => void
 }
 
+export class SqlJsPersistenceError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'SQLJS_PERSISTENCE_FAILED', { cause })
+    this.name = 'SqlJsPersistenceError'
+  }
+}
+
 type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>
+const REQUIRED_CONNECTION_PRAGMAS = 'PRAGMA foreign_keys = ON;'
 
 export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
   #inTransaction = false
@@ -48,7 +56,9 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
     const require = createRequire(import.meta.url)
     const SQL = await initSqlJs({ locateFile: file => require.resolve(`sql.js/dist/${file}`) })
     const bytes = path !== ':memory:' && existsSync(path) ? readFileSync(path) : undefined
-    return new SqlJsDatabaseAdapter(new SQL.Database(bytes), path, SQL, persistenceOptions)
+    const adapter = new SqlJsDatabaseAdapter(new SQL.Database(bytes), path, SQL, persistenceOptions)
+    adapter.applyConnectionPragmas()
+    return adapter
   }
 
   exec(sql: string): void {
@@ -86,6 +96,7 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
     this.assertOpen()
     if (this.#inTransaction) return work()
     const snapshot = this.database.export()
+    this.applyConnectionPragmas()
     this.#inTransaction = true
     this.database.run('BEGIN IMMEDIATE')
     let committed = false
@@ -96,8 +107,12 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
       try {
         this.persist()
       } catch (error) {
-        this.restore(snapshot)
-        throw error
+        try {
+          this.restore(snapshot)
+        } catch (restoreError) {
+          throw new SqlJsPersistenceError(restoreError)
+        }
+        throw new SqlJsPersistenceError(error)
       }
       return result
     } catch (error) {
@@ -109,8 +124,20 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
   }
 
   private restore(snapshot: Uint8Array): void {
-    this.database.close()
-    this.database = new this.SQL.Database(snapshot)
+    const replacement = new this.SQL.Database(snapshot)
+    try {
+      replacement.run(REQUIRED_CONNECTION_PRAGMAS)
+    } catch (error) {
+      replacement.close()
+      throw error
+    }
+    const previous = this.database
+    this.database = replacement
+    previous.close()
+  }
+
+  private applyConnectionPragmas(): void {
+    this.database.run(REQUIRED_CONNECTION_PRAGMAS)
   }
 
   close(): void {
@@ -122,11 +149,13 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
 
   private persist(): void {
     if (this.path === ':memory:') return
+    const bytes = Buffer.from(this.database.export())
+    this.applyConnectionPragmas()
     mkdirSync(dirname(this.path), { recursive: true })
     const temporary = `${this.path}.tmp`
     const handle = openSync(temporary, 'w')
     try {
-      writeFileSync(handle, Buffer.from(this.database.export()))
+      writeFileSync(handle, bytes)
       fsyncSync(handle)
     } finally {
       closeSync(handle)

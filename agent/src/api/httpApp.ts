@@ -17,6 +17,7 @@ export interface CreateHttpAppOptions {
   modelFactory: (sessionId: string) => ModelAdapter
   skills?: SkillRegistry
   workspace?: string
+  events?: EventBroker
 }
 
 async function loadSkills(): Promise<SkillRegistry> {
@@ -33,7 +34,7 @@ async function loadSkills(): Promise<SkillRegistry> {
 
 export async function createHttpApp(options: CreateHttpAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
-  const events = new EventBroker(options.repositories.events)
+  const events = options.events ?? new EventBroker(options.repositories.events)
   const runner = new SessionAgentRunner({
     repositories: options.repositories,
     nest: options.nest,
