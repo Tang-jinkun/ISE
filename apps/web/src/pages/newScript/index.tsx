@@ -37,6 +37,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { selectArtifactExports } from './artifactExports';
+import { ArtifactExportControls } from './components/ArtifactExportControls';
 import { ChatContent } from './components/ChatContent';
 import { DataImportButton } from './components/DataImportButton';
 import { EventPlanReview } from './components/EventPlanReview';
@@ -229,6 +231,9 @@ export default function Script() {
     completedRuntimeArtifact?.type === 'ise.canonical-runtime-plan/v1'
       ? compiledConfig
       : null;
+  const artifactExports = isCurrentSession
+    ? selectArtifactExports(sessionState)
+    : {};
 
   const [saving, setSaving] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string>('n-root');
@@ -730,6 +735,7 @@ export default function Script() {
 
           <div className="flex items-center gap-3">
             <ThemeToggle />
+            <ArtifactExportControls exports={artifactExports} />
             <button
               type="button"
               onClick={() => {
