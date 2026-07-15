@@ -1,0 +1,11 @@
+// Unit Identification Colors (HSL Color Wheel)
+// Pre-allocated with 60° steps for maximum distinctness
+
+:export {
+  unitColor0: var(--chart-1);
+  unitColor1: var(--chart-2);
+  unitColor2: var(--chart-3);
+  unitColor3: var(--chart-4);
+  unitColor4: var(--chart-5);
+  unitColor5: var(--chart-1);
+}

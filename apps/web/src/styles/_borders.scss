@@ -1,0 +1,12 @@
+
+:root {
+  --radius: 0.5rem;
+}
+
+$border-radius: (
+  "base": var(--radius),
+  "sm": calc(var(--radius) - 4px),
+  "md": calc(var(--radius) - 2px),
+  "lg": var(--radius),
+  "xl": calc(var(--radius) + 4px)
+);

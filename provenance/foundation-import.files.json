@@ -1,0 +1,1382 @@
+[
+  {
+    "source": "intelligents_sceneditor_back/.editorconfig",
+    "target": "apps/api/.editorconfig",
+    "bytes": 261,
+    "sha256": "8752334325958ce7fb894398bdfd64ed5b99f816b9afa7860729c59e2790108b"
+  },
+  {
+    "source": "intelligents_sceneditor_back/.prettierignore",
+    "target": "apps/api/.prettierignore",
+    "bytes": 65,
+    "sha256": "e82338acf4376c0efd2d565502dd92b89d598d34b61b10f302553b1e550ed9e5"
+  },
+  {
+    "source": "intelligents_sceneditor_back/.prettierrc",
+    "target": "apps/api/.prettierrc",
+    "bytes": 220,
+    "sha256": "3a28a51432b9201e6f7604fd36bbe2263f40ac03119ff024047fca4e44e290f5"
+  },
+  {
+    "source": "intelligents_sceneditor_back/eslint.config.cjs",
+    "target": "apps/api/eslint.config.cjs",
+    "bytes": 2266,
+    "sha256": "03476f5dae928d5000b9cc56aca4b917ea153ce126702405a44a8a8a1f2bf68f"
+  },
+  {
+    "source": "intelligents_sceneditor_back/nest-cli.json",
+    "target": "apps/api/nest-cli.json",
+    "bytes": 211,
+    "sha256": "11bc026e9315f715cdc0b675ff42838d3b1b2e44122a99b122acdd1b71f14b6c"
+  },
+  {
+    "source": "intelligents_sceneditor_back/package.json",
+    "target": "apps/api/package.json",
+    "bytes": 3196,
+    "sha256": "09547d2f546768f78ca25fb5e7e688942a23ebefa3a972ca8a437c0434304463"
+  },
+  {
+    "source": "intelligents_sceneditor_back/prisma.config.ts",
+    "target": "apps/api/prisma.config.ts",
+    "bytes": 302,
+    "sha256": "4feb925b5982a77970499bdedcdd41d3b6bc80b2804ece6d9c8c691eac09ef1e"
+  },
+  {
+    "source": "intelligents_sceneditor_back/prisma/migrations/20260114062559_init_user_table/migration.sql",
+    "target": "apps/api/prisma/migrations/20260114062559_init_user_table/migration.sql",
+    "bytes": 5009,
+    "sha256": "ddab4f4baf5a49da3ac603d834a0c41e425abfe877628b4c967f18395120c7cb"
+  },
+  {
+    "source": "intelligents_sceneditor_back/prisma/migrations/20260115074445/migration.sql",
+    "target": "apps/api/prisma/migrations/20260115074445/migration.sql",
+    "bytes": 72,
+    "sha256": "f8908d792dc4ac75b523908074be940d4489288bcc37017f568ea5d450805017"
+  },
+  {
+    "source": "intelligents_sceneditor_back/prisma/migrations/20260127123246_add_scene_config/migration.sql",
+    "target": "apps/api/prisma/migrations/20260127123246_add_scene_config/migration.sql",
+    "bytes": 87,
+    "sha256": "43f1aaec087c3ab462904e60ec5aacae81166c318470d549c85a29f3876956c0"
+  },
+  {
+    "source": "intelligents_sceneditor_back/prisma/migrations/migration_lock.toml",
+    "target": "apps/api/prisma/migrations/migration_lock.toml",
+    "bytes": 128,
+    "sha256": "99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900"
+  },
+  {
+    "source": "intelligents_sceneditor_back/prisma/schema.prisma",
+    "target": "apps/api/prisma/schema.prisma",
+    "bytes": 3334,
+    "sha256": "6e9813333856a44a4abcd5d863d68eed5fa1ff94e7f311f2f7e8a989f3f2558c"
+  },
+  {
+    "source": "intelligents_sceneditor_back/rspack.config.ts",
+    "target": "apps/api/rspack.config.ts",
+    "bytes": 1144,
+    "sha256": "bba9f79b6130a96dfa3c95fcd0aa1327962d9f2e30c32d3c70a025af8c87ef78"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/app.controller.spec.ts",
+    "target": "apps/api/src/app.controller.spec.ts",
+    "bytes": 617,
+    "sha256": "88faf5523fd7f5dae5a6c78be2dd1709eb6c20ee82c64fc399f8a2e8fb767527"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/app.controller.ts",
+    "target": "apps/api/src/app.controller.ts",
+    "bytes": 274,
+    "sha256": "260f889b9e2b69f77be1155348eb345166aec664b3efff6720053c6844a41f28"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/app.module.ts",
+    "target": "apps/api/src/app.module.ts",
+    "bytes": 1275,
+    "sha256": "129bc98d765166c0a8d5bff00a207d8af1b777436c35acdc77c8b7433e6aaf38"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/app.service.ts",
+    "target": "apps/api/src/app.service.ts",
+    "bytes": 142,
+    "sha256": "eaf8514ce110fa428a93a27408df4d06d133dbd9ed0a775c315ddfdd507853a9"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/config/winston.config.ts",
+    "target": "apps/api/src/config/winston.config.ts",
+    "bytes": 2045,
+    "sha256": "cbd424adaf0f4751b8e247fbf22646f3b8049439b4377e8f899a10f3c9b4a29c"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/enums/index.ts",
+    "target": "apps/api/src/enums/index.ts",
+    "bytes": 825,
+    "sha256": "d30e657724c4350ebcc2bc636462d247d1105f11d0a4bfd3b17027eb5d47a30d"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/filter/all-exception.filter.ts",
+    "target": "apps/api/src/filter/all-exception.filter.ts",
+    "bytes": 1710,
+    "sha256": "e0c474f9dd64fc7971bfeb9df8e4a0f34497e58b9a6d600b2d0cd14176e04af0"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/filter/http-exception.filter.ts",
+    "target": "apps/api/src/filter/http-exception.filter.ts",
+    "bytes": 763,
+    "sha256": "837a11ffa84c3f2d401919f3ffc35c9a7d1a60efa244c5f027f653e529514e44"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/main.ts",
+    "target": "apps/api/src/main.ts",
+    "bytes": 1385,
+    "sha256": "c94cab04daf23ddcd244eac3333332f8f545a54c599cd004105f83b881c700aa"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/minio/dto/param_minio.dto.ts",
+    "target": "apps/api/src/minio/dto/param_minio.dto.ts",
+    "bytes": 326,
+    "sha256": "c8b46ea448096efa699944c002414028cb017f19bbff3d496a0a4deb987ac039"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/minio/dto/save_minio.dto.ts",
+    "target": "apps/api/src/minio/dto/save_minio.dto.ts",
+    "bytes": 91,
+    "sha256": "bb848956d0d91bb33514906b7ec0913215d990f849e2c38375b8936d8e07a66a"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/minio/minio.controller.ts",
+    "target": "apps/api/src/minio/minio.controller.ts",
+    "bytes": 1365,
+    "sha256": "f44abca357fda1e91da4c81afb35752811b1402b7cfebf01229c316d7ab473b7"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/minio/minio.module.ts",
+    "target": "apps/api/src/minio/minio.module.ts",
+    "bytes": 275,
+    "sha256": "52d0cf1ca83b5a3d150a39f83ffa2b65c64790c3f5114a7037469da840bc1ac4"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/minio/minio.service.ts",
+    "target": "apps/api/src/minio/minio.service.ts",
+    "bytes": 3994,
+    "sha256": "b220c2ea05ac9eb583cdeea41e5da5b6cf4824e8dac3000d4eb741e49e10ccb2"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/auth/auth.controller.ts",
+    "target": "apps/api/src/modules/auth/auth.controller.ts",
+    "bytes": 2449,
+    "sha256": "55631f94bcea742ec7bc3d1fd5011517d4b8c2f378b9def3bc672d7a6a4f0b81"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/auth/auth.module.ts",
+    "target": "apps/api/src/modules/auth/auth.module.ts",
+    "bytes": 862,
+    "sha256": "aa8aefb7d957aef4d3337bc3d6942d33502e6592f8f4b350bc0baf8774f6641d"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/auth/auth.service.ts",
+    "target": "apps/api/src/modules/auth/auth.service.ts",
+    "bytes": 3435,
+    "sha256": "ea6a83b90ed86e00b681d89b24b6d18bf164657494123317ee0dbce8fe3c1ccf"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/auth/dto/params-auth.dto.ts",
+    "target": "apps/api/src/modules/auth/dto/params-auth.dto.ts",
+    "bytes": 404,
+    "sha256": "51df5bdde4aed38268ed37bfe9bd9aeae7b369af68b2813ab10e18057450f042"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/auth/dto/response-auth.dto.ts",
+    "target": "apps/api/src/modules/auth/dto/response-auth.dto.ts",
+    "bytes": 189,
+    "sha256": "56e7a395f0bba111850aa695f26758042a5f28235b2bdd7bb20b86161228dbbc"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/auth/jwt.strategy.ts",
+    "target": "apps/api/src/modules/auth/jwt.strategy.ts",
+    "bytes": 1000,
+    "sha256": "0343fb4e58031c452569521c56a25c6d9f7f805f04f28a28c4868bfec100fbbc"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/email/email.controller.ts",
+    "target": "apps/api/src/modules/email/email.controller.ts",
+    "bytes": 519,
+    "sha256": "194c2f93bcb90da6bd90e7d150a26b47fba247b2f5bdcc80fae8cca312981091"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/email/email.module.ts",
+    "target": "apps/api/src/modules/email/email.module.ts",
+    "bytes": 1079,
+    "sha256": "2306d99d220fff4b26039288123ac251848e836da27851748848afbc5bae53d8"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/email/email.service.ts",
+    "target": "apps/api/src/modules/email/email.service.ts",
+    "bytes": 607,
+    "sha256": "99926f2370ebc548bc0e38020972d77ae04c9542d33316a1b4f998a1221fe6ed"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/email/template/validate.code.ejs",
+    "target": "apps/api/src/modules/email/template/validate.code.ejs",
+    "bytes": 1113,
+    "sha256": "3640e6997eae50dcea7fc85f34b2eb65bc1c567038fa83b68e975402fa9890a6"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/file/dto/update-file.dto.ts",
+    "target": "apps/api/src/modules/file/dto/update-file.dto.ts",
+    "bytes": 505,
+    "sha256": "aab444aa88cbe1860a49589162e911166d3a4df663f256346a73a9d650b6035b"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/file/file.controller.ts",
+    "target": "apps/api/src/modules/file/file.controller.ts",
+    "bytes": 3363,
+    "sha256": "3afcad621c3e2f0742c5b5f7da7c5766ecda9ffb09ef02489f1b8c2ca03505bc"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/file/file.module.ts",
+    "target": "apps/api/src/modules/file/file.module.ts",
+    "bytes": 392,
+    "sha256": "dc0d0c5b6144664c9761318318c1e8219d5fe874d1b64607e5a3a53733fa0cc4"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/file/file.service.ts",
+    "target": "apps/api/src/modules/file/file.service.ts",
+    "bytes": 5400,
+    "sha256": "426d6f1cbad99ad73ea5cca5ac72695884b4349096f06b3b75180e1467fd8b05"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/folder/dto/create-folder.dto.ts",
+    "target": "apps/api/src/modules/folder/dto/create-folder.dto.ts",
+    "bytes": 488,
+    "sha256": "8fdd5da2e4b73e39876009f4bf0466e70256abe5aa7f7e570ff7db8eafc54add"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/folder/dto/query-folder.dto.ts",
+    "target": "apps/api/src/modules/folder/dto/query-folder.dto.ts",
+    "bytes": 292,
+    "sha256": "859ad2a48535465b07b8664cbd14e95d165cffc216f5aa24f778885a4994b44e"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/folder/dto/update-folder.dto.ts",
+    "target": "apps/api/src/modules/folder/dto/update-folder.dto.ts",
+    "bytes": 307,
+    "sha256": "1c69014c6e0048549eb91f3ce2b19c2ced6dddc9cb56a6c1bf467ca6588f13cd"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/folder/folder.controller.ts",
+    "target": "apps/api/src/modules/folder/folder.controller.ts",
+    "bytes": 2413,
+    "sha256": "2385451f159708a35167a445b0a08aea51a34bd5bf5e0f1f94ceb8c4d7e8d828"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/folder/folder.module.ts",
+    "target": "apps/api/src/modules/folder/folder.module.ts",
+    "bytes": 327,
+    "sha256": "d23c8fa6a2ee0f73f01ae028623410df9c33f47fd5486716aad7fa87f421a169"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/folder/folder.service.ts",
+    "target": "apps/api/src/modules/folder/folder.service.ts",
+    "bytes": 4490,
+    "sha256": "788d12df5b38de5ab3ef8f8cdbd922c5934d39cb3d5ae8fb6c7d5c3cb405fd9c"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/scene/dto/create-scene.dto.ts",
+    "target": "apps/api/src/modules/scene/dto/create-scene.dto.ts",
+    "bytes": 806,
+    "sha256": "52bf97fccc4f603ad2321a9827d8808db1362d858f3135e7cd52dbbbd5cc567c"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/scene/dto/query-scene.dto.ts",
+    "target": "apps/api/src/modules/scene/dto/query-scene.dto.ts",
+    "bytes": 457,
+    "sha256": "42b24e4fe06f03c83a0e54214aa310b8c89ea67af585a9343d88f3226b230c62"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/scene/dto/update-scene.dto.ts",
+    "target": "apps/api/src/modules/scene/dto/update-scene.dto.ts",
+    "bytes": 551,
+    "sha256": "c2e8ec5027746e82100a1eeada27e7be0620e2397666f9b465822e0b098876f8"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/scene/scene.controller.ts",
+    "target": "apps/api/src/modules/scene/scene.controller.ts",
+    "bytes": 3074,
+    "sha256": "6afdff31c96035ec56bb8c305a5523a48b424c12bbf4362d13097eb14057d668"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/scene/scene.module.ts",
+    "target": "apps/api/src/modules/scene/scene.module.ts",
+    "bytes": 320,
+    "sha256": "c99d9220d21d6e3296dd6590dda73a2cc1cd23230f2c2c65fb76142d93fc5316"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/scene/scene.service.ts",
+    "target": "apps/api/src/modules/scene/scene.service.ts",
+    "bytes": 2283,
+    "sha256": "3709fc3d2fd43f52b40c2c182e3564507c5aecbc7c7b7b8f26ee87d904bb2ba4"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/dto/create-script.dto.ts",
+    "target": "apps/api/src/modules/script/dto/create-script.dto.ts",
+    "bytes": 1102,
+    "sha256": "6aa1f2a44c7b992b70a537228e7fd2f785338800a12408de6beb0162e994f699"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/dto/query-script.dto.ts",
+    "target": "apps/api/src/modules/script/dto/query-script.dto.ts",
+    "bytes": 379,
+    "sha256": "ef90ebf344101209e8e055d088badf29be152ad573cfeb619f61bdf72795c596"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/dto/response-script.dto.ts",
+    "target": "apps/api/src/modules/script/dto/response-script.dto.ts",
+    "bytes": 1035,
+    "sha256": "1c62090d971f34de2bf5f46442a0c19fc7b5d20187a7f7ee871078663102040c"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/dto/update-script.dto.ts",
+    "target": "apps/api/src/modules/script/dto/update-script.dto.ts",
+    "bytes": 956,
+    "sha256": "64b3e34238fc0735eb4fa874fda40fa58a4cb2b461dabe248e55f154fc52ce5d"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/script.controller.ts",
+    "target": "apps/api/src/modules/script/script.controller.ts",
+    "bytes": 2660,
+    "sha256": "fab5a514a70e72e33fd06317cb10f64b5c201972797e992eca28abce37cd2107"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/script.module.ts",
+    "target": "apps/api/src/modules/script/script.module.ts",
+    "bytes": 327,
+    "sha256": "4275a9b08952b853d251166631d198f28e7e92cd64e3a776681d9433c37f987f"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/modules/script/script.service.ts",
+    "target": "apps/api/src/modules/script/script.service.ts",
+    "bytes": 1776,
+    "sha256": "8e5fdfc9cee00aa182b6ee82791cc40c4084b191e1b8d3184f575bb00b1b21da"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/prisma/prisma.module.ts",
+    "target": "apps/api/src/prisma/prisma.module.ts",
+    "bytes": 193,
+    "sha256": "253a01a2d1d2d7584eddc025d4aaf6f9d9f56ca585055d9e61051ba0da1cc739"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/prisma/prisma.service.ts",
+    "target": "apps/api/src/prisma/prisma.service.ts",
+    "bytes": 735,
+    "sha256": "68d4af07c9df38fa9a6762e5d6534bb2a9980326d37f42d4c63364f256ac64f8"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/redis/redis.service.ts",
+    "target": "apps/api/src/redis/redis.service.ts",
+    "bytes": 833,
+    "sha256": "b0c5fdbafad408bf55721f70f166e966291048e229b974a02ff6ef909f1e5d93"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/typings/index.d.ts",
+    "target": "apps/api/src/typings/index.d.ts",
+    "bytes": 792,
+    "sha256": "c658f5656dd3f7b9b8d104cb7dd48eacee8675ae15f1df55904f41dfe56c7183"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/utils/common.ts",
+    "target": "apps/api/src/utils/common.ts",
+    "bytes": 1077,
+    "sha256": "bc6fecfd608e25f7473da9bf030154a24bd16fe546fd62b3dd58fab25f113f53"
+  },
+  {
+    "source": "intelligents_sceneditor_back/src/utils/index.ts",
+    "target": "apps/api/src/utils/index.ts",
+    "bytes": 1264,
+    "sha256": "3eebf852dfdb19eca8c2d0c288c7de179c369abe2cd35a7e4171143bd0bdc814"
+  },
+  {
+    "source": "intelligents_sceneditor_back/test/app.e2e-spec.ts",
+    "target": "apps/api/test/app.e2e-spec.ts",
+    "bytes": 630,
+    "sha256": "a02dfdc143eeec47c36db06fcb91c36ba1c8c9377c720b831a86ddc2701fcf8d"
+  },
+  {
+    "source": "intelligents_sceneditor_back/test/jest-e2e.json",
+    "target": "apps/api/test/jest-e2e.json",
+    "bytes": 183,
+    "sha256": "8263868744540f44fb89e142ba721cd92f64918b6b97b115f1f672dba5a1d2bc"
+  },
+  {
+    "source": "intelligents_sceneditor_back/tsconfig.build.json",
+    "target": "apps/api/tsconfig.build.json",
+    "bytes": 97,
+    "sha256": "3a016b4ee9713cd16295128bad42e6077e5ecd8c2ed225caa7d1e0e3f1c7f03f"
+  },
+  {
+    "source": "intelligents_sceneditor_back/tsconfig.json",
+    "target": "apps/api/tsconfig.json",
+    "bytes": 623,
+    "sha256": "cac61f9fc8ed9cf41e2b0cbae18846bd5004253ce5f8497e78bdc2e75b853424"
+  },
+  {
+    "source": "intelligents_sceneditor_front/biome.json",
+    "target": "apps/web/biome.json",
+    "bytes": 857,
+    "sha256": "bc99b5d28f9a7d03b4a5a8efea3cb193f7f2980aa3fadad2d61a2bbdcbf9d4aa"
+  },
+  {
+    "source": "intelligents_sceneditor_front/package.json",
+    "target": "apps/web/package.json",
+    "bytes": 2544,
+    "sha256": "7829bab853f7d698a20769e6d6726b8c301a7e86cd9b98ddefc7c1e3848508f1"
+  },
+  {
+    "source": "intelligents_sceneditor_front/postcss.config.js",
+    "target": "apps/web/postcss.config.js",
+    "bytes": 98,
+    "sha256": "4d5adb26e3fcf7e63b1b4afed0b4b222e25ef8f4f9accb6cbec5060ed1b074e0"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/favicon.ico",
+    "target": "apps/web/public/favicon.ico",
+    "bytes": 4286,
+    "sha256": "db74ab0b78338c1f778f8398c45f4103c99aea0e845a3118a7750b4eeafd3445"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/favicon.png",
+    "target": "apps/web/public/favicon.png",
+    "bytes": 6290,
+    "sha256": "8c044ca5ff8659d77146504060d3e3344698a27abf26b046b28d2e7e7bcf38e1"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/maps/chibi-fire.svg",
+    "target": "apps/web/public/maps/chibi-fire.svg",
+    "bytes": 831,
+    "sha256": "e66a42c61ee4c44539f681bf35c7f6d98c7d2306f2c411c5764171accc39a5ba"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/maps/chibi-route.svg",
+    "target": "apps/web/public/maps/chibi-route.svg",
+    "bytes": 924,
+    "sha256": "695b24e2f5eb2cee7d3ae3ee50cbbe7a35ac65ae709a371f6a7c194a5e3f3240"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/maps/hainan-chase.svg",
+    "target": "apps/web/public/maps/hainan-chase.svg",
+    "bytes": 820,
+    "sha256": "2c51f69c5073583c51a3e8343cef2c4945195b0c8dad9b351b9d80434e63bca9"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/maps/hainan-landing.svg",
+    "target": "apps/web/public/maps/hainan-landing.svg",
+    "bytes": 1186,
+    "sha256": "ee7cd63342ba5f7705a6cd1d265fb8e79e327883172e890e2f9bc75c9b3ba402"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/maps/normandy-advance.svg",
+    "target": "apps/web/public/maps/normandy-advance.svg",
+    "bytes": 1102,
+    "sha256": "6b70a0f4b7291cfb2eb9c5cce87e1d84a08bf97a4b52a308454cc665d4af7f31"
+  },
+  {
+    "source": "intelligents_sceneditor_front/public/maps/normandy-beaches.svg",
+    "target": "apps/web/public/maps/normandy-beaches.svg",
+    "bytes": 1425,
+    "sha256": "24616206242f6956d5f82db6706548c4231fa220d26ca50fadcff13bdfc5a689"
+  },
+  {
+    "source": "intelligents_sceneditor_front/rsbuild.config.ts",
+    "target": "apps/web/rsbuild.config.ts",
+    "bytes": 883,
+    "sha256": "bae579e1243d648e292df89da3338866a2bd4b3b74aff821f095c26976819338"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/agent.ts",
+    "target": "apps/web/src/api/agent.ts",
+    "bytes": 2211,
+    "sha256": "c8fc2cf372b64fe93a2f13f9abf85d56251e2a0895af4a10ba5ad7c103e96a8e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/auth.ts",
+    "target": "apps/web/src/api/auth.ts",
+    "bytes": 1284,
+    "sha256": "3d2f407a1010a0555156efba700a7f2f9e97012970496c80d07cba11798f3f0d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/file.ts",
+    "target": "apps/web/src/api/file.ts",
+    "bytes": 1165,
+    "sha256": "baf5594fb54b3fe23c74429d5c659660254ba73cf062f5320482161b4e18cac6"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/folder.ts",
+    "target": "apps/web/src/api/folder.ts",
+    "bytes": 919,
+    "sha256": "ae65f6398fa53ac826cfac43cfe0aa90dce2bb6cc32cb041fb8777ad6a3bf89c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/http.ts",
+    "target": "apps/web/src/api/http.ts",
+    "bytes": 6155,
+    "sha256": "cff88302dad902f88c96171fa65fb51c4a7ec4879c1e0dce4d2e53125239abe4"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/scene.ts",
+    "target": "apps/web/src/api/scene.ts",
+    "bytes": 999,
+    "sha256": "763da07c1e1ea9787bd4e66281c1d625b58d93ff197480cf9a9be38649f10a54"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/api/script.ts",
+    "target": "apps/web/src/api/script.ts",
+    "bytes": 1184,
+    "sha256": "e962b89f00b24defa8c2ab7d569b715c2f696cd37a9bc786ebc266f93859be21"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/App.tsx",
+    "target": "apps/web/src/App.tsx",
+    "bytes": 635,
+    "sha256": "6f5fe04837ccb731ec38acf4cf54792f3269bbf5151dc5d477bfce5eae93548f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/assets/home/section_bg1.png",
+    "target": "apps/web/src/assets/home/section_bg1.png",
+    "bytes": 2995666,
+    "sha256": "cef9e3db50a40724546c2595fc43114edbb87bc07097e79bfb45fac7dce8f6fe"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/assets/home/section_bg2.png",
+    "target": "apps/web/src/assets/home/section_bg2.png",
+    "bytes": 5596471,
+    "sha256": "5258bd212f751b3044414b3aa568b56dacc095851436df58d29de4d2eb365fb2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/Button.tsx",
+    "target": "apps/web/src/components/Button.tsx",
+    "bytes": 1651,
+    "sha256": "a26876e9cd1f6b087a25e390d2aa1bd2c13e581d0b8b324eeccb376b8363f815"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/Dragger/index.tsx",
+    "target": "apps/web/src/components/common/Dragger/index.tsx",
+    "bytes": 11576,
+    "sha256": "f3ff0f28efdc67a8fd0d84222dcecc9b544c69e2ba6ce11b0c8abb73422a3c9f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/Dragger/types.ts",
+    "target": "apps/web/src/components/common/Dragger/types.ts",
+    "bytes": 2212,
+    "sha256": "bf8529e4d20de34ac693551e8bb7c1e57397a64226e5ed7b9c44b3ab6e186ffb"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/Dragger/utils.ts",
+    "target": "apps/web/src/components/common/Dragger/utils.ts",
+    "bytes": 4499,
+    "sha256": "a89182293195d47850bad19ff5355935124ab68906726e8a420e1c6c5f2a96f7"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/FilePreviewModal.tsx",
+    "target": "apps/web/src/components/common/FilePreviewModal.tsx",
+    "bytes": 18420,
+    "sha256": "522afef6f9230e1d7c427a9ed660f481770e2619577b85f19205098f06961f4b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/Header.tsx",
+    "target": "apps/web/src/components/common/Header.tsx",
+    "bytes": 4250,
+    "sha256": "fd9c6c51e87c4e348459d706fb3e7d58d715baaa986b97f37d8e54acec963d8e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/Page.tsx",
+    "target": "apps/web/src/components/common/Page.tsx",
+    "bytes": 334,
+    "sha256": "aa68fc59f0cbe17663fbf8a8307396b7c79040233ae3865e61c68c8ca50c7091"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/preview/PreAudio.tsx",
+    "target": "apps/web/src/components/common/preview/PreAudio.tsx",
+    "bytes": 1229,
+    "sha256": "01faf4378523f1ede84557109a22c8aa59319a79f52082a38b3c4cb9c0680dd4"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/preview/PreImage.tsx",
+    "target": "apps/web/src/components/common/preview/PreImage.tsx",
+    "bytes": 618,
+    "sha256": "e88b41ec55934a98c68a56cf01fb5cf74500e935439f2cefa63c6998f687c37c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/preview/PreMap.tsx",
+    "target": "apps/web/src/components/common/preview/PreMap.tsx",
+    "bytes": 5713,
+    "sha256": "5f88f223a0894b6d5cb67dd52624b98a17de310a130eae89f178b672c737b707"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/preview/PreVideo.tsx",
+    "target": "apps/web/src/components/common/preview/PreVideo.tsx",
+    "bytes": 551,
+    "sha256": "4140e9a25132a53526c50fad083404f8897d706d2a659e4fefc938c8ffef00c1"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/common/UploadDialog.tsx",
+    "target": "apps/web/src/components/common/UploadDialog.tsx",
+    "bytes": 6056,
+    "sha256": "be88e30e281b3bc7e6ee9c22bd9d66e5135b09dae5b8e9f84d60de10f1aaf3d2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/AudioDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/AudioDetail.tsx",
+    "bytes": 7666,
+    "sha256": "380063842d07f99373b32406cffd014f2e2095723848b5cef7adf192fb354914"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/CameraAlongDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/CameraAlongDetail.tsx",
+    "bytes": 1889,
+    "sha256": "21428708bf573fec08ed692e1cabd0aba97b35b5384e2a81ffcece6a3d4aa1c1"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/CameraRotateDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/CameraRotateDetail.tsx",
+    "bytes": 3522,
+    "sha256": "f02c34ac6199e62aa0fee408f7031e5aa8c60ba9156b8c44da70bd7078ad6bf6"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/DynamicLayerDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/DynamicLayerDetail.tsx",
+    "bytes": 6987,
+    "sha256": "00b699c8ff54775492638fcaef488412814d27489479067288c4b8869719a407"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/EditorPanel.tsx",
+    "target": "apps/web/src/components/resource-editors/EditorPanel.tsx",
+    "bytes": 2985,
+    "sha256": "259140d7aa9d685dd62ab1860ea2c3ba2b0b19ac87be73cd9965f72a1ba05b9f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/FilmDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/FilmDetail.tsx",
+    "bytes": 4946,
+    "sha256": "73edd70cc8fba49a19933f01ad91a826fdb72e55f7e9d5cf54115742e077f65e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/GeojsonDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/GeojsonDetail.tsx",
+    "bytes": 13357,
+    "sha256": "8f9367b4f72304af7819e49302aae7a74027259da1444430f72aff08d0c12713"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/ImageRasterDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/ImageRasterDetail.tsx",
+    "bytes": 5859,
+    "sha256": "3207aabe0b1dd032655d55528689b0ed3d543277eb823b6ca957c9f98ee9a11c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/index.ts",
+    "target": "apps/web/src/components/resource-editors/index.ts",
+    "bytes": 501,
+    "sha256": "05764cb0726aad7debb2c3eb3ebb2651c55dc451382c9abc3b6e2724e8b27de0"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/MapEaseDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/MapEaseDetail.tsx",
+    "bytes": 7672,
+    "sha256": "d85147cecdaf6f8113f5e26a42a1ce69aad072bfb07e83b2842f5cd0f3445e8d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/MarkerDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/MarkerDetail.tsx",
+    "bytes": 5290,
+    "sha256": "eee6880b0a1516520d4b7e92d1e9cd9847895ea43fe879722d8c08c61d08f6c7"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/PictureDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/PictureDetail.tsx",
+    "bytes": 9335,
+    "sha256": "88c48f1494ca2b06b01203b891afb709333150160165ae2b54b5a16e5db8666f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/PlotSymbolDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/PlotSymbolDetail.tsx",
+    "bytes": 8763,
+    "sha256": "3d520379173cea2581d11e63ec2089e50b1a34b018f36d36210dd1b6364e2176"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/SceneDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/SceneDetail.tsx",
+    "bytes": 3695,
+    "sha256": "d21277496ecb2f0b428336d2f336e913f2b05892b9c2520e1bd69ae5edbc038f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/TextDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/TextDetail.tsx",
+    "bytes": 10301,
+    "sha256": "c11a6103d88c34f1261f26131c2089011ae6053cd908fd0b4e000ac8e87a8445"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/resource-editors/VideoDetail.tsx",
+    "target": "apps/web/src/components/resource-editors/VideoDetail.tsx",
+    "bytes": 11273,
+    "sha256": "dc4e6888832bcecb652e89e4542e048f223c39aa6ead63d522f5b567e855a1ea"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/theme/LanguageToggle.tsx",
+    "target": "apps/web/src/components/theme/LanguageToggle.tsx",
+    "bytes": 972,
+    "sha256": "b1647beda9ce8e269aefca2fe22a7f9c3b4ed991df7bcbb88f8261eb627de6a6"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/theme/ThemeProvider.tsx",
+    "target": "apps/web/src/components/theme/ThemeProvider.tsx",
+    "bytes": 1453,
+    "sha256": "f9554ecae2b16c55219623cf85a9a2d6e3f04e2570ca9e128124276aca257362"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/theme/ThemeToggle.tsx",
+    "target": "apps/web/src/components/theme/ThemeToggle.tsx",
+    "bytes": 517,
+    "sha256": "a1693df8c5acae7ce32f706912204b3dd4702e093a797a41d23e5ada7d0285cf"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/avatar.tsx",
+    "target": "apps/web/src/components/ui/avatar.tsx",
+    "bytes": 1120,
+    "sha256": "5e283ac0733cb2eef51b9a79ca5c49e5441d84c495d628d409c3be1423583376"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/badge.tsx",
+    "target": "apps/web/src/components/ui/badge.tsx",
+    "bytes": 955,
+    "sha256": "57701cfd2c46ede061bf3018f4670f0b629a5bb57387ed7ae6068ca22100cd01"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/button.tsx",
+    "target": "apps/web/src/components/ui/button.tsx",
+    "bytes": 1574,
+    "sha256": "96d98968624dd1ff80d5264e860293306425dc5d311fd07d1a45751c7855a2c1"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/card.tsx",
+    "target": "apps/web/src/components/ui/card.tsx",
+    "bytes": 1251,
+    "sha256": "6f06f4a7922e55e4613c91f047a84d73f0653b5d5d0be6083c7f5ecc69bce09c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/dialog.tsx",
+    "target": "apps/web/src/components/ui/dialog.tsx",
+    "bytes": 2352,
+    "sha256": "c370898b0871d4b55d7d2c5155fe142b1939b7f53c2ce4eb251ad11e07305f0f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/dropdown.tsx",
+    "target": "apps/web/src/components/ui/dropdown.tsx",
+    "bytes": 7595,
+    "sha256": "3a09acd01bf90052bfad18c2f1674a9d1667720010753919d6339445b4130224"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/form.tsx",
+    "target": "apps/web/src/components/ui/form.tsx",
+    "bytes": 3994,
+    "sha256": "a72c684bc64828fa4f9a226ad5335b823966d901858c1cfe5ba7258fc470f51a"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/input.tsx",
+    "target": "apps/web/src/components/ui/input.tsx",
+    "bytes": 596,
+    "sha256": "3ab7e7315e8901a6301f6449d7aca33debe64f00320995382499982e80874609"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/label.tsx",
+    "target": "apps/web/src/components/ui/label.tsx",
+    "bytes": 746,
+    "sha256": "15f2bef902f07a1d77642277aab26b43116f4e44ce7b100c2a86d33387b2840a"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/loading.tsx",
+    "target": "apps/web/src/components/ui/loading.tsx",
+    "bytes": 2298,
+    "sha256": "086ff1e0411045faa16bd7c712c8f02ea8e7a3616c8c807fb6010f0fb24e76e5"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/message.tsx",
+    "target": "apps/web/src/components/ui/message.tsx",
+    "bytes": 4161,
+    "sha256": "f2f1789bcb207fef150f1692c61d1009dea1bfaecb6635ecf01288106b773448"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/modal.tsx",
+    "target": "apps/web/src/components/ui/modal.tsx",
+    "bytes": 3174,
+    "sha256": "4df04873550f4df19d2a94d02ef664b01ce97b1a8276191c6b42ff4358a8814e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/notification.tsx",
+    "target": "apps/web/src/components/ui/notification.tsx",
+    "bytes": 6075,
+    "sha256": "f5623b6886837838093aaacf2ecfc4789f6f8dfb2235908286113c0a87f8e63c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/radio-group.tsx",
+    "target": "apps/web/src/components/ui/radio-group.tsx",
+    "bytes": 1897,
+    "sha256": "6fa7bb75b0060d6ee3575214c07bc2c76f8d14a48b3750ed8ab0be3723d519af"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/scroll-area.tsx",
+    "target": "apps/web/src/components/ui/scroll-area.tsx",
+    "bytes": 1642,
+    "sha256": "d7d02600effca55d0dcadce8c09c97ebddda3a19c5fa1d52dc9f6f727b26c6b1"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/select.tsx",
+    "target": "apps/web/src/components/ui/select.tsx",
+    "bytes": 2583,
+    "sha256": "c395da77dbb76cf0767b353c8fafd33e0f585c4963d24e24208b2bd246a31b5f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/slider.tsx",
+    "target": "apps/web/src/components/ui/slider.tsx",
+    "bytes": 1087,
+    "sha256": "b596ad9c1b4cfac272f27feadb5fabbecb411e7415bdbedb6e2d18a742c37158"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/switch.tsx",
+    "target": "apps/web/src/components/ui/switch.tsx",
+    "bytes": 1290,
+    "sha256": "279815003cf192eb6f3271f629188561c778e150c4ff9ee4d4017f8b958408dc"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/table.tsx",
+    "target": "apps/web/src/components/ui/table.tsx",
+    "bytes": 2900,
+    "sha256": "46661ab4aca534cf1a99a0b1a67390e3a7f7e376075bd07e91849f271975c340"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/tabs.tsx",
+    "target": "apps/web/src/components/ui/tabs.tsx",
+    "bytes": 1887,
+    "sha256": "364d989e03cbed9d321dec01916c9f34644f42135bd84d5e4284bab96f5c1f40"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/components/ui/textarea.tsx",
+    "target": "apps/web/src/components/ui/textarea.tsx",
+    "bytes": 771,
+    "sha256": "9460f3eb3902158ccf2e7fc057ee90318ae564e3449efb07f74cd935bd64329e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/config/sceneItemDefaults.ts",
+    "target": "apps/web/src/config/sceneItemDefaults.ts",
+    "bytes": 5326,
+    "sha256": "f567428113e6b83e56b29fd47e89aa8257ee930d8441dcb50cbff1a18f9db04b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/env.d.ts",
+    "target": "apps/web/src/env.d.ts",
+    "bytes": 376,
+    "sha256": "c4648424087cf12f1956a8616060717e8dac41bf12c9d0c6946723e7579d9a37"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/index.tsx",
+    "target": "apps/web/src/index.tsx",
+    "bytes": 423,
+    "sha256": "5dc0149990de9fec673251594e2689395001887e8a297359acd3df26f05bd2b3"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/lib/dataAdapter.ts",
+    "target": "apps/web/src/lib/dataAdapter.ts",
+    "bytes": 2118,
+    "sha256": "c6855ecbcfcb5875b6a3bbedad50b48c72b03fb3b441c3705df18ebf2fd8126b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/lib/i18n.ts",
+    "target": "apps/web/src/lib/i18n.ts",
+    "bytes": 847,
+    "sha256": "41ba00801de2aa104fb10ddfcd42f6de8a8715f05539b116752bf19b6dd78ff2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/lib/utils.ts",
+    "target": "apps/web/src/lib/utils.ts",
+    "bytes": 180,
+    "sha256": "afd33b4710b119777b6b41b4d912897793fa229b117b3303a90c309953a63129"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/locales/en.json",
+    "target": "apps/web/src/locales/en.json",
+    "bytes": 3681,
+    "sha256": "32d66edae4cc271feed0be22f86d629edf8eabdfc645eeeeb10d4e6a0bab5e93"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/locales/zh.json",
+    "target": "apps/web/src/locales/zh.json",
+    "bytes": 3516,
+    "sha256": "4d71f4bf5040a1c66f0e7d4e30a53df7457addef3383cacaba6aba96d38d2631"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/mock/数据组织模型/赤壁.json",
+    "target": "apps/web/src/mock/数据组织模型/赤壁.json",
+    "bytes": 7457,
+    "sha256": "7c60708a8d91bdc58a5d36e2b8cc0f4946ece6ebf6928e65024123ce66cc36d0"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/mock/core.type.ts",
+    "target": "apps/web/src/mock/core.type.ts",
+    "bytes": 5208,
+    "sha256": "d92f44150989b61068139d0b967c6881d03e1bf38bf3b4b0f3ce1889e854f49b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/mock/default_data.type.ts",
+    "target": "apps/web/src/mock/default_data.type.ts",
+    "bytes": 5694,
+    "sha256": "d2db039a78001d0ca62b0ea6d9c70524c5fe181bff63fae580c018ad498cdd9e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/mock/types.ts",
+    "target": "apps/web/src/mock/types.ts",
+    "bytes": 3120,
+    "sha256": "506b5c8e2656939a2ecf386bf3474eefc4f740759ac32a63a7909ddaa01c9528"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Deduction/index.tsx",
+    "target": "apps/web/src/pages/Deduction/index.tsx",
+    "bytes": 7430,
+    "sha256": "5e16c5c9fb27cfa25344aa2ddb7da2f4b100627393303378009c3f0e54d4ec9c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Home.tsx",
+    "target": "apps/web/src/pages/Home.tsx",
+    "bytes": 13904,
+    "sha256": "d3b4c8c56090969271a8a38e8397f507147ef7ee94d1c7b60f5cfd102f8d5d64"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Login.tsx",
+    "target": "apps/web/src/pages/Login.tsx",
+    "bytes": 17413,
+    "sha256": "fb941fe68a9daf9ebf1f887a3770e809342c7793476dab10402f44272ed545e5"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/ChatContent.tsx",
+    "target": "apps/web/src/pages/newScript/components/ChatContent.tsx",
+    "bytes": 1015,
+    "sha256": "659b86635ce5d8a0b823252f74da83ce165b5229cd03bdbad8556f9e2d90ab26"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/DataImportButton.tsx",
+    "target": "apps/web/src/pages/newScript/components/DataImportButton.tsx",
+    "bytes": 2277,
+    "sha256": "2f74e679885ce4fe0c5acc37fe7f9c4f9e9c1633344f0559c892e6347f851553"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/EntityHighlighter.tsx",
+    "target": "apps/web/src/pages/newScript/components/EntityHighlighter.tsx",
+    "bytes": 2113,
+    "sha256": "4d89d43f495162a84956cef32964440891ad6e1746a2de4fac8239427bc7906d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/NarrativePanel.tsx",
+    "target": "apps/web/src/pages/newScript/components/NarrativePanel.tsx",
+    "bytes": 52618,
+    "sha256": "ba836e4ca8a0764851ef698f881368d8212d80c260775ce55738c45f195540e5"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/ParamsPanel.test.tsx",
+    "target": "apps/web/src/pages/newScript/components/ParamsPanel.test.tsx",
+    "bytes": 3752,
+    "sha256": "b1171891926de1dbc03c53fab0d3129ee1cffd7e7c366967d80472d3596f461f"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/ParamsPanel.tsx",
+    "target": "apps/web/src/pages/newScript/components/ParamsPanel.tsx",
+    "bytes": 29259,
+    "sha256": "bcc0e6906c1b9e826b19d1f3b10792f78dbbf8678714a35493ef48abfc43c4f3"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/ResourcePanel.tsx",
+    "target": "apps/web/src/pages/newScript/components/ResourcePanel.tsx",
+    "bytes": 11703,
+    "sha256": "8e2eb5b055836db331b7c89812ee1613110693e95518cbe4188a381395200b1a"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/SceneModal.tsx",
+    "target": "apps/web/src/pages/newScript/components/SceneModal.tsx",
+    "bytes": 24039,
+    "sha256": "9c94dcf04bd8da9fa8d8c40622b8b33059fd949ee5893d12cae5c10f39044bef"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/ThinkingProcess.tsx",
+    "target": "apps/web/src/pages/newScript/components/ThinkingProcess.tsx",
+    "bytes": 2274,
+    "sha256": "bf8850e7048349849deb962fc829d465b612bdeb0373d9889feadfbd70dd100c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/components/WarDataDisplay.tsx",
+    "target": "apps/web/src/pages/newScript/components/WarDataDisplay.tsx",
+    "bytes": 16820,
+    "sha256": "a4e1fff12349378e86f3d213277767aea6d63c931df930bda85c7dc3afb2b5f4"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/index.tsx",
+    "target": "apps/web/src/pages/newScript/index.tsx",
+    "bytes": 40324,
+    "sha256": "93cb205d070a1ebf2ed51e4f9fcd4e5cfb00d6ad4362bf32041b89b135eec263"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/newScript/utils/adapter.ts",
+    "target": "apps/web/src/pages/newScript/utils/adapter.ts",
+    "bytes": 1016,
+    "sha256": "fd367efd3fbba59c25d525c364278428fbe8758eb09f861d98df5dacebd96968"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/NotFound.tsx",
+    "target": "apps/web/src/pages/NotFound.tsx",
+    "bytes": 2776,
+    "sha256": "d0533555533b1d2baa2130bfe3bf39c9e8836d2c6689d5f2f04c270ded3e8125"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Preview/index.tsx",
+    "target": "apps/web/src/pages/Preview/index.tsx",
+    "bytes": 2563,
+    "sha256": "8a786303fe379172dd5492356b35fd5d25be807ac97e63cd14538f4780cc90ff"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/AddAssetModal.tsx",
+    "target": "apps/web/src/pages/Scene/components/AddAssetModal.tsx",
+    "bytes": 9144,
+    "sha256": "7d4822c4095099928f837556b626a738e72273b6e3a31f631830d3c6529e478a"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/AddTrackModal.tsx",
+    "target": "apps/web/src/pages/Scene/components/AddTrackModal.tsx",
+    "bytes": 5140,
+    "sha256": "09ddb3dd572f66a374d4702a9b46d295fed6a4ea2cb8068f0a69bc6829fbe079"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/AssetLibrary.tsx",
+    "target": "apps/web/src/pages/Scene/components/AssetLibrary.tsx",
+    "bytes": 16232,
+    "sha256": "a0a1e7206685e4a71c61c4b77b50a999691e1e1eedb0c63195968e3b6219c8c9"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/PropertyPanel.tsx",
+    "target": "apps/web/src/pages/Scene/components/PropertyPanel.tsx",
+    "bytes": 13180,
+    "sha256": "ce6977ec824f9bc611ff35a0467df4d3c577098fe367c9415f976b22d2348605"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/SceneCanvas.tsx",
+    "target": "apps/web/src/pages/Scene/components/SceneCanvas.tsx",
+    "bytes": 2538,
+    "sha256": "ab76cf39db8a432a1e05492e6a09a38b8dcca71a1dc186e71cf60f237ff0e406"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/SceneConfigModal.tsx",
+    "target": "apps/web/src/pages/Scene/components/SceneConfigModal.tsx",
+    "bytes": 3928,
+    "sha256": "0da4d0fe21c5ce387ef481ca4b0f6969633eb5d32f697ee54c7d806c9824997a"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/SceneHeader.tsx",
+    "target": "apps/web/src/pages/Scene/components/SceneHeader.tsx",
+    "bytes": 3910,
+    "sha256": "11313b5c3ddd8b0e1a0a2852e37ae9fea020d26f006dc5467828c617056d065e"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/components/Timeline.tsx",
+    "target": "apps/web/src/pages/Scene/components/Timeline.tsx",
+    "bytes": 29808,
+    "sha256": "0eab574337e59046e97bb0b13710db6f0c7ae647c042f3b0c77e386fb4f76759"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Scene/index.tsx",
+    "target": "apps/web/src/pages/Scene/index.tsx",
+    "bytes": 16235,
+    "sha256": "e4fcbb8da984a0d8d7ba90f1ca009aa39d283dd4890b6bec179c8719b76b2edd"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/ChatContent.tsx",
+    "target": "apps/web/src/pages/Script/components/ChatContent.tsx",
+    "bytes": 3902,
+    "sha256": "38b4ec6fc7de1c4f2fd2b0ff643fe505c4ff5c04dc630cb67e19b3e12a8b90d2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/EntityHighlighter.tsx",
+    "target": "apps/web/src/pages/Script/components/EntityHighlighter.tsx",
+    "bytes": 2123,
+    "sha256": "6564086e9b82bbb0550825af21811c98d27a04a436edfe346bdaaaea139e5e0b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/MapMini.tsx",
+    "target": "apps/web/src/pages/Script/components/MapMini.tsx",
+    "bytes": 3232,
+    "sha256": "1559197559ec18464857f1528ca260867f7753b1bad08be72f0827e184c45b12"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/PropertyEditor.tsx",
+    "target": "apps/web/src/pages/Script/components/PropertyEditor.tsx",
+    "bytes": 6357,
+    "sha256": "c1dd33148fa841a2d87cbc139b65df0d945ac5a73d988006ecc3e7d2bb671f9a"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/ScriptDataDisplay.tsx",
+    "target": "apps/web/src/pages/Script/components/ScriptDataDisplay.tsx",
+    "bytes": 9156,
+    "sha256": "2dcc2fd3e4bc6ccc425d5b9973409a0fe4ea73dcda520e4f7e88bb684f5c3d1c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/TimelineTransition.tsx",
+    "target": "apps/web/src/pages/Script/components/TimelineTransition.tsx",
+    "bytes": 8789,
+    "sha256": "528b6cbaa9809aab37d0dd563cbf8bee265581f25a88fa47bafa8a5f818c5aff"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/components/WarDataDisplay.tsx",
+    "target": "apps/web/src/pages/Script/components/WarDataDisplay.tsx",
+    "bytes": 16951,
+    "sha256": "224d8e55ce90909e69c2caa2c320d08e8295212bcaabb7f10caa18803f97b346"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/index.tsx",
+    "target": "apps/web/src/pages/Script/index.tsx",
+    "bytes": 99079,
+    "sha256": "73dd03b4f9f062d05f7ca3160b5629037f9e880c530280b20c9d915a15acfcc6"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/Script/Script.test.tsx",
+    "target": "apps/web/src/pages/Script/Script.test.tsx",
+    "bytes": 3539,
+    "sha256": "d7ee2d7862b689ea4b4b0544f8bbbf72dfcb426c1e25e9d81a69451d1d03f35d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/RealIndex.tsx",
+    "target": "apps/web/src/pages/User/RealIndex.tsx",
+    "bytes": 10378,
+    "sha256": "32c540eab24d5493733b8c89eff24737a3d2cf23814a0e40be05b1dabe18e8e8"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/battles-extended.json",
+    "target": "apps/web/src/pages/User/views/battles-extended.json",
+    "bytes": 68548,
+    "sha256": "1c31fba7f1ee331271887d30d2068e38eb25e95770cd53e50f949b77ddd9c9b5"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/GenerativeAI.tsx",
+    "target": "apps/web/src/pages/User/views/GenerativeAI.tsx",
+    "bytes": 11469,
+    "sha256": "deb450aec28cf6fba4c9613ebfd893c8eeb6a5f4c539b0d3003f4f4552db2600"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/GroupInfo.tsx",
+    "target": "apps/web/src/pages/User/views/GroupInfo.tsx",
+    "bytes": 152,
+    "sha256": "cafa398621dd2c4aaf64bdcb699ad0729e50111229af75a5d43df7a8149999df"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/HomePage/index.tsx",
+    "target": "apps/web/src/pages/User/views/HomePage/index.tsx",
+    "bytes": 20104,
+    "sha256": "d9e9bad19ba113262a7f02ab9aa1d692b70aa601dbe323d2829de8d7185cff72"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/KnowledgeBasePage.test.tsx",
+    "target": "apps/web/src/pages/User/views/KnowledgeBasePage.test.tsx",
+    "bytes": 3644,
+    "sha256": "937cca7d207973d50bef642b1b109a85bc3c9a522b3a580f749d551e230ecc01"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/KnowledgeBasePage.tsx",
+    "target": "apps/web/src/pages/User/views/KnowledgeBasePage.tsx",
+    "bytes": 40526,
+    "sha256": "dd6a39ac3d9ff69c936509ef92e692c3660fd508f4a87360d9f5e8dddf56014d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/ManagePage/index.tsx",
+    "target": "apps/web/src/pages/User/views/ManagePage/index.tsx",
+    "bytes": 14009,
+    "sha256": "6f8d6426514b5229b92f1db27ac0951196c56c7894e2ea3797b3eecf8f76b6e2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/MemberManage.tsx",
+    "target": "apps/web/src/pages/User/views/MemberManage.tsx",
+    "bytes": 6011,
+    "sha256": "00e51a0ac45e2d9dcf6dfd4d47012b20314778a9bf867e88a1fd526294d1ec44"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/MyRoomPage/index.tsx",
+    "target": "apps/web/src/pages/User/views/MyRoomPage/index.tsx",
+    "bytes": 43740,
+    "sha256": "2e632c2147e8d659c0dd2103d229b4788f1c2694e2ab3b072c1ec064dc1379e3"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/ShareManage.tsx",
+    "target": "apps/web/src/pages/User/views/ShareManage.tsx",
+    "bytes": 11693,
+    "sha256": "718f6302314e08a2e1dd5ffc251628c99b115426da2558d6e5c1440a665f6341"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/TeamWork.tsx",
+    "target": "apps/web/src/pages/User/views/TeamWork.tsx",
+    "bytes": 4109,
+    "sha256": "def990050633c767a9798d405a01253aa0112a20c8331da7547d1094c4172a0b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/pages/User/views/UserInfo.tsx",
+    "target": "apps/web/src/pages/User/views/UserInfo.tsx",
+    "bytes": 11752,
+    "sha256": "fdb27f2af8112a24cef1da8eeb7efb7e58e25225c68705e706b25d7f0f804bda"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/router/index.tsx",
+    "target": "apps/web/src/router/index.tsx",
+    "bytes": 2834,
+    "sha256": "231d3243003ff2f62a09b7d3b6a733cac7e6cfc1a2fdbbb42c92183af2093196"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/router/lazy_components.tsx",
+    "target": "apps/web/src/router/lazy_components.tsx",
+    "bytes": 1448,
+    "sha256": "e5e9cb6ee4d6d14611ff069a9ceb8f2b5c866870079fea4f8685bdfa47ef22e2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/service/api/file-manage/material-manage.ts",
+    "target": "apps/web/src/service/api/file-manage/material-manage.ts",
+    "bytes": 113,
+    "sha256": "7ac57e59d2b56750c127c3d52c845d798aad02c72a82304b7a1e594f2f4bbed2"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/service/api/minio/minio.ts",
+    "target": "apps/web/src/service/api/minio/minio.ts",
+    "bytes": 189,
+    "sha256": "604638ccca6612e4c7911e88165b0e4703425aafce6cd7d0a679af07d93386be"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/store/mapStore.ts",
+    "target": "apps/web/src/store/mapStore.ts",
+    "bytes": 381,
+    "sha256": "def9403c76b8712bf169265c2a9c8fad13f5783d87ce0aa6ce2ab2ba1cf10a29"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/paramsStore.ts",
+    "target": "apps/web/src/stores/paramsStore.ts",
+    "bytes": 421,
+    "sha256": "e033fef01720cd66a4590f4379fb296597e4ef5abff70663c694bcb4c0ec8c92"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/sceneManager.ts",
+    "target": "apps/web/src/stores/sceneManager.ts",
+    "bytes": 538,
+    "sha256": "d71d570901e7cc4bfc00c27d51dce15632d3eb8306105755502bb6791e5bd503"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/sceneStore.ts",
+    "target": "apps/web/src/stores/sceneStore.ts",
+    "bytes": 1150,
+    "sha256": "b4da56c92fa81303faa16630b5ae9d13ea3d1dbddbfbce4da296658e228beee6"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/taskSceneStore.ts",
+    "target": "apps/web/src/stores/taskSceneStore.ts",
+    "bytes": 2570,
+    "sha256": "28fb37c0dc78dd586cad9f6cd437627e2ac9ae52cc592934649a0d7f98c3bc8b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/userStore.ts",
+    "target": "apps/web/src/stores/userStore.ts",
+    "bytes": 1355,
+    "sha256": "d250a930e1363ae17f136ce6d64bd4c8c4b02d418b144b5d2f92977ee1a04cc0"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/warDataStore.test.ts",
+    "target": "apps/web/src/stores/warDataStore.test.ts",
+    "bytes": 2281,
+    "sha256": "2cfb46f75845b8fcd966a41b650a0e7c583f4e86439c1fc29c39b65de329da3c"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/stores/warDataStore.ts",
+    "target": "apps/web/src/stores/warDataStore.ts",
+    "bytes": 1886,
+    "sha256": "35897b70e39d1b66559d97dfa860b87f4c51dcd15c86fc93b20b5d47f7c4faae"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_animations.scss",
+    "target": "apps/web/src/styles/_animations.scss",
+    "bytes": 272,
+    "sha256": "952e07feefc179d0d3da472d50dc78de79e0624d29e42fd49652ec7900ab19b8"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_borders.scss",
+    "target": "apps/web/src/styles/_borders.scss",
+    "bytes": 205,
+    "sha256": "f3fa6480d55c89a222062571127f33fdea0a0d0cd448f0959ba10e5cee8424d9"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_colors.module.scss",
+    "target": "apps/web/src/styles/_colors.module.scss",
+    "bytes": 299,
+    "sha256": "f94ed5ef815be7f3b7f3c7f00aee308758639c26df228038e993de1f8ebba780"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_colors.scss",
+    "target": "apps/web/src/styles/_colors.scss",
+    "bytes": 1775,
+    "sha256": "ac9d3a696555ff2af0680ce659bb1548cc349645eacb5dc3ea887b8fa4fbe4da"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_shadows.scss",
+    "target": "apps/web/src/styles/_shadows.scss",
+    "bytes": 134,
+    "sha256": "9a6614f357bca54cf909fe3114759ab004509f4b45fe9d8d6b28923010274090"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_spacing.scss",
+    "target": "apps/web/src/styles/_spacing.scss",
+    "bytes": 174,
+    "sha256": "e5dad50d6d11b9c5e0dd9b8b8855901c1949e52144a2e4e6f8003a98b44b0698"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_typography.scss",
+    "target": "apps/web/src/styles/_typography.scss",
+    "bytes": 507,
+    "sha256": "db935e1116b086a1a7889adae3e3a40e5cdd889c21092d7d91ac277ad14a4e63"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/_variables.scss",
+    "target": "apps/web/src/styles/_variables.scss",
+    "bytes": 120,
+    "sha256": "442f5616356bf3b16ee4796c712d144472598a1ee74d09dee99eccc706f1f83b"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/styles/global.css",
+    "target": "apps/web/src/styles/global.css",
+    "bytes": 5473,
+    "sha256": "eb086592217ce40284fce51e51bfe3ed2e3581a95beca92382c4efc68471ae4d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/test/setup.ts",
+    "target": "apps/web/src/test/setup.ts",
+    "bytes": 427,
+    "sha256": "71b3ffef477b376af19e1ab2fa6e8c269eb0f05702c78f3b3a9fa9d5950d3207"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/types/sceneElementType.ts",
+    "target": "apps/web/src/types/sceneElementType.ts",
+    "bytes": 4220,
+    "sha256": "35779eeed16868a934744e999de154aecb9fe4adb1c9cc1909a5fa021f3411c7"
+  },
+  {
+    "source": "intelligents_sceneditor_front/src/typings/scene.ts",
+    "target": "apps/web/src/typings/scene.ts",
+    "bytes": 1711,
+    "sha256": "f074b566a14705aa3f1d1fec26a46ba0ffbc7314e85ba1688ad1773f7a384e54"
+  },
+  {
+    "source": "intelligents_sceneditor_front/tsconfig.json",
+    "target": "apps/web/tsconfig.json",
+    "bytes": 690,
+    "sha256": "19c129bb0f68bc8cd70251cb9fb4bdaa5be9793a98077dba20353b94722d951d"
+  },
+  {
+    "source": "intelligents_sceneditor_front/vitest.config.ts",
+    "target": "apps/web/vitest.config.ts",
+    "bytes": 272,
+    "sha256": "c41c8565e07177d89a4de245ef256104b474283a008cc05ce2776e4d344a60f4"
+  }
+]

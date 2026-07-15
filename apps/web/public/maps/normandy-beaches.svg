@@ -1,0 +1,18 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#f0f4f8" />
+  <path d="M100,400 Q400,350 700,400" stroke="#3b82f6" stroke-width="8" stroke-dasharray="20,10" />
+  <text x="400" y="450" text-anchor="middle" font-family="Arial" font-size="24" fill="#1e3a8a" font-weight="bold">英吉利海峡 (English Channel)</text>
+  <path d="M150,380 L150,200" stroke="#ef4444" stroke-width="6" marker-end="url(#arrow)" />
+  <path d="M300,380 L300,200" stroke="#ef4444" stroke-width="6" marker-end="url(#arrow)" />
+  <path d="M450,380 L450,200" stroke="#ef4444" stroke-width="6" marker-end="url(#arrow)" />
+  <path d="M600,380 L600,200" stroke="#ef4444" stroke-width="6" marker-end="url(#arrow)" />
+  <text x="150" y="180" text-anchor="middle" font-family="Arial" font-size="16" fill="#b91c1c">Utah Beach</text>
+  <text x="300" y="180" text-anchor="middle" font-family="Arial" font-size="16" fill="#b91c1c">Omaha Beach</text>
+  <text x="450" y="180" text-anchor="middle" font-family="Arial" font-size="16" fill="#b91c1c">Gold Beach</text>
+  <text x="600" y="180" text-anchor="middle" font-family="Arial" font-size="16" fill="#b91c1c">Juno/Sword Beach</text>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+</svg>

@@ -1,0 +1,146 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Method {
+  GET
+  POST
+  PATCH
+  DELETE
+  PUT
+}
+
+enum OwnerType {
+  PERSON
+  GROUP
+}
+
+enum SceneType {
+  PUBLIC
+  PRIVATE
+}
+
+model User {
+  id       String   @id @default(uuid())
+  email    String   @unique
+  password String
+  username String
+  role     Role
+  logs     Log[]
+  folders  Folder[]
+  files    File[]
+  groups   Group[]
+  scripts  Script[]
+  scenes   Scene[]
+  shares   Share[]
+}
+
+model Log {
+  id        String   @id @default(uuid())
+  ip        String
+  action    String
+  method    Method
+  params    Json
+  os        String
+  browser   String
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  parentId  String?  @map("folderId")
+  parent    Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children  Folder[] @relation("FolderHierarchy")
+  type      String   @default("folder")
+  size      String   @default("-")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  files     File[]
+}
+
+model File {
+  id          String   @id @default(uuid())
+  name        String
+  oldName     String
+  folderId    String   @default("-1")
+  folder      Folder?  @relation(fields: [folderId], references: [id])
+  src         String
+  type        String
+  size        Int
+  mimeType    String   @default("application/octet-stream")
+  fingerprint String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  tags        String[]
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Group {
+  id           String    @id @default(uuid())
+  groupId      String    @unique
+  groupName    String
+  announcement String?
+  isApply      Boolean   @default(false)
+  joinWay      String?
+  avatar       String?
+  code         String?
+  expiration   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+}
+
+model Share {
+  id          String   @id @default(uuid())
+  title       String
+  peopleCount Int      @default(0)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  sceneId     String?
+  scene       Scene?   @relation(fields: [sceneId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Script {
+  id           String    @id @default(uuid())
+  title        String
+  config       String
+  type         String
+  ownerType    OwnerType @default(PERSON)
+  conversation Json?
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Scene {
+  id        String    @id @default(uuid())
+  title     String
+  ownerType OwnerType @default(PERSON)
+  type      SceneType @default(PRIVATE)
+  config    Json      @default("[]")
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  shares    Share[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}

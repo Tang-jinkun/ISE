@@ -30,3 +30,16 @@ logs/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Untracked source drops retained outside the workspace
+/intelligents_sceneditor_agent/
+/intelligents_sceneditor_back/
+/intelligents_sceneditor_front/
+/intelligents_sceneditor_front_OLD/
+/json/
+/素材/
+/印巴glb（修改6.0）/
+
+# Raw demo media remains outside Git; small fixtures require explicit force-add review
+/**/*.glb
+/**/*.mp4

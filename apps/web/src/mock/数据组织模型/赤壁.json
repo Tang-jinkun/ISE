@@ -1,0 +1,284 @@
+{
+  "war_name": "赤壁之战",
+  "intro": {
+    "content": "赤壁之战发生于东汉建安十三年（公元208年），曹操率军南下，意图统一江南。孙权与刘备联合，在长江赤壁一带迎战曹军。最终联军利用火攻大败曹操，奠定三国鼎立格局。",
+    "source_cite": [
+      "《三国志·魏书·武帝纪》",
+      "《资治通鉴·卷六十五》"
+    ]
+  },
+  "OOB": {
+    "blue_force": {
+      "name": "孙刘联军",
+      "commander": "周瑜",
+      "troop_strength": 50000,
+      "main_units": [
+        "东吴水军",
+        "刘备部队"
+      ]
+    },
+    "red_force": {
+      "name": "曹操军",
+      "commander": "曹操",
+      "troop_strength": 200000,
+      "main_units": [
+        "北方步骑军",
+        "临时编练水军"
+      ]
+    }
+  },
+  "entity_registry": {
+    "persons": [
+      {
+        "id": "p_caocao",
+        "name": "曹操",
+        "camp": "red",
+        "role": "主帅"
+      },
+      {
+        "id": "p_zhouyu",
+        "name": "周瑜",
+        "camp": "blue",
+        "role": "东吴主帅"
+      },
+      {
+        "id": "p_liubei",
+        "name": "刘备",
+        "camp": "blue",
+        "role": "联军领袖"
+      },
+      {
+        "id": "p_zhuge",
+        "name": "诸葛亮",
+        "camp": "blue",
+        "role": "军师"
+      },
+      {
+        "id": "p_huanggai",
+        "name": "黄盖",
+        "camp": "blue",
+        "role": "东吴将领"
+      }
+    ],
+    "spaces": [
+      {
+        "id": "s_chibi",
+        "name": "赤壁"
+      },
+      {
+        "id": "s_wulin",
+        "name": "乌林"
+      },
+      {
+        "id": "s_yangtze",
+        "name": "长江赤壁江段"
+      }
+    ]
+  },
+  "outline": [
+    {
+      "id": "outline_1",
+      "title": "战前联盟形成",
+      "life_cycle": "战前背景态势阶段",
+      "time": {
+        "start": 0,
+        "finish": 60
+      },
+      "outline_meta": {
+        "phase": "战前",
+        "narrative_role": "铺垫",
+        "strategic_focus": "孙权是否联合刘备抗曹"
+      },
+      "descriptions": [
+        {
+          "id": "desc_1",
+          "title": "孙刘联盟建立",
+          "summary": "孙权与刘备在诸葛亮与鲁肃等人的推动下形成抗曹联盟。",
+          "time": {
+            "start": 0,
+            "finish": 60
+          },
+          "description_meta": {
+            "location": "江东",
+            "time_hint": "建安十三年",
+            "importance": 0.8
+          },
+          "units": [
+            {
+              "id": "unit_1",
+              "core_content": "曹操南下威胁江东，孙权在群臣建议下决定联合刘备共同抗曹。",
+              "view_bbox": [
+                [
+                  112.5,
+                  30.5
+                ],
+                [
+                  114.5,
+                  30.5
+                ],
+                [
+                  114.5,
+                  29.5
+                ],
+                [
+                  112.5,
+                  29.5
+                ]
+              ],
+              "time": {
+                "start": 0,
+                "finish": 30
+              },
+              "entities": {
+                "times": [
+                  "208年"
+                ],
+                "spaces": [
+                  "s_chibi"
+                ],
+                "persons": [
+                  "p_liubei",
+                  "p_zhouyu",
+                  "p_zhuge"
+                ],
+                "objects": [],
+                "events": [
+                  "孙刘结盟"
+                ]
+              },
+              "logic_causal": {
+                "role": "cause",
+                "description": "曹操南下迫使孙刘结盟"
+              },
+              "relation": [],
+              "paths": {
+                "text": [
+                  {
+                    "start": 0,
+                    "finish": 30,
+                    "content": "孙权与刘备形成联盟，共同抵抗曹操南下。"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "outline_2",
+      "title": "赤壁火攻",
+      "life_cycle": "战中动态演进阶段",
+      "time": {
+        "start": 60,
+        "finish": 180
+      },
+      "outline_meta": {
+        "phase": "决战",
+        "narrative_role": "高潮",
+        "strategic_focus": "利用火攻击溃曹军水军"
+      },
+      "descriptions": [
+        {
+          "id": "desc_2",
+          "title": "黄盖诈降实施火攻",
+          "summary": "东吴将领黄盖诈降曹操，并以火船突袭曹军舰队。",
+          "time": {
+            "start": 60,
+            "finish": 180
+          },
+          "description_meta": {
+            "location": "赤壁江面",
+            "time_hint": "冬季东南风起",
+            "importance": 1
+          },
+          "units": [
+            {
+              "id": "unit_2",
+              "core_content": "黄盖率火船顺东南风冲入曹军连环船阵，引发大火。",
+              "view_bbox": [
+                [
+                  113.2,
+                  30.2
+                ],
+                [
+                  114.2,
+                  30.2
+                ],
+                [
+                  114.2,
+                  29.8
+                ],
+                [
+                  113.2,
+                  29.8
+                ]
+              ],
+              "time": {
+                "start": 60,
+                "finish": 120
+              },
+              "entities": {
+                "times": [
+                  "208年冬"
+                ],
+                "spaces": [
+                  "s_yangtze"
+                ],
+                "persons": [
+                  "p_huanggai",
+                  "p_zhouyu",
+                  "p_caocao"
+                ],
+                "objects": [
+                  "火船"
+                ],
+                "events": [
+                  "火攻"
+                ]
+              },
+              "logic_causal": {
+                "role": "action",
+                "description": "利用东南风发动火攻"
+              },
+              "relation": [],
+              "paths": {
+                "dynamic_line": [
+                  {
+                    "start": 60,
+                    "finish": 120,
+                    "from": [
+                      113.3,
+                      30.1
+                    ],
+                    "to": [
+                      114.0,
+                      30.0
+                    ]
+                  }
+                ],
+                "text": [
+                  {
+                    "start": 60,
+                    "finish": 120,
+                    "content": "黄盖火船顺风突入曹军舰队。"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "war_meta": {
+    "time_range": "208年—209年",
+    "main_region": "长江赤壁地区",
+    "type": "古代经典战役"
+  },
+  "tags": {
+    "battle_style": "火攻",
+    "strategic_significance": "奠定三国鼎立格局"
+  },
+  "target_duration": 300000
+}
