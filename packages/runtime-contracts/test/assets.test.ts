@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   assetSeedManifestJsonSchema,
   assetSeedManifestSchema,
+  publicAssetCatalogEntrySchema,
   resolvedAssetAccessJsonSchema,
   resolvedAssetAccessSchema,
   type AssetSeedManifest
@@ -182,6 +183,21 @@ test('accepts resolved access but rejects storage and seed-only fields', () => {
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, criticality: 'required' }).success, false);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, fallbackAssetIds: [] }).success, false);
   assert.equal(resolvedAssetAccessSchema.safeParse({ ...access, allowFallback: false }).success, false);
+});
+
+test('accepts strict public catalog entries without storage locations', () => {
+  const { objectName: _objectName, sourceRelativePath: _sourceRelativePath, ...entry } =
+    validManifest().assets[0]!;
+
+  const parsed = publicAssetCatalogEntrySchema.parse(entry);
+  assert.equal(parsed.assetId, 'model:jf17');
+  assert.equal(parsed.availability, 'available');
+  assert.equal(parsed.criticality, 'required');
+  assert.equal(publicAssetCatalogEntrySchema.safeParse({ ...entry, objectName: 'secret/key' }).success, false);
+  assert.equal(
+    publicAssetCatalogEntrySchema.safeParse({ ...entry, sourceRelativePath: 'models/JF-17.glb' }).success,
+    false
+  );
 });
 
 test('rejects resolved access when asset kind, metadata, or media type disagree', () => {
