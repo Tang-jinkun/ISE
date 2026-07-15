@@ -4,6 +4,7 @@ import { FolderController } from '../modules/folder/folder.controller';
 import { CreateScriptDto } from '../modules/script/dto/create-script.dto';
 import { UpdateScriptDto } from '../modules/script/dto/update-script.dto';
 import { UpdateFileDto } from '../modules/file/dto/update-file.dto';
+import { RegisterParamsDto } from '../modules/auth/dto/params-auth.dto';
 
 jest.mock('../modules/file/file.service', () => ({ FileService: class FileService {} }));
 jest.mock('../modules/folder/folder.service', () => ({ FolderService: class FolderService {} }));
@@ -14,6 +15,35 @@ describe('strict request DTO compatibility', () => {
     forbidNonWhitelisted: true,
     transform: true,
     whitelist: true,
+  });
+
+  it('accepts registration without a verification code', async () => {
+    const body = {
+      email: 'new-user@example.com',
+      username: 'new-user',
+      password: 'password-123',
+    };
+
+    const result = await pipe.transform(body, {
+      type: 'body',
+      metatype: RegisterParamsDto,
+    });
+
+    expect(result).toEqual(body);
+  });
+
+  it('rejects a legacy registration verification code as an unknown field', async () => {
+    await expect(
+      pipe.transform(
+        {
+          email: 'new-user@example.com',
+          username: 'new-user',
+          password: 'password-123',
+          code: '123456',
+        },
+        { type: 'body', metatype: RegisterParamsDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('preserves legitimate multipart upload fields', async () => {

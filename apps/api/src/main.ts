@@ -30,13 +30,15 @@ async function bootstrap() {
 
   app.useStaticAssets(path.join(__dirname, '..', '..', 'raster_uploads'));
 
-  const options = new DocumentBuilder()
-    .setTitle('装备任务场景平台API文档')
-    .setDescription('Background system based on Nest.js + Vue3 full stack development')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, options);
-  SwaggerModule.setup('docs', app, document);
+  if (process.env.DISABLE_SWAGGER !== 'true') {
+    const options = new DocumentBuilder()
+      .setTitle('装备任务场景平台API文档')
+      .setDescription('Background system based on Nest.js + Vue3 full stack development')
+      .setVersion('1.0')
+      .build();
+    const document = SwaggerModule.createDocument(app, options);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   app.enableCors({
     origin: '*',

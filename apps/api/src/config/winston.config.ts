@@ -1,5 +1,5 @@
 import { createLogger, format, transports } from 'winston';
-import * as DailyRotateFile from 'winston-daily-rotate-file';
+import DailyRotateFile = require('winston-daily-rotate-file');
 
 // 定义日志级别颜色
 const levelsColors = {

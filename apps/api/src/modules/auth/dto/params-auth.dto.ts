@@ -20,8 +20,4 @@ export class RegisterParamsDto {
   @IsNotEmpty()
   @Length(6, 64)
   password: string;
-
-  @IsNotEmpty()
-  @Length(4, 8)
-  code: string;
 }
