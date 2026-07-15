@@ -104,7 +104,7 @@ function assertSafeRelativePath(value: unknown): asserts value is string {
     value.includes('//') ||
     value.split('/').some((segment) => segment === '.' || segment === '..')
   ) {
-    throw new Error(`Invalid sourceRelativePath: ${value}`);
+    throw new Error('Invalid sourceRelativePath');
   }
 }
 

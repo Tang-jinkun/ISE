@@ -354,6 +354,28 @@ describe('buildAssetManifest', () => {
     await writeJson(secretField.sourceMapPath, sourceMapWithSecret);
     await expect(buildAssetManifest(secretField.options)).rejects.toThrow(/unrecognized|unknown/i);
   });
+
+  it('redacts an absolute rejected source path from the propagated CLI error', async () => {
+    const base = await fixture();
+    const sourceMap = JSON.parse(await readFile(base.sourceMapPath, 'utf8')) as {
+      assets: Array<Record<string, unknown>>;
+    };
+    const rejectedPath = join(base.sourceRoot, 'models', 'j10.glb');
+    sourceMap.assets[0]!.sourceRelativePath = rejectedPath;
+    await writeJson(base.sourceMapPath, sourceMap);
+
+    let rejection: unknown;
+    try {
+      await buildAssetManifest(base.options);
+    } catch (error) {
+      rejection = error;
+    }
+
+    expect(rejection).toBeInstanceOf(Error);
+    expect((rejection as Error).message).toBe('Invalid sourceRelativePath');
+    expect((rejection as Error).message).not.toContain(base.sourceRoot);
+    expect((rejection as Error).message).not.toContain(rejectedPath);
+  });
 });
 
 describe('asset-source-map.json', () => {
