@@ -1,0 +1,609 @@
+{
+  "schemaVersion": "ise-assets/v1",
+  "assets": [
+    {
+      "displayName": "预警机插图",
+      "aliases": [
+        "预警机"
+      ],
+      "fingerprint": "sha256:8d9004a27e2a80cafdb21ca830954935341dec8c2ef34736b4e214427259ff2b",
+      "sourceRelativePath": "素材/预警机插图.png",
+      "objectName": "demo-assets/image/aew-illustration.png",
+      "size": 4628680,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "image:aew-illustration",
+      "kind": "image",
+      "mediaType": "image/png",
+      "image": {
+        "width": 2560,
+        "height": 1440,
+        "fit": "contain"
+      }
+    },
+    {
+      "displayName": "机场",
+      "aliases": [],
+      "fingerprint": "sha256:fa4b3010f5a98ccad482dae64db1450ea99eaa6d17761365b13ed89c8bec567b",
+      "sourceRelativePath": "素材/机场.png",
+      "objectName": "demo-assets/image/airport.png",
+      "size": 3487,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "image:airport",
+      "kind": "image",
+      "mediaType": "image/png",
+      "image": {
+        "width": 128,
+        "height": 128,
+        "fit": "contain"
+      }
+    },
+    {
+      "displayName": "座舱HUD",
+      "aliases": [],
+      "fingerprint": "sha256:7077dd904ff1bab89fb476e110e13699b8dc356b296d4c59f5918c3e908159b9",
+      "sourceRelativePath": "素材/座舱HUD.png",
+      "objectName": "demo-assets/image/cockpit-hud.png",
+      "size": 4355281,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "image:cockpit-hud",
+      "kind": "image",
+      "mediaType": "image/png",
+      "image": {
+        "width": 2732,
+        "height": 1536,
+        "fit": "contain"
+      }
+    },
+    {
+      "displayName": "地面雷达",
+      "aliases": [],
+      "fingerprint": "sha256:be8fd0dfeda213699e5f228aecd8de9a6b6e461c0e8c7b83c785f9e023f15160",
+      "sourceRelativePath": "素材/地面雷达.png",
+      "objectName": "demo-assets/image/ground-radar.png",
+      "size": 4090,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "image:ground-radar",
+      "kind": "image",
+      "mediaType": "image/png",
+      "image": {
+        "width": 128,
+        "height": 128,
+        "fit": "contain"
+      }
+    },
+    {
+      "displayName": "J-10",
+      "aliases": [
+        "J-10CE",
+        "J-10CE战斗机"
+      ],
+      "fingerprint": "sha256:86f6f7f1701cb2bea985b49c2afbf310c733ae205ec1013bbabd3788b350b8b8",
+      "sourceRelativePath": "印巴glb（修改6.0）/J-10.glb",
+      "objectName": "demo-assets/model/j10.glb",
+      "size": 9736824,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:j10",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 19.260474,
+        "rotationOffsetDeg": [
+          90,
+          0,
+          0
+        ],
+        "altitudeOffsetM": -1.29958,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
+      "displayName": "JF-17",
+      "aliases": [
+        "JF-17战机",
+        "JF-17编队"
+      ],
+      "fingerprint": "sha256:40ab8686126477d9c958d5a588e63393b9a1b5100d5d4912fbdcba864ee928f8",
+      "sourceRelativePath": "印巴glb（修改6.0）/JF-17.glb",
+      "objectName": "demo-assets/model/jf17.glb",
+      "size": 1466636,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:jf17",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 15.287153,
+        "rotationOffsetDeg": [
+          90,
+          0,
+          0
+        ],
+        "altitudeOffsetM": 2.661958,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
+      "displayName": "MiG-29",
+      "aliases": [],
+      "fingerprint": "sha256:0556948ccf0b82e7a339aa9cfb40fb1429256c9a147d5dca5b8943e0d1ff35da",
+      "sourceRelativePath": "印巴glb（修改6.0）/MiG-29.glb",
+      "objectName": "demo-assets/model/mig29.glb",
+      "size": 2470748,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:mig29",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 21.146357,
+        "rotationOffsetDeg": [
+          90,
+          0,
+          0
+        ],
+        "altitudeOffsetM": 0.864481,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
+      "displayName": "PL-15E",
+      "aliases": [
+        "pl-15e"
+      ],
+      "fingerprint": "sha256:53af082c6160ddf6b3b8cc55d5e8a7d2c7a7fc556445f8946ebcdbe7274f7357",
+      "sourceRelativePath": "印巴glb（修改6.0）/pl-15e.glb",
+      "objectName": "demo-assets/model/pl15e.glb",
+      "size": 2760160,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:pl15e",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 5.743099,
+        "rotationOffsetDeg": [
+          90,
+          0,
+          0
+        ],
+        "altitudeOffsetM": 0.10824,
+        "entityTypes": [
+          "missile"
+        ]
+      }
+    },
+    {
+      "displayName": "Rafale",
+      "aliases": [
+        "Refale",
+        "阵风战斗机",
+        "阵风战斗机编队"
+      ],
+      "fingerprint": "sha256:3034eb15782822c4a49430d0a249d7778678c20a09de8e61cdaf13985a3e4839",
+      "sourceRelativePath": "印巴glb（修改6.0）/Refale.glb",
+      "objectName": "demo-assets/model/rafale.glb",
+      "size": 1417224,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:rafale",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 21.179728,
+        "rotationOffsetDeg": [
+          90,
+          0,
+          0
+        ],
+        "altitudeOffsetM": 2.074768,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
+      "displayName": "Su-30MKI",
+      "aliases": [
+        "SU-30MKI",
+        "苏-30MKI编队"
+      ],
+      "fingerprint": "sha256:50e4ddcedda0819895460b2f6c18ec0de60a0bac52558bc8a706687c8e44a49f",
+      "sourceRelativePath": "印巴glb（修改6.0）/SU-30MKI.glb",
+      "objectName": "demo-assets/model/su30mki.glb",
+      "size": 7787176,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:su30mki",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 25.489869,
+        "rotationOffsetDeg": [
+          90,
+          0,
+          0
+        ],
+        "altitudeOffsetM": 2.345046,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
+      "displayName": "AMBALA Rafale-1",
+      "aliases": [
+        "Rafale-1"
+      ],
+      "fingerprint": "sha256:b4c46ebd7db910cf8212cf46afeb8713552725abe7d769dbe4db917205233ea5",
+      "sourceRelativePath": "json/AMBALA Rafale-1.json",
+      "objectName": "demo-assets/trajectory/ambala-rafale-1.json",
+      "size": 32039,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:ambala-rafale-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 182000,
+        "monotonic": true
+      }
+    },
+    {
+      "displayName": "AMBALA Su-30MKI-1",
+      "aliases": [
+        "Su-30MKI-1"
+      ],
+      "fingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
+      "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
+      "objectName": "demo-assets/trajectory/ambala-su30mki-1.json",
+      "size": 28072,
+      "availability": "invalid",
+      "criticality": "optional",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:ambala-su30mki-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 0,
+        "monotonic": true
+      }
+    },
+    {
+      "displayName": "MINAS J-10CE-1",
+      "aliases": [
+        "J-10CE-1",
+        "MINHAS J-10CE-1"
+      ],
+      "fingerprint": "sha256:debdb6cff51c0f58293e779000e11d47c6ea86ca661f9c781f87acc9c1a62dad",
+      "sourceRelativePath": "json/MINAS J-10CE-1.json",
+      "objectName": "demo-assets/trajectory/minhas-j10ce-1.json",
+      "size": 28732,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:minhas-j10ce-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 172000,
+        "monotonic": true
+      }
+    },
+    {
+      "displayName": "巴方导弹1",
+      "aliases": [],
+      "fingerprint": "sha256:bc5307fe15118999e80ca9208c7a4d42e186aa7c445c78e4938472a1cfa2c089",
+      "sourceRelativePath": "json/巴方导弹1.json",
+      "objectName": "demo-assets/trajectory/pakistan-missile-1.json",
+      "size": 2791,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:pakistan-missile-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 15000,
+        "monotonic": true
+      }
+    },
+    {
+      "displayName": "炸弹爆炸的视频",
+      "aliases": [],
+      "fingerprint": "sha256:347b154c2e469d02042bdf74693a38e0eb63b4623eab516bbc6c7b723aba81e2",
+      "sourceRelativePath": "素材/炸弹爆炸的视频.mp4",
+      "objectName": "demo-assets/video/bomb-explosion.mp4",
+      "size": 9612803,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:bomb-explosion",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 12017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "座舱被全频段干扰",
+      "aliases": [],
+      "fingerprint": "sha256:0c8229d06db9c50704aa64ad0733636e40d693771fa2c440fc19011bc9885683",
+      "sourceRelativePath": "素材/座舱被全频段干扰.mp4",
+      "objectName": "demo-assets/video/cockpit-jamming.mp4",
+      "size": 4379497,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:cockpit-jamming",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 5017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "检查基本完好无损",
+      "aliases": [],
+      "fingerprint": "sha256:b10c6b17800f50d9c99dfcdcf5f684721c4638ec1a77d6ee80df878f8c3bd352",
+      "sourceRelativePath": "素材/检查基本完好无损.mp4",
+      "objectName": "demo-assets/video/damage-check.mp4",
+      "size": 6580529,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:damage-check",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 8017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "导弹击中飞机",
+      "aliases": [],
+      "fingerprint": "sha256:70812104a660dbd27b12415bca7f7ff3f6d1382ec45186ca3dc832ef60111bc8",
+      "sourceRelativePath": "素材/导弹击中飞机.mp4",
+      "objectName": "demo-assets/video/missile-impact.mp4",
+      "size": 6625354,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:missile-impact",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 8017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "OODA作战链示例视频",
+      "aliases": [
+        "ooda作战链示例视频"
+      ],
+      "fingerprint": "sha256:2a13ff6e87b396ab6805516664a456d321309fb29ce12a7e9edc601de38fd2b6",
+      "sourceRelativePath": "素材/ooda作战链示例视频.mp4",
+      "objectName": "demo-assets/video/ooda-chain.mp4",
+      "size": 12624361,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:ooda-chain",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 16017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "红灯闪烁，offline",
+      "aliases": [],
+      "fingerprint": "sha256:e63ca56c566ef849b7420dd31fffead284156398c9a0e51e07c2ee6f3b88e880",
+      "sourceRelativePath": "素材/红灯闪烁，offline.mp4",
+      "objectName": "demo-assets/video/radar-offline.mp4",
+      "size": 4361353,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:radar-offline",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 5017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "冲出跑道",
+      "aliases": [],
+      "fingerprint": "sha256:095140fdf2c95354b5c3af91a0494b0f3a3effd49061fd6ce909338efda8c26f",
+      "sourceRelativePath": "素材/冲出跑道.mp4",
+      "objectName": "demo-assets/video/runway-exit.mp4",
+      "size": 6631833,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:runway-exit",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 8017,
+        "codec": "avc1.640020"
+      }
+    },
+    {
+      "displayName": "锁定目标",
+      "aliases": [],
+      "fingerprint": "sha256:8a0f7c44f79ba012d90e126fed581bcf84d866de120f82281160eebaf0dac7bc",
+      "sourceRelativePath": "素材/锁定目标.mp4",
+      "objectName": "demo-assets/video/target-lock.mp4",
+      "size": 4342338,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "video:target-lock",
+      "kind": "video",
+      "mediaType": "video/mp4",
+      "video": {
+        "durationMs": 5017,
+        "codec": "avc1.640020"
+      }
+    }
+  ],
+  "nameMappings": [
+    {
+      "sourceName": "AMBALA Rafale-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:ambala-rafale-1",
+      "note": "Operator trajectory filename stem"
+    },
+    {
+      "sourceName": "AMBALA Su-30MKI-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:ambala-su30mki-1",
+      "note": "Known reversed optional trajectory"
+    },
+    {
+      "sourceName": "J-10",
+      "sourceKind": "model",
+      "assetId": "model:j10",
+      "note": "Stable model name"
+    },
+    {
+      "sourceName": "J-10CE",
+      "sourceKind": "report",
+      "assetId": "model:j10",
+      "note": "Report spelling maps to the available J-10 model"
+    },
+    {
+      "sourceName": "JF-17",
+      "sourceKind": "model",
+      "assetId": "model:jf17",
+      "note": "Stable model name"
+    },
+    {
+      "sourceName": "JF-17战机",
+      "sourceKind": "report",
+      "assetId": "model:jf17",
+      "note": "Report entity name"
+    },
+    {
+      "sourceName": "JF-17编队",
+      "sourceKind": "report",
+      "assetId": "model:jf17",
+      "note": "Report formation name"
+    },
+    {
+      "sourceName": "MINAS J-10CE-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:minhas-j10ce-1",
+      "note": "Operator filename spelling retained explicitly"
+    },
+    {
+      "sourceName": "Rafale",
+      "sourceKind": "model",
+      "assetId": "model:rafale",
+      "note": "Canonical platform spelling"
+    },
+    {
+      "sourceName": "Refale",
+      "sourceKind": "operator",
+      "assetId": "model:rafale",
+      "note": "Operator source filename spelling"
+    },
+    {
+      "sourceName": "地面雷达",
+      "sourceKind": "report",
+      "assetId": "image:ground-radar",
+      "note": "Report illustration name"
+    },
+    {
+      "sourceName": "巴方导弹1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:pakistan-missile-1",
+      "note": "Operator trajectory filename stem"
+    },
+    {
+      "sourceName": "苏-30MKI编队",
+      "sourceKind": "report",
+      "assetId": "model:su30mki",
+      "note": "Report formation name"
+    },
+    {
+      "sourceName": "阵风战斗机编队",
+      "sourceKind": "report",
+      "assetId": "model:rafale",
+      "note": "Report formation name"
+    },
+    {
+      "sourceName": "预警机",
+      "sourceKind": "report",
+      "assetId": "image:aew-illustration",
+      "note": "Report illustration name"
+    }
+  ]
+}
