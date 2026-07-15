@@ -1,0 +1,25 @@
+{
+  "name": "@ise/runtime-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "test": "tsx --test test/scene.test.ts",
+    "typecheck": "tsc --noEmit",
+    "validate:assets": "tsx src/validateAssetSeedCli.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
