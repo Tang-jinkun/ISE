@@ -5,14 +5,10 @@ export type Tokens = {
   refresh_token: string;
 };
 
-export const sendRegisterCode = (email: string) =>
-  http.post<null>('auth/send-register-code', { email });
-
 export const register = async (params: {
   email: string;
   password: string;
-  username?: string;
-  code?: string;
+  username: string;
 }): Promise<ResType<Tokens>> => {
   const res = await http.post<Tokens>('auth/register', params);
   if (res?.data?.access_token && res?.data?.refresh_token) {
