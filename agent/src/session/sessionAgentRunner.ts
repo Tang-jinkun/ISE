@@ -1,5 +1,4 @@
 import type { AgentContext, AgentRunResult, Artifact, ModelAdapter } from '@ise/agent-core'
-import { sceneProjectConfigSchema } from '@ise/runtime-contracts'
 import type { SkillRegistry } from '@ise/skills-core'
 import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { QueuedRunResponse } from '../api/contracts.ts'
@@ -9,7 +8,6 @@ import {
   ASSET_REGISTRY_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
-  type CompiledRuntimeArtifactData,
 } from '../contracts/artifactTypes.ts'
 import type { AgentRepositories, RunRecord } from '../persistence/repositories.ts'
 import { SqlJsPersistenceError } from '../persistence/sqlJsDatabase.ts'
@@ -18,6 +16,10 @@ import { PersistentDomainStateStore } from '../persistence/persistentDomainState
 import { IseAgentHost } from '../runtime/IseAgentHost.ts'
 import { createSessionToolRegistry } from '../runtime/toolAssembly.ts'
 import { createAssetRegistrySnapshot } from '../services/assetRegistry.ts'
+import {
+  CompiledArtifactInvalidError,
+  validateCompiledRuntimeArtifact,
+} from '../services/compiledRuntimeArtifact.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
 import { publicFailureCode, publicFailureDiagnostics, publicFailureMessage } from '../services/publicFailures.ts'
 import { createCompilerTools } from '../tools/compilerTools.ts'
@@ -214,8 +216,7 @@ export class SessionAgentRunner {
     }
     const summary = result.turnOutcome?.finalAnswer ?? result.goal.finalSummary
     if (compiled) {
-      const data = compiled.data as CompiledRuntimeArtifactData
-      const sceneProjectConfig = sceneProjectConfigSchema.parse(data.sceneProjectConfig)
+      const { sceneProjectConfig } = this.validatedCompiledData(run, compiled)
       this.options.repositories.transaction(() => {
         if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
         this.options.repositories.runs.finish(run.id, 'completed')
@@ -245,6 +246,7 @@ export class SessionAgentRunner {
     const message = publicFailureMessage(code)
     const diagnostics = publicFailureDiagnostics(compilationDiagnostics ?? [{ code, severity: 'error' }])
     this.options.repositories.transaction(() => {
+      if (code === 'COMPILED_ARTIFACT_INVALID') this.quarantineCurrentCompiled(run)
       this.options.repositories.runs.finish(run.id, aborted ? 'cancelled' : 'failed', { code, message, diagnostics })
       this.options.repositories.sessions.transition(
         run.sessionId,
@@ -381,11 +383,45 @@ export class SessionAgentRunner {
 
   private currentCompiled(run: RunRecord, artifacts: readonly Artifact[]): Artifact | undefined {
     if (!run.expectedAccepted) return undefined
-    const candidates = artifacts.filter(artifact =>
-      artifact.type === COMPILED_RUNTIME_ARTIFACT
-      && artifact.metadata?.eventPlanArtifactId === run.expectedAccepted?.artifactId)
+    const candidates = artifacts.filter(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)
     if (candidates.length > 1) throw new CompilationError([diagnostic('RUN_OUTPUT_AMBIGUOUS', COMPILED_RUNTIME_ARTIFACT)])
-    return candidates[0]
+    const candidate = candidates[0]
+    if (candidate) this.validatedCompiledData(run, candidate)
+    return candidate
+  }
+
+  private validatedCompiledData(run: RunRecord, artifact: Artifact) {
+    try {
+      return validateCompiledRuntimeArtifact(artifact, run.expectedAccepted?.artifactId)
+    } catch (error) {
+      if (error instanceof CompiledArtifactInvalidError) {
+        throw new CompilationError([diagnostic(error.code, artifact.id)])
+      }
+      throw error
+    }
+  }
+
+  private quarantineCurrentCompiled(run: RunRecord): void {
+    const current = this.options.repositories.artifacts.listByRun(run.sessionId, run.id)
+      .filter(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)
+    if (current.length === 0) return
+    const currentIds = new Set(current.map(artifact => artifact.id))
+    const ledger = this.options.repositories.artifacts.listLedger(run.sessionId)
+    const byId = new Map(ledger.map(artifact => [artifact.id, artifact]))
+    for (const artifact of current) {
+      byId.get(artifact.id)!.superseded = true
+      let predecessorId = artifact.supersedes
+      while (predecessorId && currentIds.has(predecessorId)) predecessorId = byId.get(predecessorId)?.supersedes
+      const predecessor = predecessorId ? byId.get(predecessorId) : undefined
+      if (predecessor?.type !== COMPILED_RUNTIME_ARTIFACT || predecessor.logicalKey !== artifact.logicalKey) continue
+      try {
+        validateCompiledRuntimeArtifact(predecessor)
+        predecessor.superseded = false
+      } catch (error) {
+        if (!(error instanceof CompiledArtifactInvalidError)) throw error
+      }
+    }
+    this.options.repositories.artifacts.replaceLedger(run.sessionId, ledger)
   }
 
   private buildBoundedObjective(sessionId: string, content: string): string {

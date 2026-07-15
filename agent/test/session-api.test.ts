@@ -6,6 +6,7 @@ import test, { type TestContext } from 'node:test'
 import type { ModelAdapter, ModelRequest, ModelResponse } from '@ise/agent-core'
 import { SkillRegistry } from '@ise/skills-core'
 import type { AuthorizedFile, NestGateway } from '../src/adapters/nestGateway.ts'
+import { BaseRuntimeAdapter } from '../src/adapters/baseRuntimeAdapter.ts'
 import { createHttpApp } from '../src/api/httpApp.ts'
 import { AgentDatabase } from '../src/persistence/database.ts'
 import { AgentRepositories } from '../src/persistence/repositories.ts'
@@ -15,6 +16,7 @@ import {
   EVENT_PLAN_ACCEPTED_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
 } from '../src/contracts/artifactTypes.ts'
+import { canonicalRuntimePlanSchema } from '../src/contracts/runtimePlan.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
 import { EventBroker } from '../src/session/eventBroker.ts'
 import { SessionAgentRunner } from '../src/session/sessionAgentRunner.ts'
@@ -180,12 +182,53 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
   return accepted.id
 }
 
-function persistValidatedCompiled(
+type CompiledFixtureVariant =
+  | 'runtime-schema'
+  | 'scene-schema'
+  | 'self-reference'
+  | 'runtime-lineage'
+  | 'scene-lineage'
+  | 'metadata-lineage'
+
+function persistCompiled(
   f: Awaited<ReturnType<typeof terminalFixture>>,
-  runId: string,
   acceptedArtifactId: string,
-): void {
-  const artifactId = `terminal-compiled-${runId}`
+  options: { artifactId?: string; runId?: string; variant?: CompiledFixtureVariant } = {},
+): string {
+  const artifactId = options.artifactId ?? `terminal-compiled-${options.runId}`
+  const validRuntimePlan = canonicalRuntimePlanSchema.parse({
+    schemaVersion: 'canonical-runtime-plan/v1',
+    planId: 'terminal-runtime-plan',
+    sourceDocumentId: 'terminal-document',
+    eventPlanArtifactId: acceptedArtifactId,
+    eventPlanId: 'terminal-plan',
+    narrativePlanId: 'terminal-narrative-plan',
+    capabilityManifestVersion: 'ise-capabilities/v1',
+    assetRegistryVersion: 'terminal-assets-v1',
+    totalDurationMs: 1,
+    entities: [],
+    subtitles: [],
+    commands: [],
+    informationCards: [],
+    lineage: [],
+    diagnostics: [],
+  })
+  let runtimePlan: unknown = validRuntimePlan
+  const sceneProjectConfig = new BaseRuntimeAdapter().adapt(validRuntimePlan, artifactId)
+  const metadata: Record<string, unknown> = { eventPlanArtifactId: acceptedArtifactId }
+  if (options.variant === 'runtime-schema') {
+    runtimePlan = { leaked: 'Bearer top-secret ZodError invalid_type runtimePlan' }
+  } else if (options.variant === 'scene-schema') {
+    Object.assign(sceneProjectConfig, { tracks: 'Bearer top-secret ZodError invalid_type sceneProjectConfig' })
+  } else if (options.variant === 'self-reference') {
+    sceneProjectConfig.runtimePlanArtifactId = 'other-runtime-artifact'
+  } else if (options.variant === 'runtime-lineage') {
+    validRuntimePlan.eventPlanArtifactId = 'other-accepted-artifact'
+  } else if (options.variant === 'scene-lineage') {
+    sceneProjectConfig.eventPlanArtifactId = 'other-accepted-artifact'
+  } else if (options.variant === 'metadata-lineage') {
+    metadata.eventPlanArtifactId = 'other-accepted-artifact'
+  }
   const store = new PersistentArtifactStore(f.session.id, f.repositories.artifacts)
   const compiled = store.create({
     id: artifactId,
@@ -193,25 +236,19 @@ function persistValidatedCompiled(
     createdBy: 'tool',
     logicalKey: `compiled-runtime:${acceptedArtifactId}`,
     data: {
-      runtimePlan: {},
-      sceneProjectConfig: {
-        schemaVersion: 'ise-scene/v1',
-        sourceDocumentId: 'terminal-document',
-        eventPlanArtifactId: acceptedArtifactId,
-        runtimePlanArtifactId: artifactId,
-        totalDurationMs: 0,
-        entities: [],
-        tracks: [],
-        diagnostics: [],
-      },
+      runtimePlan,
+      sceneProjectConfig,
     },
-    metadata: { eventPlanArtifactId: acceptedArtifactId },
+    metadata,
   })
-  f.repositories.artifacts.replaceLedger(
-    f.session.id,
-    f.repositories.artifacts.listLedger(f.session.id),
-    new Map([[compiled.id, runId]]),
-  )
+  if (options.runId) {
+    f.repositories.artifacts.replaceLedger(
+      f.session.id,
+      f.repositories.artifacts.listLedger(f.session.id),
+      new Map([[compiled.id, options.runId]]),
+    )
+  }
+  return compiled.id
 }
 
 function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
@@ -383,6 +420,54 @@ test('failed runs never compile a NarrativePlan left by an older run', async () 
   database.close()
 })
 
+test('invalid current-run compiled artifacts fail structurally and preserve the last valid artifact', async (t) => {
+  const cases: Array<{ name: string; variant: CompiledFixtureVariant }> = [
+    { name: 'runtime schema', variant: 'runtime-schema' },
+    { name: 'scene schema', variant: 'scene-schema' },
+    { name: 'scene self-reference', variant: 'self-reference' },
+    { name: 'runtime accepted lineage', variant: 'runtime-lineage' },
+    { name: 'scene accepted lineage', variant: 'scene-lineage' },
+    { name: 'metadata accepted lineage', variant: 'metadata-lineage' },
+  ]
+  for (const current of cases) {
+    const model = new ControllableModel()
+    const f = await terminalFixture(t, model, false)
+    const acceptedArtifactId = prepareAcceptedRun(f)
+    persistCompiled(f, acceptedArtifactId, { artifactId: 'last-valid' })
+    const queued = f.runner.enqueueAfterApproval({
+      sessionId: f.session.id,
+      subject: 'user-1',
+      authorization: 'Bearer user-1',
+      acceptedArtifactId,
+    })
+    await model.started
+    const invalidArtifactId = persistCompiled(f, acceptedArtifactId, {
+      runId: queued.runId,
+      variant: current.variant,
+    })
+    model.succeed()
+    await waitForTerminal(f.repositories, f.session.id)
+
+    const run = f.repositories.runs.get(queued.runId)!
+    const events = f.repositories.events.after(f.session.id, '0')
+    const terminalEvents = events.filter(event => ['run.completed', 'run.failed'].includes(event.type))
+    assert.equal(run.status, 'failed', current.name)
+    assert.equal(f.repositories.sessions.get(f.session.id)?.status, 'failed', current.name)
+    assert.equal(run.error?.code, 'COMPILED_ARTIFACT_INVALID', current.name)
+    assert.equal(run.error?.message, 'Replay compilation failed', current.name)
+    assert.deepEqual(terminalEvents.map(event => event.type), ['run.failed'], current.name)
+    assert.equal((terminalEvents[0]!.data.diagnostics as { code: string }[])[0]?.code, 'COMPILED_ARTIFACT_INVALID', current.name)
+    assert.equal(terminalEvents.some(event => typeof event.data.runtimeArtifactId === 'string'), false, current.name)
+    assert.equal(/Bearer|top-secret|ZodError|invalid_type|runtimePlan/i.test(JSON.stringify({ error: run.error, terminalEvents })), false, current.name)
+    assert.deepEqual(f.repositories.artifacts.listLedger(f.session.id)
+      .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT && !item.superseded)
+      .map(item => item.id), ['last-valid'], current.name)
+    assert.equal(f.repositories.artifacts.get(f.session.id, invalidArtifactId)?.superseded, true, current.name)
+    assert.equal(f.repositories.artifacts.get(f.session.id, 'last-valid')?.superseded, false, current.name)
+    f.database.close()
+  }
+})
+
 test('terminal flush failures publish no completed, failed, or interrupt event', async (t) => {
   for (const outcome of ['completed', 'failed', 'interrupt'] as const) {
     const model = new ControllableModel()
@@ -398,7 +483,7 @@ test('terminal flush failures publish no completed, failed, or interrupt event',
         sessionId: f.session.id, subject: 'user-1', authorization: 'Bearer user-1', content: outcome,
       })
     await model.started
-    if (acceptedArtifactId) persistValidatedCompiled(f, queued.runId, acceptedArtifactId)
+    if (acceptedArtifactId) persistCompiled(f, acceptedArtifactId, { runId: queued.runId })
     f.armFault()
     if (outcome === 'completed') model.succeed()
     else if (outcome === 'failed') model.fail()
@@ -435,7 +520,7 @@ test('successful completed, failed, and interrupt paths publish one ordered term
         sessionId: f.session.id, subject: 'user-1', authorization: 'Bearer user-1', content: outcome,
       })
     await model.started
-    if (acceptedArtifactId) persistValidatedCompiled(f, queued.runId, acceptedArtifactId)
+    if (acceptedArtifactId) persistCompiled(f, acceptedArtifactId, { runId: queued.runId })
     if (outcome === 'completed') model.succeed()
     else if (outcome === 'failed') model.fail()
     else f.runner.interrupt(f.session.id, 'user-1')

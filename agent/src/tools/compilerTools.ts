@@ -17,6 +17,7 @@ import { eventPlanSchema } from '../contracts/eventPlan.ts'
 import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
 import { canonicalRuntimePlanSchema } from '../contracts/runtimePlan.ts'
 import { fingerprint } from '../services/fingerprint.ts'
+import { validateCompiledRuntimeArtifact } from '../services/compiledRuntimeArtifact.ts'
 
 export interface CompileProgressPayload {
   stage: 'narrative' | 'assets' | 'schedule' | 'validate' | 'adapt'
@@ -113,10 +114,7 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
     async execute(input, context) {
       const requested = validateInputSchema.parse(input)
       const artifact = requireArtifact(context, requested.artifactId, COMPILED_RUNTIME_ARTIFACT)
-      const data = artifact.data as Partial<CompiledRuntimeArtifactData>
-      const runtimePlan = canonicalRuntimePlanSchema.parse(data.runtimePlan)
-      const sceneProjectConfig = sceneProjectConfigSchema.parse(data.sceneProjectConfig)
-      if (sceneProjectConfig.runtimePlanArtifactId !== artifact.id) throw new Error('Compiled artifact self-reference mismatch')
+      const { runtimePlan } = validateCompiledRuntimeArtifact(artifact)
       return { content: JSON.stringify({ valid: true, artifactId: artifact.id, diagnostics: runtimePlan.diagnostics }) }
     },
   }

@@ -153,6 +153,34 @@ test('validate_replay_runtime reparses both stored values without repairing', as
   assert.equal(result.artifacts, undefined)
 })
 
+test('validate_replay_runtime rejects malformed and inconsistent compiled artifacts with a stable error', async () => {
+  for (const variant of [
+    'runtime-schema',
+    'scene-schema',
+    'self-reference',
+    'runtime-lineage',
+    'scene-lineage',
+    'metadata-lineage',
+  ] as const) {
+    const context = compilerContext()
+    const compiled = await createCompilerTools()[0]!.execute(compileInput, context)
+    const artifact = structuredClone(compiled.artifacts![0]!)
+    const data = artifact.data as CompiledRuntimeArtifactData
+    if (variant === 'runtime-schema') artifact.data = { ...data, runtimePlan: {} }
+    else if (variant === 'scene-schema') artifact.data = { ...data, sceneProjectConfig: {} }
+    else if (variant === 'self-reference') data.sceneProjectConfig.runtimePlanArtifactId = 'other-runtime-artifact'
+    else if (variant === 'runtime-lineage') data.runtimePlan.eventPlanArtifactId = 'other-accepted-artifact'
+    else if (variant === 'scene-lineage') data.sceneProjectConfig.eventPlanArtifactId = 'other-accepted-artifact'
+    else artifact.metadata = { ...artifact.metadata, eventPlanArtifactId: 'other-accepted-artifact' }
+    context.artifacts.create(artifact)
+    await assert.rejects(
+      createCompilerTools()[1]!.execute({ artifactId: artifact.id }, context),
+      (error: unknown) => error instanceof Error && error.message === 'COMPILED_ARTIFACT_INVALID',
+      variant,
+    )
+  }
+})
+
 test('failed recompile creates no artifact and preserves the last valid one', async () => {
   const context = compilerContext({ movement: true, missingTrajectory: true, lastValid: true })
   await assert.rejects(createCompilerTools()[0]!.execute(compileInput, context), /REQUIRED_ASSET_MISSING/)
