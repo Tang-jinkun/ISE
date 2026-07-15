@@ -17,17 +17,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
 function isEventUnit(value: unknown): value is AgentEventUnit {
   if (!isRecord(value)) return false;
   return (
     typeof value.eventUnitId === 'string' &&
     typeof value.title === 'string' &&
     typeof value.worldStateChange === 'string' &&
-    Array.isArray(value.participants) &&
-    Array.isArray(value.locationRefs) &&
-    Array.isArray(value.evidenceRefs) &&
-    Array.isArray(value.inferenceRefs) &&
-    Array.isArray(value.uncertainties) &&
+    isStringArray(value.participants) &&
+    isStringArray(value.locationRefs) &&
+    isStringArray(value.evidenceRefs) &&
+    isStringArray(value.inferenceRefs) &&
+    isStringArray(value.uncertainties) &&
     typeof value.narrativePurpose === 'string' &&
     ['high', 'medium', 'low'].includes(String(value.importance))
   );
@@ -37,7 +41,7 @@ function artifactEventUnits(artifact: AgentArtifactView): AgentEventUnit[] {
   if (!isRecord(artifact.data) || !Array.isArray(artifact.data.eventUnits)) {
     return [];
   }
-  return artifact.data.eventUnits.filter(isEventUnit);
+  return artifact.data.eventUnits.every(isEventUnit) ? artifact.data.eventUnits : [];
 }
 
 function cloneEventUnits(units: AgentEventUnit[]): AgentEventUnit[] {

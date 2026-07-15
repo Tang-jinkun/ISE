@@ -22,6 +22,7 @@ export type AgentSessionState = {
   activeReview: AgentReviewView | null;
   diagnostics: Diagnostic[];
   compiledConfig: SceneProjectConfig | null;
+  latestCompletedRuntimeArtifactId: string | null;
   open(sessionId: string): void;
   applyEvent(sessionId: string, event: AgentEvent): void;
   replaceArtifacts(sessionId: string, artifacts: AgentArtifactView[]): void;
@@ -43,6 +44,7 @@ type SessionData = Pick<
   | 'activeReview'
   | 'diagnostics'
   | 'compiledConfig'
+  | 'latestCompletedRuntimeArtifactId'
 >;
 
 const emptySession = (sessionId: string | null): SessionData => ({
@@ -54,6 +56,7 @@ const emptySession = (sessionId: string | null): SessionData => ({
   activeReview: null,
   diagnostics: [],
   compiledConfig: null,
+  latestCompletedRuntimeArtifactId: null,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -199,10 +202,20 @@ function artifactRecord(artifacts: AgentArtifactView[]): Record<string, AgentArt
 
 function compiledConfigFrom(
   artifacts: Record<string, AgentArtifactView>,
+  completedArtifactId: string | null,
 ): SceneProjectConfig | null {
-  const compiled = Object.values(artifacts)
-    .filter((artifact) => artifact.type === COMPILED_RUNTIME_ARTIFACT && !artifact.superseded)
-    .sort((left, right) => right.version - left.version)[0];
+  const completedArtifact = completedArtifactId ? artifacts[completedArtifactId] : undefined;
+  const compiled = completedArtifactId
+    ? completedArtifact?.type === COMPILED_RUNTIME_ARTIFACT
+      ? completedArtifact
+      : undefined
+    : Object.values(artifacts)
+        .filter((artifact) => artifact.type === COMPILED_RUNTIME_ARTIFACT && !artifact.superseded)
+        .sort(
+          (left, right) =>
+            right.createdAt.localeCompare(left.createdAt) ||
+            right.artifactId.localeCompare(left.artifactId),
+        )[0];
   if (!compiled || !isRecord(compiled.data)) return null;
   const parsed = sceneProjectConfigSchema.safeParse(compiled.data.sceneProjectConfig);
   return parsed.success ? parsed.data : null;
@@ -242,6 +255,11 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
       }
       if (event.type === 'run.completed') {
         next.status = 'completed';
+        const runtimeArtifactId = stringField(event.data, 'runtimeArtifactId');
+        if (runtimeArtifactId) {
+          next.latestCompletedRuntimeArtifactId = runtimeArtifactId;
+          next.compiledConfig = compiledConfigFrom(state.artifacts, runtimeArtifactId);
+        }
       }
       if (event.type === 'run.failed') {
         next.status = event.data.status === 'cancelled' ? 'cancelled' : 'failed';
@@ -257,7 +275,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
       const nextArtifacts = artifactRecord(artifacts);
       return {
         artifacts: nextArtifacts,
-        compiledConfig: compiledConfigFrom(nextArtifacts),
+        compiledConfig: compiledConfigFrom(nextArtifacts, state.latestCompletedRuntimeArtifactId),
       };
     }),
 
@@ -270,7 +288,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
       };
       return {
         artifacts: nextArtifacts,
-        compiledConfig: compiledConfigFrom(nextArtifacts),
+        compiledConfig: compiledConfigFrom(nextArtifacts, state.latestCompletedRuntimeArtifactId),
       };
     }),
 

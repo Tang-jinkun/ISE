@@ -9,7 +9,7 @@ import {
 import { useAgentSessionStore } from '@/stores/agentSessionStore';
 
 const RETRY_DELAYS_MS = [250, 500, 1000, 2000] as const;
-let currentGeneration = 0;
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 function abortReason(signal: AbortSignal): unknown {
   return signal.reason ?? new DOMException('Aborted', 'AbortError');
@@ -103,7 +103,6 @@ export function useAgentSession(sessionId: string) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const generation = ++currentGeneration;
     let mounted = true;
 
     if (useAgentSessionStore.getState().sessionId !== sessionId) {
@@ -113,7 +112,6 @@ export function useAgentSession(sessionId: string) {
     const isCurrent = () =>
       mounted &&
       !controller.signal.aborted &&
-      generation === currentGeneration &&
       useAgentSessionStore.getState().sessionId === sessionId;
 
     const hydrate = async () => {
@@ -141,6 +139,9 @@ export function useAgentSession(sessionId: string) {
           if (!isCurrent()) return;
         }
       }
+      if (!isCurrent()) return;
+      if (TERMINAL_STATUSES.has(useAgentSessionStore.getState().status)) return;
+      throw new TypeError('Agent event stream ended before the session reached a terminal state');
     };
 
     const run = async () => {

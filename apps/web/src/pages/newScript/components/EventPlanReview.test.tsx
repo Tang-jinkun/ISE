@@ -199,4 +199,54 @@ describe('EventPlanReview', () => {
 
     expect(screen.getByRole('button', { name: '删除 建立攻击链' })).toBeDisabled();
   });
+
+  it.each([
+    'participants',
+    'locationRefs',
+    'evidenceRefs',
+    'inferenceRefs',
+    'uncertainties',
+  ] as const)('rejects the whole plan when %s contains a non-string value', (field) => {
+    const malformedArtifact = structuredClone(artifact);
+    const data = malformedArtifact.data as { eventUnits: Array<Record<string, unknown>> };
+    const malformedUnit = data.eventUnits[1];
+    if (!malformedUnit) throw new Error('Expected a second event unit');
+    malformedUnit[field] = [42];
+
+    render(
+      <EventPlanReview
+        artifact={malformedArtifact}
+        review={review}
+        onApprove={onApprove}
+        onRevise={onRevise}
+        onReject={onReject}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(onRevise).not.toHaveBeenCalled();
+  });
+
+  it('rejects the whole plan instead of filtering out a malformed event unit', () => {
+    const malformedArtifact = structuredClone(artifact);
+    const data = malformedArtifact.data as { eventUnits: Array<Record<string, unknown>> };
+    const malformedUnit = data.eventUnits[1];
+    if (!malformedUnit) throw new Error('Expected a second event unit');
+    delete malformedUnit.title;
+
+    render(
+      <EventPlanReview
+        artifact={malformedArtifact}
+        review={review}
+        onApprove={onApprove}
+        onRevise={onRevise}
+        onReject={onReject}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(onRevise).not.toHaveBeenCalled();
+  });
 });

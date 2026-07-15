@@ -49,8 +49,28 @@ function artifact(artifactId: string, type: string, data: unknown): AgentArtifac
 
 async function* emptyStream(): AsyncGenerator<AgentEvent> {}
 
+async function waitForAbort(signal?: AbortSignal): Promise<void> {
+  if (!signal || signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  });
+}
+
+async function* pendingStream(signal?: AbortSignal): AsyncGenerator<AgentEvent> {
+  for (const event of [] as AgentEvent[]) yield event;
+  await waitForAbort(signal);
+}
+
 async function* eventStream(events: AgentEvent[]): AsyncGenerator<AgentEvent> {
   for (const event of events) yield event;
+}
+
+async function* eventStreamUntilAbort(
+  events: AgentEvent[],
+  signal?: AbortSignal,
+): AsyncGenerator<AgentEvent> {
+  yield* eventStream(events);
+  await waitForAbort(signal);
 }
 
 async function* failedStream(error: unknown): AsyncGenerator<AgentEvent> {
@@ -74,7 +94,7 @@ describe('useAgentSession', () => {
     listArtifactsMock.mockReset();
     streamEventsMock.mockReset();
     listArtifactsMock.mockResolvedValue({ artifacts: [] });
-    streamEventsMock.mockImplementation(() => emptyStream());
+    streamEventsMock.mockImplementation((_sessionId, options) => pendingStream(options?.signal));
   });
 
   afterEach(() => {
@@ -178,6 +198,54 @@ describe('useAgentSession', () => {
     expect(useAgentSessionStore.getState().artifacts).not.toHaveProperty('old-draft');
   });
 
+  it('keeps an earlier same-session hook active after a later hook unmounts', async () => {
+    const firstHydration = deferred<{ artifacts: AgentArtifactView[] }>();
+    listArtifactsMock
+      .mockImplementationOnce(() => firstHydration.promise)
+      .mockResolvedValue({ artifacts: [] });
+
+    const first = renderHook(() => useAgentSession('session-1'));
+    const second = renderHook(() => useAgentSession('session-1'));
+    await waitFor(() => expect(listArtifactsMock).toHaveBeenCalledTimes(2));
+
+    second.unmount();
+    firstHydration.resolve({
+      artifacts: [artifact('first-draft', 'ise.event-plan-draft/v1', { eventUnits: [] })],
+    });
+    await act(async () => {
+      await firstHydration.promise;
+      await Promise.resolve();
+    });
+
+    expect(useAgentSessionStore.getState().artifacts).toHaveProperty('first-draft');
+    first.unmount();
+  });
+
+  it('does not let an old-session cleanup invalidate a newer session hook', async () => {
+    const oldHydration = deferred<{ artifacts: AgentArtifactView[] }>();
+    const newHydration = deferred<{ artifacts: AgentArtifactView[] }>();
+    listArtifactsMock.mockImplementation((sessionId) =>
+      sessionId === 'session-old' ? oldHydration.promise : newHydration.promise,
+    );
+
+    const oldHook = renderHook(() => useAgentSession('session-old'));
+    const newHook = renderHook(() => useAgentSession('session-new'));
+    await waitFor(() => expect(listArtifactsMock).toHaveBeenCalledTimes(2));
+
+    oldHook.unmount();
+    newHydration.resolve({
+      artifacts: [artifact('new-draft', 'ise.event-plan-draft/v1', { eventUnits: [] })],
+    });
+    await act(async () => {
+      await newHydration.promise;
+      await Promise.resolve();
+    });
+
+    expect(useAgentSessionStore.getState()).toMatchObject({ sessionId: 'session-new' });
+    expect(useAgentSessionStore.getState().artifacts).toHaveProperty('new-draft');
+    newHook.unmount();
+  });
+
   it('retries recoverable disconnects after 250, 500, 1000, and 2000 ms', async () => {
     vi.useFakeTimers();
     streamEventsMock.mockImplementation(() => failedStream(new TypeError('network disconnected')));
@@ -202,6 +270,63 @@ describe('useAgentSession', () => {
     expect(useAgentSessionStore.getState().diagnostics).toContainEqual(
       expect.objectContaining({ code: 'AGENT_STREAM_UNAVAILABLE' }),
     );
+  });
+
+  it('retries clean EOF with the latest event ID and reports bounded exhaustion', async () => {
+    vi.useFakeTimers();
+    streamEventsMock
+      .mockImplementationOnce(() =>
+        eventStream([{ id: '8', type: 'run.started', data: { runId: 'run-1' } }]),
+      )
+      .mockImplementation(() => emptyStream());
+
+    renderHook(() => useAgentSession('session-1'));
+    await act(async () => Promise.resolve());
+    expect(streamEventsMock).toHaveBeenCalledTimes(1);
+
+    for (const [delay, calls] of [
+      [250, 2],
+      [500, 3],
+      [1000, 4],
+      [2000, 5],
+    ] as const) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay);
+      });
+      expect(streamEventsMock).toHaveBeenCalledTimes(calls);
+    }
+
+    expect(streamEventsMock).toHaveBeenNthCalledWith(
+      2,
+      'session-1',
+      expect.objectContaining({ lastEventId: '8' }),
+    );
+    expect(useAgentSessionStore.getState().diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'AGENT_STREAM_UNAVAILABLE' }),
+    );
+  });
+
+  it.each([
+    {
+      type: 'run.completed' as const,
+      data: { runId: 'run-1', status: 'completed', runtimeArtifactId: 'compiled-1' },
+    },
+    {
+      type: 'run.failed' as const,
+      data: { runId: 'run-1', status: 'failed', diagnostics: [] },
+    },
+  ])('does not reconnect after terminal $type EOF', async ({ type, data }) => {
+    vi.useFakeTimers();
+    streamEventsMock.mockImplementation(() => eventStream([{ id: '1', type, data }]));
+
+    renderHook(() => useAgentSession('session-1'));
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(streamEventsMock).toHaveBeenCalledTimes(1);
+    expect(useAgentSessionStore.getState().diagnostics).toEqual([]);
   });
 
   it.each([401, 403])('does not retry an HTTP %s stream response', async (status) => {
@@ -239,10 +364,13 @@ describe('useAgentSession', () => {
 
   it('aborts the old retry timer before opening a switched session', async () => {
     vi.useFakeTimers();
-    streamEventsMock.mockImplementation((sessionId) =>
+    streamEventsMock.mockImplementation((sessionId, options) =>
       sessionId === 'session-old'
         ? failedStream(new TypeError('offline'))
-        : eventStream([{ id: '1', type: 'run.started', data: { runId: 'run-new' } }]),
+        : eventStreamUntilAbort(
+            [{ id: '1', type: 'run.started', data: { runId: 'run-new' } }],
+            options?.signal,
+          ),
     );
 
     const { rerender } = renderHook(({ sessionId }) => useAgentSession(sessionId), {
@@ -269,7 +397,7 @@ describe('useAgentSession', () => {
     const removeListener = vi.spyOn(AbortSignal.prototype, 'removeEventListener');
     streamEventsMock
       .mockImplementationOnce(() => failedStream(new TypeError('offline')))
-      .mockImplementationOnce(() => emptyStream())
+      .mockImplementationOnce((_sessionId, options) => pendingStream(options?.signal))
       .mockImplementationOnce(() => failedStream(new TypeError('offline')));
 
     const first = renderHook(() => useAgentSession('session-1'));

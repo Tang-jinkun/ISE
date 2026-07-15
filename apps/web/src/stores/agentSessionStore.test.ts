@@ -16,16 +16,28 @@ const compiledConfig: SceneProjectConfig = {
   diagnostics: [],
 };
 
+const newerCompiledConfig: SceneProjectConfig = {
+  ...compiledConfig,
+  eventPlanArtifactId: 'event-plan-2',
+  runtimePlanArtifactId: 'runtime-plan-2',
+};
+
 function event(id: string, type: AgentEvent['type'], data: Record<string, unknown>): AgentEvent {
   return { id, type, data };
 }
 
-function artifact(artifactId: string, type: string, data: unknown, version = 1): AgentArtifactView {
+function artifact(
+  artifactId: string,
+  type: string,
+  data: unknown,
+  version = 1,
+  createdAt = '2026-07-15T00:00:00.000Z',
+): AgentArtifactView {
   return {
     artifactId,
     type,
     version,
-    createdAt: '2026-07-15T00:00:00.000Z',
+    createdAt,
     createdBy: 'agent',
     superseded: false,
     data,
@@ -185,6 +197,121 @@ describe('useAgentSessionStore', () => {
 
     expect(useAgentSessionStore.getState().artifacts).toHaveProperty('draft-1');
     expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
+  });
+
+  it('uses createdAt and artifact ID for the deterministic resume fallback', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+    store.replaceArtifacts('session-1', [
+      artifact(
+        'compiled-z',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: newerCompiledConfig },
+        1,
+        '2026-07-15T01:00:00.000Z',
+      ),
+      artifact(
+        'compiled-old',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: compiledConfig },
+        1,
+        '2026-07-15T00:00:00.000Z',
+      ),
+      artifact(
+        'compiled-a',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: compiledConfig },
+        1,
+        '2026-07-15T01:00:00.000Z',
+      ),
+    ]);
+
+    expect(useAgentSessionStore.getState()).toMatchObject({
+      latestCompletedRuntimeArtifactId: null,
+      compiledConfig: newerCompiledConfig,
+    });
+  });
+
+  it('waits for the exact completed runtime artifact when the event arrives first', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+    store.applyEvent(
+      'session-1',
+      event('10', 'run.completed', {
+        runId: 'run-1',
+        status: 'completed',
+        runtimeArtifactId: 'compiled-target',
+      }),
+    );
+    store.replaceArtifacts('session-1', [
+      artifact(
+        'compiled-other',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: newerCompiledConfig },
+        1,
+        '2026-07-15T02:00:00.000Z',
+      ),
+    ]);
+
+    expect(useAgentSessionStore.getState()).toMatchObject({
+      latestCompletedRuntimeArtifactId: 'compiled-target',
+      compiledConfig: null,
+    });
+
+    store.replaceArtifacts('session-1', [
+      artifact(
+        'compiled-other',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: newerCompiledConfig },
+        1,
+        '2026-07-15T02:00:00.000Z',
+      ),
+      artifact(
+        'compiled-target',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: compiledConfig },
+        1,
+        '2026-07-15T01:00:00.000Z',
+      ),
+    ]);
+
+    expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
+  });
+
+  it('switches a hydrated fallback to the exact artifact when completion arrives later', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+    store.replaceArtifacts('session-1', [
+      artifact(
+        'compiled-target',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: compiledConfig },
+        1,
+        '2026-07-15T01:00:00.000Z',
+      ),
+      artifact(
+        'compiled-newer',
+        'ise.canonical-runtime-plan/v1',
+        { sceneProjectConfig: newerCompiledConfig },
+        1,
+        '2026-07-15T02:00:00.000Z',
+      ),
+    ]);
+    expect(useAgentSessionStore.getState().compiledConfig).toEqual(newerCompiledConfig);
+
+    store.applyEvent(
+      'session-1',
+      event('11', 'run.completed', {
+        runId: 'run-1',
+        status: 'completed',
+        runtimeArtifactId: 'compiled-target',
+      }),
+    );
+
+    expect(useAgentSessionStore.getState()).toMatchObject({
+      latestCompletedRuntimeArtifactId: 'compiled-target',
+      compiledConfig,
+    });
   });
 
   it('supports scoped artifact ingestion without replacing the ledger', () => {
