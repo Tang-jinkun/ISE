@@ -40,12 +40,12 @@ describe('buildSceneUpdate', () => {
       image: 'https://example.com/image.png'
     };
 
-    const payload = buildSceneUpdate(scene, '[{"id":"track-1"}]');
+    const payload = buildSceneUpdate(scene, config);
 
     expect(payload).toStrictEqual({
       title: 'Updated scene',
       type: 'PRIVATE',
-      config: '[{"id":"track-1"}]'
+      config
     });
     expect(payload).not.toHaveProperty('id');
     expect(payload).not.toHaveProperty('userId');
