@@ -74,19 +74,21 @@ model Folder {
 }
 
 model File {
-  id        String   @id @default(uuid())
-  name      String
-  oldName   String
-  folderId  String   @default("-1")
-  folder    Folder?  @relation(fields: [folderId], references: [id])
-  src       String
-  type      String
-  size      Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  userId    String
-  tags      String[]
-  user      User     @relation(fields: [userId], references: [id])
+  id          String   @id @default(uuid())
+  name        String
+  oldName     String
+  folderId    String   @default("-1")
+  folder      Folder?  @relation(fields: [folderId], references: [id])
+  src         String
+  type        String
+  size        Int
+  mimeType    String   @default("application/octet-stream")
+  fingerprint String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  tags        String[]
+  user        User     @relation(fields: [userId], references: [id])
 }
 
 model Group {

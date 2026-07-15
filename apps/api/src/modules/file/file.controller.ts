@@ -28,6 +28,7 @@ import {
 import { FileService } from './file.service';
 import { responseMessage } from '@/utils';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { MAX_UPLOAD_SIZE_BYTES } from './upload-validation';
 
 class UploadFileDto {
   @IsOptional()
@@ -71,7 +72,7 @@ export class FileController {
         fileType: {
           type: 'string',
           description:
-            '可选，覆盖自动判定类型。默认将根据上传文件 MIME 自动判定为 image/imageraster/audio/video/text/json/geojson/application',
+            'Legacy field accepted for compatibility; storage type is derived by the server',
           nullable: true,
         },
         file: {
@@ -82,7 +83,12 @@ export class FileController {
       required: ['file'],
     },
   })
-  @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
+    }),
+  )
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: UploadFileDto,
