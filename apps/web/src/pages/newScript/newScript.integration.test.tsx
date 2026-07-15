@@ -65,7 +65,7 @@ const compiledConfig: SceneProjectConfig = {
   schemaVersion: 'ise-scene/v1',
   sourceDocumentId: 'document-1',
   eventPlanArtifactId: 'event-plan-1',
-  runtimePlanArtifactId: 'runtime-plan-1',
+  runtimePlanArtifactId: 'compiled-1',
   totalDurationMs: 10_000,
   entities: [],
   tracks: [
@@ -137,10 +137,23 @@ const eventPlanArtifact = artifact(
   { eventUnits }
 );
 
+const acceptedEventPlanArtifact = {
+  ...eventPlanArtifact,
+  type: 'ise.event-plan-accepted/v1'
+};
+
+const runtimePlan = {
+  schemaVersion: 'canonical-runtime-plan/v1',
+  eventPlanArtifactId: 'event-plan-1'
+};
+
 const compiledArtifact = artifact(
   'compiled-1',
   'ise.canonical-runtime-plan/v1',
-  { sceneProjectConfig: compiledConfig }
+  {
+    runtimePlan,
+    sceneProjectConfig: compiledConfig
+  }
 );
 
 function emitAgentEvent(event: AgentEvent) {
@@ -437,6 +450,21 @@ describe('NewScript real Agent flow', () => {
     expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
     expect(screen.getByRole('button', { name: '转换为场景' })).toBeDisabled();
     expect(mocks.createScene).not.toHaveBeenCalled();
+  });
+
+  it('enables exact artifact exports after correlated completion', async () => {
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([acceptedEventPlanArtifact, compiledArtifact]);
+    emitAgentEvent({
+      id: '1',
+      type: 'run.completed',
+      data: { runtimeArtifactId: 'compiled-1' }
+    });
+
+    expect(screen.getByRole('button', { name: 'EventPlan' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'RuntimePlan' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'SceneProject' })).toBeEnabled();
   });
 
   it('adopts the review tuple returned by revision before the next action', async () => {

@@ -1,6 +1,7 @@
 import type { SceneProjectConfig } from '@ise/runtime-contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AgentArtifactView, AgentEvent } from '@/api/agent';
+import { selectArtifactExports } from '@/pages/newScript/artifactExports';
 import { useAgentSessionStore } from './agentSessionStore';
 
 const fingerprint = `sha256:${'a'.repeat(64)}`;
@@ -330,6 +331,47 @@ describe('useAgentSessionStore', () => {
       latestCompletedRuntimeArtifactId: 'compiled-target',
       compiledConfig,
     });
+  });
+
+  it('clears completed artifact exports when a later completion omits its artifact ID', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+    store.replaceArtifacts('session-1', [
+      artifact('event-plan-1', 'ise.event-plan-accepted/v1', {
+        schemaVersion: 'event-plan/v1',
+      }),
+      artifact('runtime-plan-1', 'ise.canonical-runtime-plan/v1', {
+        runtimePlan: {
+          schemaVersion: 'canonical-runtime-plan/v1',
+          eventPlanArtifactId: 'event-plan-1',
+        },
+        sceneProjectConfig: compiledConfig,
+      }),
+    ]);
+    store.applyEvent(
+      'session-1',
+      event('1', 'run.completed', {
+        runtimeArtifactId: 'runtime-plan-1',
+      }),
+    );
+    const completedExports = selectArtifactExports(useAgentSessionStore.getState());
+    expect(completedExports.eventPlan).toBeDefined();
+    expect(completedExports.runtimePlan).toBeDefined();
+    expect(completedExports.sceneProject).toBeDefined();
+
+    store.applyEvent('session-1', event('2', 'run.started', {}));
+    store.applyEvent('session-1', event('3', 'run.completed', {}));
+
+    const state = useAgentSessionStore.getState();
+    expect(state).toMatchObject({
+      status: 'completed',
+      latestCompletedRuntimeArtifactId: null,
+      compiledConfig: null,
+    });
+    const exports = selectArtifactExports(state);
+    expect(exports.eventPlan).toBeUndefined();
+    expect(exports.runtimePlan).toBeUndefined();
+    expect(exports.sceneProject).toBeUndefined();
   });
 
   it('supports scoped artifact ingestion without replacing the ledger', () => {
