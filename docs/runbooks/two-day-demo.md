@@ -6,10 +6,12 @@ This runbook covers the operator path from the prepared asset manifest and an ai
 
 - Node.js `>=20.19.0` and the repository dependencies installed.
 - PostgreSQL, Redis, and MinIO available to the API.
-- The prepared source assets referenced by `provenance/assets.seed.json` available at the relative `ASSET_SOURCE_DIR` configured for the API seed command.
+- The prepared source assets referenced by `provenance/assets.seed.json` available at the relative `ASSET_SOURCE_DIR` configured for the API seed command. Set `ISE_ASSET_SOURCE_ROOT` in the process that runs manifest/calibration commands to the operator-supplied absolute source root; do not record its value in the repository.
 - A public Mapbox token supplied as `PUBLIC_MAPBOX_TOKEN` using `apps/web/.env.example` as the Web template.
 - A model API key supplied to the Agent as `MODEL_API_KEY` by the operator's approved secret provider. The key is required; do not put it in this runbook, source control, or terminal output.
+- `PUBLIC_MAPBOX_TOKEN`, `ISE_E2E_ACCESS_TOKEN`, and `ISE_E2E_SCENE_ID` supplied directly in the process environment that runs desktop browser acceptance. A Web `.env` file alone does not supply these values to the Playwright process.
 - The air-combat DOCX report available to the operator.
+- The target demo build includes the no-code registration auth change from main. Treat that merge as an integration prerequisite; the current feature worktree does not provide no-code registration before the auth change is integrated.
 
 ## Local configuration
 
@@ -27,7 +29,7 @@ Keep the following integrated configuration while replacing all credential field
 - API: keep `PORT=3333`, `VITE_WEB_URL=http://localhost:9999`, `ASSET_MANIFEST_PATH=../../provenance/assets.seed.json`, and the relative operator asset directory in `ASSET_SOURCE_DIR`. Configure the PostgreSQL, MinIO, and JWT fields locally.
 - Agent: keep `AGENT_HOST=127.0.0.1`, set `AGENT_PORT=4444` and `NEST_API_BASE_URL=http://127.0.0.1:3333`, select the approved model endpoint/name, and supply `MODEL_API_KEY` at runtime.
 
-Never commit the generated `.env` files. The demo registration flow does not require an email verification code.
+Never commit the generated `.env` files. Run the demo only after the target build's no-code registration integration prerequisite has been verified.
 
 ## Prepare data and services
 
@@ -76,14 +78,14 @@ Open the URL printed by Rsbuild. The preferred Web port is `9999`; if it is occu
 
 1. Validate the manifest with `npm run assets:validate -- provenance/assets.seed.json`, then import it with `npm run assets:seed -w @ise/api`.
 2. Start PostgreSQL, Redis, and MinIO. In separate terminals run `npm run dev:api`, `npm run dev:agent`, and `npm run dev:web`.
-3. Register or sign in at `/login`. Registration does not require an email verification code. Open `/new-script` and enter this generation objective: `Generate an evidence-backed replay from the attached air-combat report with JF-17, Rafale, and PL-15E missile movement, an image track, and video:target-lock and video:missile-impact video tracks.` Select **Import data** and upload the air-combat DOCX. The selected file must be a `.docx`; choosing it submits the objective and starts the Agent run.
-4. Wait for **事件计划审核**. Inspect every **证据来源** link, edit one EventUnit, and select **提交修改**. Confirm that the displayed version increases, review the revised unit, and select **批准事件计划**.
-5. Wait for the visible completion message **场景配置已生成**. Download **EventPlan**, **RuntimePlan**, and **SceneProject** and confirm the browser saves `event-plan.json`, `canonical-runtime-plan.json`, and `scene-project.json`. Select **转换为场景**, inspect the generated model, image, and video tracks, then select **确认创建场景**. Record the persisted Scene ID from the resulting `/scene?projectId=<id>` URL and open `/runtime-harness?sceneId=<id>` on the same Web origin.
+3. Using the target build after its no-code registration auth change is integrated, register or sign in at `/login`. Open `/new-script` and enter this generation objective: `Generate an evidence-backed replay from the attached air-combat report with JF-17, Rafale, and PL-15E missile movement, an image track, and video:target-lock and video:missile-impact video tracks.` Select **Import data** and upload the air-combat DOCX. The selected file must be a `.docx`; choosing it submits the objective and starts the Agent run.
+4. Wait for **事件计划审核**. Record each evidence reference ID visible under **证据来源** and inspect any source excerpt already visible in the review or Agent conversation. Compare each visible excerpt with the corresponding EventUnit and the imported DOCX; do not treat the hash-only reference link as an evidence viewer or claim that it has a target. Edit one EventUnit and select **提交修改**. Confirm that the displayed version increases, review the revised unit, and select **批准事件计划**.
+5. Wait for the visible completion message **场景配置已生成**. Download **EventPlan**, **RuntimePlan**, and **SceneProject** and confirm the browser saves `event-plan.json`, `canonical-runtime-plan.json`, and `scene-project.json`. Select **转换为场景**, inspect the generated model, image, and video tracks, then select the visible confirmation button **确定**. Record the persisted Scene ID from the resulting `/scene?projectId=<id>` URL and open `/runtime-harness?sceneId=<id>` on the same Web origin.
 6. Wait until the runtime status reads `ready`. Select **播放**, **暂停**, enter `24000` in the millisecond time control, and select **重播**. Confirm that replay returns the displayed runtime time to zero before advancing again.
 
 ## Playback acceptance
 
-- The persisted harness loads the same Scene ID created by **确认创建场景**; it does not use a fixture.
+- The persisted harness loads the same Scene ID created after selecting **确定**; it does not use a fixture.
 - The Scene timeline contains visible `model`, `image`, and `video` tracks. The image overlay resolves from the seeded catalog and remains inside its configured frame.
 - JF-17, Rafale, and missile (PL-15E) GLB models appear during their scheduled items. A model does not appear before its spawn item and hides or changes state only when its track commands require it.
 - Each GLB `model.follow_path` item advances along its assigned trajectory. The model nose follows the route heading through turns, and its pitch follows climb and descent rather than staying level, moving sideways, or flipping abruptly.
@@ -93,11 +95,20 @@ Open the URL printed by Rsbuild. The preferred Web port is `9999`; if it is occu
 
 ## Verification commands
 
-After the complete asset/calibration work and services are available, run static/unit verification and browser verification from the repository root:
+After the complete asset/calibration work and services are available, run static/unit verification and desktop-only browser acceptance from the repository root. Before the browser command, verify that the four required values are present in the calling process without printing them:
+
+```powershell
+$requiredProcessEnv = @('PUBLIC_MAPBOX_TOKEN', 'ISE_E2E_ACCESS_TOKEN', 'ISE_E2E_SCENE_ID', 'ISE_ASSET_SOURCE_ROOT')
+$missingProcessEnv = $requiredProcessEnv | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+if ($missingProcessEnv) { throw "Missing required process environment: $($missingProcessEnv -join ', ')" }
+if (-not [IO.Path]::IsPathRooted($env:ISE_ASSET_SOURCE_ROOT)) { throw 'ISE_ASSET_SOURCE_ROOT must be an operator-supplied absolute path' }
+```
+
+Then run:
 
 ```powershell
 npm run verify
 npm run verify:e2e
 ```
 
-For the persisted browser replay, provide `ISE_E2E_SCENE_ID` from the created Scene and inject `PUBLIC_MAPBOX_TOKEN` into the verification terminal through the approved local environment. `npm run verify` must finish without typecheck, test, or build failures. `npm run verify:e2e` must pass all configured Playwright projects with non-background Mapbox and Three.js canvases.
+Use the persisted Scene ID created during the demo for `ISE_E2E_SCENE_ID`; obtain `ISE_E2E_ACCESS_TOKEN` through the approved operator login flow. Inject both tokens without echoing them. `npm run verify` must finish without typecheck, test, or build failures. `npm run verify:e2e` must pass the `desktop-chromium` project with non-background Mapbox and Three.js canvases. Mobile Playwright projects are outside this demo's browser acceptance command.
