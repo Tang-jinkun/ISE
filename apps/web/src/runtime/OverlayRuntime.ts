@@ -23,12 +23,19 @@ interface VideoOverlay {
   item: VideoItem;
   element: HTMLVideoElement;
   access: VideoAccess;
+  playbackGeneration: number;
+  expectsPlayback: boolean;
 }
 
 interface MediaSnapshot {
   video: HTMLVideoElement;
   muted: boolean;
   volume: number;
+}
+
+interface UnlockAttempt {
+  generation: number;
+  snapshots: MediaSnapshot[];
 }
 
 export interface OverlayRuntimeDependencies {
@@ -50,6 +57,9 @@ export class OverlayRuntime {
   private readonly videos: VideoOverlay[] = [];
   private readonly acquiredAssetIds: string[] = [];
   private loadController: AbortController | undefined;
+  private activeUnlock: UnlockAttempt | undefined;
+  private lifecycleGeneration = 0;
+  private unlockGeneration = 0;
   private loaded = false;
   private loading = false;
   private mediaUnlocked = false;
@@ -132,11 +142,16 @@ export class OverlayRuntime {
       return;
     }
 
+    this.restoreActiveUnlock();
+    const lifecycleGeneration = this.lifecycleGeneration;
+    const unlockGeneration = ++this.unlockGeneration;
+
     const snapshots: MediaSnapshot[] = this.videos.map(({ element }) => ({
       video: element,
       muted: element.muted,
       volume: element.volume,
     }));
+    this.activeUnlock = { generation: unlockGeneration, snapshots };
     const attempts = snapshots.map(({ video }) => {
       video.muted = true;
       try {
@@ -149,7 +164,8 @@ export class OverlayRuntime {
     try {
       await Promise.all(attempts);
     } catch (error) {
-      restoreMedia(snapshots);
+      this.restoreUnlockAttempt(unlockGeneration);
+      this.assertCurrentUnlock(lifecycleGeneration, unlockGeneration);
       throw new SceneRuntimeError(
         'MEDIA_AUTOPLAY_BLOCKED',
         error instanceof Error ? error.message : 'Media autoplay was blocked',
@@ -158,7 +174,8 @@ export class OverlayRuntime {
       );
     }
 
-    restoreMedia(snapshots);
+    this.restoreUnlockAttempt(unlockGeneration);
+    this.assertCurrentUnlock(lifecycleGeneration, unlockGeneration);
     this.mediaUnlocked = true;
   }
 
@@ -191,6 +208,9 @@ export class OverlayRuntime {
       return;
     }
     this.disposed = true;
+    this.lifecycleGeneration += 1;
+    this.unlockGeneration += 1;
+    this.restoreActiveUnlock();
     this.loadController?.abort(
       new SceneRuntimeError('RUNTIME_DISPOSED', 'Overlay runtime is disposed'),
     );
@@ -284,7 +304,13 @@ export class OverlayRuntime {
     applyLayout(video, item.params.layout);
     video.style.display = 'none';
     this.layer.append(video);
-    this.videos.push({ item, element: video, access: asset.access });
+    this.videos.push({
+      item,
+      element: video,
+      access: asset.access,
+      playbackGeneration: 0,
+      expectsPlayback: false,
+    });
 
     try {
       const metadata = waitForVideoMetadata(video, signal);
@@ -316,6 +342,7 @@ export class OverlayRuntime {
     const { item, element: video, access } = overlay;
     if (!isActive(item, timeMs)) {
       video.style.display = 'none';
+      this.invalidatePlayback(overlay);
       video.pause();
       return;
     }
@@ -336,17 +363,53 @@ export class OverlayRuntime {
     }
 
     if (frame.playing && this.mediaUnlocked) {
+      const playbackGeneration = ++overlay.playbackGeneration;
+      const lifecycleGeneration = this.lifecycleGeneration;
+      overlay.expectsPlayback = true;
       try {
-        void video.play().catch((error) => this.reportPlaybackFailure(overlay, error));
+        void Promise.resolve(video.play()).catch((error) =>
+          this.handlePlaybackRejection(
+            overlay,
+            lifecycleGeneration,
+            playbackGeneration,
+            error,
+          ),
+        );
       } catch (error) {
-        this.reportPlaybackFailure(overlay, error);
+        this.handlePlaybackRejection(
+          overlay,
+          lifecycleGeneration,
+          playbackGeneration,
+          error,
+        );
       }
     } else {
+      this.invalidatePlayback(overlay);
       video.pause();
     }
   }
 
+  private handlePlaybackRejection(
+    overlay: VideoOverlay,
+    lifecycleGeneration: number,
+    playbackGeneration: number,
+    error: unknown,
+  ) {
+    if (
+      isAbortError(error) ||
+      this.disposed ||
+      lifecycleGeneration !== this.lifecycleGeneration ||
+      playbackGeneration !== overlay.playbackGeneration ||
+      !overlay.expectsPlayback ||
+      !this.mediaUnlocked
+    ) {
+      return;
+    }
+    this.reportPlaybackFailure(overlay, error);
+  }
+
   private reportPlaybackFailure(overlay: VideoOverlay, error: unknown) {
+    this.invalidatePlayback(overlay);
     overlay.element.pause();
     this.emitDiagnostic({
       code: 'VIDEO_PLAYBACK_FAILED',
@@ -385,7 +448,9 @@ export class OverlayRuntime {
       image?.removeAttribute('src');
       element.remove();
     }
-    for (const { element } of this.videos) {
+    for (const overlay of this.videos) {
+      const { element } = overlay;
+      this.invalidatePlayback(overlay);
       element.pause();
       element.removeAttribute('src');
       element.load();
@@ -406,6 +471,36 @@ export class OverlayRuntime {
     if (this.disposed) {
       throw new SceneRuntimeError('RUNTIME_DISPOSED', 'Overlay runtime is disposed');
     }
+  }
+
+  private assertCurrentUnlock(lifecycleGeneration: number, unlockGeneration: number) {
+    if (this.disposed || lifecycleGeneration !== this.lifecycleGeneration) {
+      throw new SceneRuntimeError('RUNTIME_DISPOSED', 'Overlay runtime is disposed');
+    }
+    if (unlockGeneration !== this.unlockGeneration) {
+      throw new DOMException('Media unlock attempt was superseded', 'AbortError');
+    }
+  }
+
+  private restoreUnlockAttempt(unlockGeneration: number) {
+    if (this.activeUnlock?.generation !== unlockGeneration) {
+      return;
+    }
+    this.restoreActiveUnlock();
+  }
+
+  private restoreActiveUnlock() {
+    if (!this.activeUnlock) {
+      return;
+    }
+    const { snapshots } = this.activeUnlock;
+    this.activeUnlock = undefined;
+    restoreMedia(snapshots);
+  }
+
+  private invalidatePlayback(overlay: VideoOverlay) {
+    overlay.playbackGeneration += 1;
+    overlay.expectsPlayback = false;
   }
 }
 
@@ -506,4 +601,8 @@ function isAbortOrDispose(error: unknown, signal: AbortSignal) {
     (error instanceof DOMException && error.name === 'AbortError') ||
     (error instanceof SceneRuntimeError && error.code === 'RUNTIME_DISPOSED')
   );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError';
 }

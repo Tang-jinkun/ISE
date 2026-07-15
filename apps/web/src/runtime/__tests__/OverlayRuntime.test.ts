@@ -125,6 +125,25 @@ type FakeVideo = HTMLVideoElement & {
   load: Mock<() => void>;
 };
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushPromiseReactions() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function playbackFailureDiagnostics(diagnostics: Diagnostic[]) {
+  return diagnostics.filter((diagnostic) => diagnostic.code === 'VIDEO_PLAYBACK_FAILED');
+}
+
 function overlayHarness(
   options: {
     failImageAssetIds?: string[];
@@ -377,6 +396,47 @@ it('calls play synchronously on every video during the first media unlock', asyn
   expect(videos[1]!.play).toHaveBeenCalledTimes(1);
 });
 
+it('rejects a pending media unlock as RUNTIME_DISPOSED when disposed before play settles', async () => {
+  const gate = deferred<void>();
+  const { diagnostics, runtime } = overlayHarness({
+    createPlay: () => vi.fn(() => gate.promise),
+  });
+  await runtime.load([videoTrack()]);
+
+  const unlocking = runtime.unlockMedia();
+  runtime.dispose();
+  gate.resolve();
+
+  await expect(unlocking).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+  expect(diagnostics).toEqual([]);
+});
+
+it('lets a newer media unlock own restoration and invalidates the older attempt', async () => {
+  const firstGate = deferred<void>();
+  const secondGate = deferred<void>();
+  const play = vi
+    .fn<() => Promise<void>>()
+    .mockImplementationOnce(() => firstGate.promise)
+    .mockImplementationOnce(() => secondGate.promise);
+  const { diagnostics, videos, runtime } = overlayHarness({ createPlay: () => play });
+  await runtime.load([videoTrack()]);
+  videos[0]!.muted = false;
+  videos[0]!.volume = 0.4;
+
+  const firstUnlock = runtime.unlockMedia();
+  const secondUnlock = runtime.unlockMedia();
+  secondGate.resolve();
+  await secondUnlock;
+
+  expect(videos[0]!.muted).toBe(false);
+  expect(videos[0]!.volume).toBe(0.4);
+  firstGate.reject(new Error('superseded unlock failed late'));
+  await expect(firstUnlock).rejects.toMatchObject({ name: 'AbortError' });
+  expect(videos[0]!.muted).toBe(false);
+  expect(videos[0]!.volume).toBe(0.4);
+  expect(diagnostics).toEqual([]);
+});
+
 it('rejects media unlock when autoplay is blocked and pauses every video', async () => {
   const { videos, runtime } = overlayHarness({
     createPlay: (index) =>
@@ -420,6 +480,79 @@ it('reports asynchronous video playback failure after a successful unlock', asyn
       assetId: 'video:missile-impact',
     }),
   );
+});
+
+it('ignores a late playback rejection after the clock pauses the active video', async () => {
+  const gate = deferred<void>();
+  const play = vi
+    .fn<() => Promise<void>>()
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(() => gate.promise);
+  const { diagnostics, runtime } = overlayHarness({ createPlay: () => play });
+  await runtime.load([videoTrack()]);
+  await runtime.unlockMedia();
+  runtime.apply({ timeMs: 500, playing: true, forceMediaSeek: false });
+
+  runtime.apply({ timeMs: 500, playing: false, forceMediaSeek: false });
+  gate.reject(new Error('late rejection after pause'));
+  await flushPromiseReactions();
+
+  expect(playbackFailureDiagnostics(diagnostics)).toEqual([]);
+});
+
+it('ignores a late playback rejection after a seek makes the video inactive', async () => {
+  const gate = deferred<void>();
+  const play = vi
+    .fn<() => Promise<void>>()
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(() => gate.promise);
+  const { diagnostics, runtime } = overlayHarness({ createPlay: () => play });
+  await runtime.load([videoTrack({ durationMs: 1_000 })]);
+  await runtime.unlockMedia();
+  runtime.apply({ timeMs: 500, playing: true, forceMediaSeek: false });
+
+  runtime.apply({ timeMs: 1_000, playing: true, forceMediaSeek: true });
+  gate.reject(new Error('late rejection after inactive seek'));
+  await flushPromiseReactions();
+
+  expect(playbackFailureDiagnostics(diagnostics)).toEqual([]);
+});
+
+it('ignores a late playback rejection after the runtime is disposed', async () => {
+  const gate = deferred<void>();
+  const play = vi
+    .fn<() => Promise<void>>()
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(() => gate.promise);
+  const { diagnostics, runtime } = overlayHarness({ createPlay: () => play });
+  await runtime.load([videoTrack()]);
+  await runtime.unlockMedia();
+  runtime.apply({ timeMs: 500, playing: true, forceMediaSeek: false });
+
+  runtime.dispose();
+  gate.reject(new Error('late rejection after dispose'));
+  await flushPromiseReactions();
+
+  expect(playbackFailureDiagnostics(diagnostics)).toEqual([]);
+});
+
+it('ignores a late rejection from a playback attempt superseded by a newer attempt', async () => {
+  const gate = deferred<void>();
+  const play = vi
+    .fn<() => Promise<void>>()
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(() => gate.promise)
+    .mockResolvedValueOnce(undefined);
+  const { diagnostics, runtime } = overlayHarness({ createPlay: () => play });
+  await runtime.load([videoTrack()]);
+  await runtime.unlockMedia();
+  runtime.apply({ timeMs: 500, playing: true, forceMediaSeek: false });
+
+  runtime.apply({ timeMs: 550, playing: true, forceMediaSeek: false });
+  gate.reject(new Error('late rejection from superseded play'));
+  await flushPromiseReactions();
+
+  expect(playbackFailureDiagnostics(diagnostics)).toEqual([]);
 });
 
 it('degrades an unavailable image to a layout-preserving information card', async () => {
