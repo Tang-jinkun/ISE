@@ -339,7 +339,9 @@ describe('NewScript real Agent flow', () => {
       )
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '拒绝事件计划' }));
+    const rejectButton = screen.getByRole('button', { name: '拒绝事件计划' });
+    await waitFor(() => expect(rejectButton).toBeEnabled());
+    fireEvent.click(rejectButton);
     await waitFor(() =>
       expect(mocks.rejectAgentReview).toHaveBeenCalledWith(
         'session-1',
