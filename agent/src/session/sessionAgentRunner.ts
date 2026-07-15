@@ -204,6 +204,14 @@ export class SessionAgentRunner {
     compiled?: Artifact,
     draft?: Artifact,
   ): Promise<void> {
+    if (!compiled && !draft) {
+      await this.finishFromThrownError(
+        run.id,
+        new CompilationError([diagnostic('RUN_OUTPUT_MISSING', 'Current run produced no validated output')]),
+        false,
+      )
+      return
+    }
     const summary = result.turnOutcome?.finalAnswer ?? result.goal.finalSummary
     if (compiled) {
       const data = compiled.data as CompiledRuntimeArtifactData
@@ -226,10 +234,6 @@ export class SessionAgentRunner {
       this.options.repositories.runs.finish(run.id, 'completed')
       if (draft && this.#draftObserver) this.#draftObserver({ sessionId: run.sessionId, runId: run.id, draft })
       else this.options.repositories.sessions.transition(run.sessionId, ['running'], draft ? 'awaiting_review' : 'completed')
-      if (!draft) this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.completed', {
-        runId: run.id,
-        status: 'completed',
-      })
     })
   }
 

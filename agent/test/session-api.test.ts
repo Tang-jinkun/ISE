@@ -154,6 +154,66 @@ function collectEvents(events: EventBroker, sessionId: string) {
   return { values, stop: async () => { controller.abort(); await done } }
 }
 
+function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): string {
+  const plan = {
+    schemaVersion: 'event-plan/v1' as const,
+    planId: 'terminal-plan',
+    documentId: 'terminal-document',
+    version: 1,
+    eventUnits: [{
+      eventUnitId: 'terminal-unit', title: 'Terminal', worldStateChange: 'Terminal state',
+      participants: ['Unit'], locationRefs: [], evidenceRefs: ['terminal-evidence'], inferenceRefs: [],
+      uncertainties: [], narrativePurpose: 'Terminal test', importance: 'low' as const,
+    }],
+    omittedEvidence: [], warnings: [],
+  }
+  const accepted = new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
+    id: `terminal-accepted-${f.session.id}`,
+    type: EVENT_PLAN_ACCEPTED_ARTIFACT,
+    version: 1,
+    createdBy: 'user',
+    logicalKey: 'accepted-event-plan:terminal-plan',
+    data: plan,
+    metadata: { planId: plan.planId, documentId: plan.documentId, version: 1, fingerprint: fingerprint(plan) },
+  })
+  f.repositories.sessions.transition(f.session.id, ['idle'], 'awaiting_review')
+  return accepted.id
+}
+
+function persistValidatedCompiled(
+  f: Awaited<ReturnType<typeof terminalFixture>>,
+  runId: string,
+  acceptedArtifactId: string,
+): void {
+  const artifactId = `terminal-compiled-${runId}`
+  const store = new PersistentArtifactStore(f.session.id, f.repositories.artifacts)
+  const compiled = store.create({
+    id: artifactId,
+    type: COMPILED_RUNTIME_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: `compiled-runtime:${acceptedArtifactId}`,
+    data: {
+      runtimePlan: {},
+      sceneProjectConfig: {
+        schemaVersion: 'ise-scene/v1',
+        sourceDocumentId: 'terminal-document',
+        eventPlanArtifactId: acceptedArtifactId,
+        runtimePlanArtifactId: artifactId,
+        totalDurationMs: 0,
+        entities: [],
+        tracks: [],
+        diagnostics: [],
+      },
+    },
+    metadata: { eventPlanArtifactId: acceptedArtifactId },
+  })
+  f.repositories.artifacts.replaceLedger(
+    f.session.id,
+    f.repositories.artifacts.listLedger(f.session.id),
+    new Map([[compiled.id, runId]]),
+  )
+}
+
 function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
   const store = new PersistentArtifactStore(sessionId, repositories.artifacts)
   const eventPlan = {
@@ -269,28 +329,58 @@ test('Last-Event-ID accepts decimal integers only', async () => {
   database.close()
 })
 
-test('ordinary and failed runs never compile a NarrativePlan left by an older run', async () => {
-  for (const model of [
-    { complete: async () => ({ content: 'ordinary response' }) },
-    { complete: async () => { throw new Error('C:\\private\\prompt.json Bearer top-secret provider body') } },
-  ] satisfies ModelAdapter[]) {
-    const { app, database, repositories } = await fixture(model)
-    const sessionId = await createSession(app)
-    seedOldNarrative(repositories, sessionId)
-    await app.inject({
-      method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'), payload: { content: 'ordinary message' },
-    })
-    await waitForTerminal(repositories, sessionId)
-    assert.equal(repositories.artifacts.list(sessionId).some(item => item.type === COMPILED_RUNTIME_ARTIFACT), false)
-    assert.equal(repositories.events.after(sessionId, '0').some(event =>
-      event.type === 'run.completed' && typeof event.data.runtimeArtifactId === 'string'), false)
-    const persistedFailure = repositories.runs.get(repositories.sessions.get(sessionId)?.activeRunId ?? '')?.error
-    assert.equal(/private|prompt\.json|Bearer|top-secret|provider body/i.test(JSON.stringify({
-      events: repositories.events.after(sessionId, '0'), persistedFailure,
-    })), false)
-    await app.close()
-    database.close()
+test('ordinary model success without a current draft or compiled artifact fails structurally', async () => {
+  const secretAnswer = 'ordinary answer with Bearer top-secret provider body'
+  const { app, database, repositories } = await fixture({ complete: async () => ({ content: secretAnswer }) })
+  const sessionId = await createSession(app)
+  seedOldNarrative(repositories, sessionId)
+  new PersistentArtifactStore(sessionId, repositories.artifacts).create({
+    id: 'last-valid', type: COMPILED_RUNTIME_ARTIFACT, createdBy: 'tool',
+    logicalKey: 'compiled-runtime:prior', data: { prior: true },
+  })
+  const queued = await app.inject({
+    method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'), payload: { content: 'ordinary message' },
+  })
+  await waitForTerminal(repositories, sessionId)
+  const run = repositories.runs.get(queued.json().runId)!
+  const events = repositories.events.after(sessionId, '0')
+  assert.equal(run.status, 'failed')
+  assert.equal(repositories.sessions.get(sessionId)?.status, 'failed')
+  assert.equal(run.error?.code, 'RUN_OUTPUT_MISSING')
+  assert.equal(events.some(event => event.type === 'run.completed'), false)
+  assert.equal(events.filter(event => event.type === 'run.failed').length, 1)
+  assert.equal(events.some(event => typeof event.data.runtimeArtifactId === 'string'), false)
+  assert.deepEqual(repositories.artifacts.listByRun(sessionId, run.id)
+    .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT), [])
+  assert.deepEqual(repositories.artifacts.list(sessionId)
+    .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT && !item.superseded).map(item => item.id), ['last-valid'])
+  assert.equal(repositories.messages.listRecent(sessionId).some(message => message.content.includes(secretAnswer)), false)
+  assert.equal(/Bearer|top-secret|provider body/i.test(JSON.stringify({ events, error: run.error })), false)
+  await app.close()
+  database.close()
+})
+
+test('failed runs never compile a NarrativePlan left by an older run', async () => {
+  const model: ModelAdapter = {
+    complete: async () => { throw new Error('C:\\private\\prompt.json Bearer top-secret provider body') },
   }
+  const { app, database, repositories } = await fixture(model)
+  const sessionId = await createSession(app)
+  seedOldNarrative(repositories, sessionId)
+  const queued = await app.inject({
+    method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'), payload: { content: 'ordinary message' },
+  })
+  await waitForTerminal(repositories, sessionId)
+  const run = repositories.runs.get(queued.json().runId)!
+  assert.equal(run.status, 'failed')
+  assert.deepEqual(repositories.artifacts.listByRun(sessionId, run.id)
+    .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT), [])
+  assert.equal(repositories.events.after(sessionId, '0').some(event => event.type === 'run.completed'), false)
+  assert.equal(/private|prompt\.json|Bearer|top-secret|provider body/i.test(JSON.stringify({
+    events: repositories.events.after(sessionId, '0'), error: run.error,
+  })), false)
+  await app.close()
+  database.close()
 })
 
 test('terminal flush failures publish no completed, failed, or interrupt event', async (t) => {
@@ -299,13 +389,16 @@ test('terminal flush failures publish no completed, failed, or interrupt event',
     const f = await terminalFixture(t, model, true)
     const live = collectEvents(f.events, f.session.id)
     await new Promise(resolve => setImmediate(resolve))
-    const queued = f.runner.enqueue({
-      sessionId: f.session.id,
-      subject: 'user-1',
-      authorization: 'Bearer user-1',
-      content: outcome,
-    })
+    const acceptedArtifactId = outcome === 'completed' ? prepareAcceptedRun(f) : undefined
+    const queued = acceptedArtifactId
+      ? f.runner.enqueueAfterApproval({
+        sessionId: f.session.id, subject: 'user-1', authorization: 'Bearer user-1', acceptedArtifactId,
+      })
+      : f.runner.enqueue({
+        sessionId: f.session.id, subject: 'user-1', authorization: 'Bearer user-1', content: outcome,
+      })
     await model.started
+    if (acceptedArtifactId) persistValidatedCompiled(f, queued.runId, acceptedArtifactId)
     f.armFault()
     if (outcome === 'completed') model.succeed()
     else if (outcome === 'failed') model.fail()
@@ -333,13 +426,16 @@ test('successful completed, failed, and interrupt paths publish one ordered term
     const f = await terminalFixture(t, model, false)
     const live = collectEvents(f.events, f.session.id)
     await new Promise(resolve => setImmediate(resolve))
-    const queued = f.runner.enqueue({
-      sessionId: f.session.id,
-      subject: 'user-1',
-      authorization: 'Bearer user-1',
-      content: outcome,
-    })
+    const acceptedArtifactId = outcome === 'completed' ? prepareAcceptedRun(f) : undefined
+    const queued = acceptedArtifactId
+      ? f.runner.enqueueAfterApproval({
+        sessionId: f.session.id, subject: 'user-1', authorization: 'Bearer user-1', acceptedArtifactId,
+      })
+      : f.runner.enqueue({
+        sessionId: f.session.id, subject: 'user-1', authorization: 'Bearer user-1', content: outcome,
+      })
     await model.started
+    if (acceptedArtifactId) persistValidatedCompiled(f, queued.runId, acceptedArtifactId)
     if (outcome === 'completed') model.succeed()
     else if (outcome === 'failed') model.fail()
     else f.runner.interrupt(f.session.id, 'user-1')
