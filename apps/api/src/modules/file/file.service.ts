@@ -3,6 +3,8 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { MinioService } from '@/minio/minio.service';
 import { SaveMinioFile } from '@/minio/dto/save_minio.dto';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { validateUpload } from './upload-validation';
+import { randomUUID } from 'crypto';
 
 export interface UploadFileOptions {
   userId: string;
@@ -23,15 +25,6 @@ export class FileService {
     private readonly prisma: PrismaService,
     private readonly minioService: MinioService,
   ) {}
-
-  private normalizeFilename(name: string) {
-    try {
-      const decoded = Buffer.from(name, 'latin1').toString('utf8');
-      return decoded;
-    } catch {
-      return name;
-    }
-  }
 
   private async ensureRootFolder(userId: string) {
     let root = await this.prisma.folder.findFirst({
@@ -60,9 +53,9 @@ export class FileService {
   }
 
   async upload(options: UploadFileOptions) {
-    const { userId, folderId, fileType, file } = options;
+    const { userId, folderId, file } = options;
+    const validated = validateUpload(file);
     const email = await this.getUserEmail(userId);
-    const fileName = this.normalizeFilename(file.originalname);
     let targetFolderId: string;
     if (folderId && folderId !== '') {
       const folder = await this.prisma.folder.findFirst({
@@ -76,81 +69,40 @@ export class FileService {
       targetFolderId = await this.ensureRootFolder(userId);
     }
 
-    const rawType = file.mimetype || '';
-    let computedType = 'application';
-
-    // GeoJSON / JSON detection
-    let isGeoJson = false;
-    let isJson = false;
-    if (
-      rawType.includes('json') ||
-      file.originalname.toLowerCase().endsWith('.json') ||
-      file.originalname.toLowerCase().endsWith('.geojson')
-    ) {
-      try {
-        const content = file.buffer.toString('utf8');
-        const json = JSON.parse(content);
-        isJson = true;
-
-        const geoJsonTypes = [
-          'Feature',
-          'FeatureCollection',
-          'Point',
-          'MultiPoint',
-          'LineString',
-          'MultiLineString',
-          'Polygon',
-          'MultiPolygon',
-          'GeometryCollection',
-        ];
-
-        if (json && typeof json === 'object' && json.type && geoJsonTypes.includes(json.type)) {
-          isGeoJson = true;
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (isGeoJson) {
-      computedType = 'geojson';
-    } else if (isJson) {
-      computedType = 'json';
-    } else if (rawType.startsWith('image/')) {
-      computedType = rawType === 'image/tiff' ? 'imageraster' : 'image';
-    } else if (rawType.startsWith('audio/')) {
-      computedType = 'audio';
-    } else if (rawType.startsWith('video/')) {
-      computedType = 'video';
-    } else if (rawType.startsWith('text/')) {
-      computedType = 'text';
-    } else if (rawType.startsWith('application/')) {
-      computedType = 'application';
-    }
-    const finalType = fileType ?? computedType;
-
     const body: SaveMinioFile = {
       folder: email,
-      file_type: finalType,
-      file_name: fileName,
+      file_type: validated.storageType,
+      file_name: `${randomUUID()}-${validated.fileName}`,
     };
 
-    const result = await this.minioService.uploadFile(body, file.buffer);
+    const result = await this.minioService.uploadFile(body, validated.buffer);
 
-    const created = await this.prisma.file.create({
-      data: {
-        name: fileName,
-        oldName: fileName,
-        folderId: targetFolderId,
-        src: result.objectName,
-        type: finalType,
-        size: file.size,
-        userId,
-        tags: [],
-      },
-    });
-
-    return created;
+    try {
+      return await this.prisma.file.create({
+        data: {
+          name: validated.fileName,
+          oldName: validated.fileName,
+          folderId: targetFolderId,
+          src: result.objectName,
+          type: validated.storageType,
+          size: validated.size,
+          mimeType: validated.mimeType,
+          fingerprint: validated.fingerprint,
+          userId,
+          tags: [],
+        },
+      });
+    } catch (persistenceError) {
+      try {
+        await this.minioService.deleteFile(body);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [persistenceError, cleanupError],
+          'File metadata persistence and uploaded object cleanup both failed',
+        );
+      }
+      throw persistenceError;
+    }
   }
 
   async list(options: ListFilesOptions) {
