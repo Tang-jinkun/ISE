@@ -7,6 +7,7 @@ import * as jwt from 'jsonwebtoken';
 import { EmailService } from '@/modules/email/email.service';
 import { RedisService } from '@/redis/redis.service';
 import { requiredEnv } from '@/config/required-env';
+import { AuthTokenPayload } from './jwt-payload';
 
 @Injectable()
 export class AuthService {
@@ -52,21 +53,31 @@ export class AuthService {
   generateToken(user: { id: string; email: string; username: string }) {
     const payload = { sub: user.id, username: user.username };
     return {
-      access_token: this.jwtService.sign(payload, { expiresIn: '3d', secret: this.secretKey }),
-      refresh_token: this.jwtService.sign(payload, { expiresIn: '5d', secret: this.secretKey }),
+      access_token: this.jwtService.sign(
+        { ...payload, tokenType: 'access' } satisfies AuthTokenPayload,
+        { expiresIn: '3d', secret: this.secretKey },
+      ),
+      refresh_token: this.jwtService.sign(
+        { ...payload, tokenType: 'refresh' } satisfies AuthTokenPayload,
+        { expiresIn: '5d', secret: this.secretKey },
+      ),
     };
   }
 
   refreshToken(refresh_token: string) {
     try {
-      const decoded = jwt.verify(refresh_token, this.secretKey) as {
-        sub: string;
-        username: string;
-      };
+      const decoded = jwt.verify(refresh_token, this.secretKey) as AuthTokenPayload;
+      if (decoded.tokenType !== 'refresh') throw new Error('Invalid token purpose');
       const payload = { sub: decoded.sub, username: decoded.username };
       return {
-        access_token: this.jwtService.sign(payload, { expiresIn: '3d', secret: this.secretKey }),
-        refresh_token: this.jwtService.sign(payload, { expiresIn: '5d', secret: this.secretKey }),
+        access_token: this.jwtService.sign(
+          { ...payload, tokenType: 'access' } satisfies AuthTokenPayload,
+          { expiresIn: '3d', secret: this.secretKey },
+        ),
+        refresh_token: this.jwtService.sign(
+          { ...payload, tokenType: 'refresh' } satisfies AuthTokenPayload,
+          { expiresIn: '5d', secret: this.secretKey },
+        ),
       };
     } catch {
       throw new BadRequestException('刷新令牌失效');
