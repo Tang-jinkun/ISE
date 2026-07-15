@@ -1,0 +1,251 @@
+{
+  "schemaVersion": "ise-asset-source-map/v1",
+  "assets": [
+    {
+      "assetId": "model:j10",
+      "sourceRelativePath": "印巴glb（修改6.0）/J-10.glb",
+      "displayName": "J-10",
+      "aliases": ["J-10CE", "J-10CE战斗机"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "model:jf17",
+      "sourceRelativePath": "印巴glb（修改6.0）/JF-17.glb",
+      "displayName": "JF-17",
+      "aliases": ["JF-17战机", "JF-17编队"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "model:mig29",
+      "sourceRelativePath": "印巴glb（修改6.0）/MiG-29.glb",
+      "displayName": "MiG-29",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "model:pl15e",
+      "sourceRelativePath": "印巴glb（修改6.0）/pl-15e.glb",
+      "displayName": "PL-15E",
+      "aliases": ["pl-15e"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "model:rafale",
+      "sourceRelativePath": "印巴glb（修改6.0）/Refale.glb",
+      "displayName": "Rafale",
+      "aliases": ["Refale", "阵风战斗机", "阵风战斗机编队"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "model:su30mki",
+      "sourceRelativePath": "印巴glb（修改6.0）/SU-30MKI.glb",
+      "displayName": "Su-30MKI",
+      "aliases": ["SU-30MKI", "苏-30MKI编队"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:ooda-chain",
+      "sourceRelativePath": "素材/ooda作战链示例视频.mp4",
+      "displayName": "OODA作战链示例视频",
+      "aliases": ["ooda作战链示例视频"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:runway-exit",
+      "sourceRelativePath": "素材/冲出跑道.mp4",
+      "displayName": "冲出跑道",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:missile-impact",
+      "sourceRelativePath": "素材/导弹击中飞机.mp4",
+      "displayName": "导弹击中飞机",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:cockpit-jamming",
+      "sourceRelativePath": "素材/座舱被全频段干扰.mp4",
+      "displayName": "座舱被全频段干扰",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:damage-check",
+      "sourceRelativePath": "素材/检查基本完好无损.mp4",
+      "displayName": "检查基本完好无损",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:bomb-explosion",
+      "sourceRelativePath": "素材/炸弹爆炸的视频.mp4",
+      "displayName": "炸弹爆炸的视频",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:radar-offline",
+      "sourceRelativePath": "素材/红灯闪烁，offline.mp4",
+      "displayName": "红灯闪烁，offline",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "video:target-lock",
+      "sourceRelativePath": "素材/锁定目标.mp4",
+      "displayName": "锁定目标",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "image:ground-radar",
+      "sourceRelativePath": "素材/地面雷达.png",
+      "displayName": "地面雷达",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "image:cockpit-hud",
+      "sourceRelativePath": "素材/座舱HUD.png",
+      "displayName": "座舱HUD",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "image:airport",
+      "sourceRelativePath": "素材/机场.png",
+      "displayName": "机场",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "image:aew-illustration",
+      "sourceRelativePath": "素材/预警机插图.png",
+      "displayName": "预警机插图",
+      "aliases": ["预警机"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:ambala-rafale-1",
+      "sourceRelativePath": "json/AMBALA Rafale-1.json",
+      "displayName": "AMBALA Rafale-1",
+      "aliases": ["Rafale-1"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:minhas-j10ce-1",
+      "sourceRelativePath": "json/MINAS J-10CE-1.json",
+      "displayName": "MINAS J-10CE-1",
+      "aliases": ["J-10CE-1", "MINHAS J-10CE-1"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:pakistan-missile-1",
+      "sourceRelativePath": "json/巴方导弹1.json",
+      "displayName": "巴方导弹1",
+      "aliases": [],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:ambala-su30mki-1",
+      "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
+      "displayName": "AMBALA Su-30MKI-1",
+      "aliases": ["Su-30MKI-1"],
+      "criticality": "optional"
+    }
+  ],
+  "nameMappings": [
+    {
+      "sourceName": "J-10",
+      "sourceKind": "model",
+      "assetId": "model:j10",
+      "note": "Stable model name"
+    },
+    {
+      "sourceName": "J-10CE",
+      "sourceKind": "report",
+      "assetId": "model:j10",
+      "note": "Report spelling maps to the available J-10 model"
+    },
+    {
+      "sourceName": "JF-17",
+      "sourceKind": "model",
+      "assetId": "model:jf17",
+      "note": "Stable model name"
+    },
+    {
+      "sourceName": "JF-17战机",
+      "sourceKind": "report",
+      "assetId": "model:jf17",
+      "note": "Report entity name"
+    },
+    {
+      "sourceName": "JF-17编队",
+      "sourceKind": "report",
+      "assetId": "model:jf17",
+      "note": "Report formation name"
+    },
+    {
+      "sourceName": "Rafale",
+      "sourceKind": "model",
+      "assetId": "model:rafale",
+      "note": "Canonical platform spelling"
+    },
+    {
+      "sourceName": "Refale",
+      "sourceKind": "operator",
+      "assetId": "model:rafale",
+      "note": "Operator source filename spelling"
+    },
+    {
+      "sourceName": "阵风战斗机编队",
+      "sourceKind": "report",
+      "assetId": "model:rafale",
+      "note": "Report formation name"
+    },
+    {
+      "sourceName": "苏-30MKI编队",
+      "sourceKind": "report",
+      "assetId": "model:su30mki",
+      "note": "Report formation name"
+    },
+    {
+      "sourceName": "地面雷达",
+      "sourceKind": "report",
+      "assetId": "image:ground-radar",
+      "note": "Report illustration name"
+    },
+    {
+      "sourceName": "预警机",
+      "sourceKind": "report",
+      "assetId": "image:aew-illustration",
+      "note": "Report illustration name"
+    },
+    {
+      "sourceName": "AMBALA Rafale-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:ambala-rafale-1",
+      "note": "Operator trajectory filename stem"
+    },
+    {
+      "sourceName": "MINAS J-10CE-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:minhas-j10ce-1",
+      "note": "Operator filename spelling retained explicitly"
+    },
+    {
+      "sourceName": "巴方导弹1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:pakistan-missile-1",
+      "note": "Operator trajectory filename stem"
+    },
+    {
+      "sourceName": "AMBALA Su-30MKI-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:ambala-su30mki-1",
+      "note": "Known reversed optional trajectory"
+    }
+  ]
+}
