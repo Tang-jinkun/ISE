@@ -24,6 +24,17 @@ export type SceneListQuery = {
   keyword?: string;
 };
 
+export type SceneUpdatePayload = Pick<SceneItem, 'title' | 'type' | 'config'>;
+
+export const buildSceneUpdate = (
+  scene: SceneItem,
+  config: SceneItem['config'] = scene.config
+): SceneUpdatePayload => ({
+  title: scene.title,
+  type: scene.type,
+  config
+});
+
 export const createScene = (data: { title: string }) =>
   http.post<SceneItem>('scene', data);
 
@@ -33,7 +44,7 @@ export const listScenes = (
 
 export const getScene = (id: string) => http.get<SceneItem>(`scene/${id}`);
 
-export const updateScene = (id: string, data: Partial<SceneItem>) =>
+export const updateScene = (id: string, data: SceneUpdatePayload) =>
   http.patch<SceneItem>(`scene/${id}`, data);
 
 export const deleteScene = (id: string) => http.delete<null>(`scene/${id}`);
