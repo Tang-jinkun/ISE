@@ -1,5 +1,5 @@
 import {
-  createScene,
+  createBlankScene,
   deleteScene,
   listScenes,
   type SceneItem
@@ -126,7 +126,7 @@ export default function HomePage() {
         newId = String(res.data.id);
         navigate(`/script?projectId=${newId}`);
       } else {
-        const res = await createScene({ title: createTitle });
+        const res = await createBlankScene({ title: createTitle });
         newId = String(res.data.id);
         navigate(`/scene?projectId=${newId}`);
       }

@@ -27,6 +27,7 @@ export type AgentSessionState = {
   applyEvent(sessionId: string, event: AgentEvent): void;
   replaceArtifacts(sessionId: string, artifacts: AgentArtifactView[]): void;
   ingestArtifacts(sessionId: string, artifacts: AgentArtifactView[]): void;
+  setActiveReview(sessionId: string, review: ReviewTuple): void;
   recordDiagnostic(
     sessionId: string,
     diagnostic: Diagnostic,
@@ -291,6 +292,13 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
         compiledConfig: compiledConfigFrom(nextArtifacts, state.latestCompletedRuntimeArtifactId),
       };
     }),
+
+  setActiveReview: (sessionId, review) =>
+    set((state) =>
+      state.sessionId === sessionId
+        ? { activeReview: review, status: 'awaiting_review' }
+        : state,
+    ),
 
   recordDiagnostic: (sessionId, diagnostic, status) =>
     set((state) => {

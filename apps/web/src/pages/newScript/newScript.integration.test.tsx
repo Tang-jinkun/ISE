@@ -402,6 +402,82 @@ describe('NewScript real Agent flow', () => {
     );
   });
 
+  it('does not enable scene conversion when a compiled artifact is hydrated before completion', async () => {
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([compiledArtifact]);
+
+    expect(screen.getByRole('button', { name: '转换为场景' })).toBeDisabled();
+    expect(mocks.createScene).not.toHaveBeenCalled();
+  });
+
+  it('does not enable scene conversion when a failed run retains a compiled artifact', async () => {
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([compiledArtifact]);
+    emitAgentEvent({
+      id: '1',
+      type: 'run.failed',
+      data: {
+        runId: 'run-1',
+        status: 'failed',
+        diagnostics: [
+          {
+            code: 'GLB_VIDEO_ASSET_FAILED',
+            severity: 'error',
+            recoverable: false,
+            message: 'Critical GLB/video asset preparation failed'
+          }
+        ]
+      }
+    });
+
+    expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
+    expect(screen.getByRole('button', { name: '转换为场景' })).toBeDisabled();
+    expect(mocks.createScene).not.toHaveBeenCalled();
+  });
+
+  it('adopts the review tuple returned by revision before the next action', async () => {
+    const revisedReview: ReviewTuple = {
+      reviewId: 'review-2',
+      artifactId: 'event-plan-2',
+      version: 2,
+      fingerprint: `sha256:${'c'.repeat(64)}`
+    };
+    const revisedArtifact: AgentArtifactView = {
+      ...eventPlanArtifact,
+      artifactId: 'event-plan-2',
+      version: 2
+    };
+    mocks.reviseEventPlan.mockResolvedValue({
+      artifact: revisedArtifact,
+      review: revisedReview
+    });
+
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([eventPlanArtifact]);
+    emitAgentEvent({ id: '1', type: 'review.requested', data: review });
+
+    fireEvent.click(screen.getByRole('button', { name: '提交修改' }));
+    await waitFor(() =>
+      expect(useAgentSessionStore.getState().activeReview).toEqual(revisedReview)
+    );
+    fireEvent.click(screen.getByRole('button', { name: '批准事件计划' }));
+
+    await waitFor(() =>
+      expect(mocks.approveAgentReview).toHaveBeenLastCalledWith(
+        'session-1',
+        'review-2',
+        {
+          artifactId: 'event-plan-2',
+          version: 2,
+          fingerprint: revisedReview.fingerprint
+        }
+      )
+    );
+  });
+
   it('keeps the scene modal open and displays the API error when creation fails', async () => {
     mocks.createScene.mockRejectedValue(new Error('场景创建失败'));
     renderNewScript();

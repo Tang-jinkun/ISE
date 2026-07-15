@@ -3,6 +3,10 @@ import type { SceneProjectConfig } from '@ise/runtime-contracts';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ParamsPanel } from './ParamsPanel';
+import {
+  canonicalSceneConfig,
+  sceneConfigWithUnsupportedAudio
+} from './sceneConfig.testData';
 
 // Mock react-i18next
 vi.mock('react-i18next', () => {
@@ -107,7 +111,7 @@ describe('ParamsPanel', () => {
     expect(screen.getAllByText(/视频轨/)[0]).toBeInTheDocument();
   });
 
-  it('映射表缺失字段时有降级提示', () => {
+  it('ignores track types outside the canonical SceneProjectConfig taxonomy', () => {
     const dataWithUnknownTrack = {
       ...sceneConfig,
       tracks: [
@@ -120,9 +124,31 @@ describe('ParamsPanel', () => {
     } as unknown as SceneProjectConfig;
 
     render(<ParamsPanel sceneConfig={dataWithUnknownTrack} />);
-    // 应该显示 key "unknownTrack" 作为降级名称
-    const elements = screen.getAllByText(/unknownTrack/);
-    expect(elements.length).toBeGreaterThan(0);
-    expect(elements[0]).toBeInTheDocument();
+    expect(screen.queryByText(/unknownTrack/)).not.toBeInTheDocument();
+  });
+
+  it('renders all and only canonical SceneProjectConfig track types', () => {
+    render(<ParamsPanel sceneConfig={sceneConfigWithUnsupportedAudio} />);
+
+    for (const label of [
+      '字幕轨',
+      '图片轨',
+      '视频轨',
+      '标注轨',
+      '地理轨',
+      '镜头轨',
+      '模型轨'
+    ]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByText('音频轨')).not.toBeInTheDocument();
+    expect(screen.getByText('document-1')).toBeInTheDocument();
+    expect(screen.getByText('1 UNITS')).toBeInTheDocument();
+  });
+
+  it('accepts canonical config metadata without legacy track aliases', () => {
+    render(<ParamsPanel sceneConfig={canonicalSceneConfig} />);
+
+    expect(screen.queryByText(/audioTrack|subtitleTrack|videoTrack/)).not.toBeInTheDocument();
   });
 });

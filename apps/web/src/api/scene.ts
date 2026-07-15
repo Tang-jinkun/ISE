@@ -38,10 +38,13 @@ export const buildSceneUpdate = (
 
 export type CreateScenePayload = {
   title: string;
-  config?: SceneProjectConfig;
+  config: SceneProjectConfig;
 };
 
 export const createScene = (data: CreateScenePayload) =>
+  http.post<SceneItem>('scene', data);
+
+export const createBlankScene = (data: { title: string }) =>
   http.post<SceneItem>('scene', data);
 
 export const listScenes = (

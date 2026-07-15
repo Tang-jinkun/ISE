@@ -199,6 +199,24 @@ describe('useAgentSessionStore', () => {
     expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
   });
 
+  it('adopts an exact review tuple returned by a revision request', () => {
+    const store = useAgentSessionStore.getState();
+    const nextReview = {
+      reviewId: 'review-2',
+      artifactId: 'draft-2',
+      version: 2,
+      fingerprint
+    };
+    store.open('session-1');
+
+    useAgentSessionStore.getState().setActiveReview('session-1', nextReview);
+
+    expect(useAgentSessionStore.getState()).toMatchObject({
+      status: 'awaiting_review',
+      activeReview: nextReview
+    });
+  });
+
   it('uses createdAt and artifact ID for the deterministic resume fallback', () => {
     const store = useAgentSessionStore.getState();
     store.open('session-1');

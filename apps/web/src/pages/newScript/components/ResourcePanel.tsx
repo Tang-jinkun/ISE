@@ -10,13 +10,12 @@ import {
   Link,
   Map as MapIcon,
   MapPin,
-  Music,
   Type,
-  Users,
-  Zap
+  Users
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { DataImportButton } from './DataImportButton';
+import { isSceneTrackType } from './sceneTrackMetadata';
 
 /**
  * 叙事单元接口定义 (扩展 WarUnit 以包含业务分类)
@@ -55,6 +54,7 @@ export const ResourcePanel = ({
     if (!sceneConfig) return [];
     const units = new globalThis.Map<string, NarrativeUnit>();
     for (const track of sceneConfig.tracks) {
+      if (!isSceneTrackType(track.type)) continue;
       for (const item of track.items) {
         const current = units.get(item.eventUnitId) ?? {
           id: item.eventUnitId,
@@ -89,14 +89,8 @@ export const ResourcePanel = ({
     if (!paths) return [];
     const counts = [
       {
-        key: 'audio',
-        label: '音频',
-        icon: <Music className="w-3 h-3" />,
-        count: paths.audio?.length || 0
-      },
-      {
         key: 'subtitle',
-        label: '文本',
+        label: '字幕',
         icon: <Type className="w-3 h-3" />,
         count: paths.subtitle?.length || 0
       },
@@ -125,16 +119,16 @@ export const ResourcePanel = ({
         count: paths.marker?.length || 0
       },
       {
-        key: 'dynamic_line',
-        label: '动态线',
-        icon: <Activity className="w-3 h-3" />,
-        count: paths.dynamic_line?.length || 0
+        key: 'camera',
+        label: '镜头',
+        icon: <Camera className="w-3 h-3" />,
+        count: paths.camera?.length || 0
       },
       {
-        key: 'plot_symbol',
-        label: '标绘',
-        icon: <Zap className="w-3 h-3" />,
-        count: paths.plot_symbol?.length || 0
+        key: 'model',
+        label: '模型',
+        icon: <Box className="w-3 h-3" />,
+        count: paths.model?.length || 0
       }
     ];
     return counts.filter((c) => c.count > 0);

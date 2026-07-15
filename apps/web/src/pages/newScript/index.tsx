@@ -218,6 +218,17 @@ export default function Script() {
   const compiledConfig = isCurrentSession
     ? sessionState.compiledConfig
     : null;
+  const completedRuntimeArtifactId = isCurrentSession
+    ? sessionState.latestCompletedRuntimeArtifactId
+    : null;
+  const completedRuntimeArtifact = completedRuntimeArtifactId
+    ? artifacts[completedRuntimeArtifactId]
+    : undefined;
+  const completedSceneConfig =
+    sessionState.status === 'completed' &&
+    completedRuntimeArtifact?.type === 'ise.canonical-runtime-plan/v1'
+      ? compiledConfig
+      : null;
 
   const [saving, setSaving] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string>('n-root');
@@ -645,6 +656,9 @@ export default function Script() {
       useAgentSessionStore
         .getState()
         .ingestArtifacts(agentSessionId, [response.artifact]);
+      useAgentSessionStore
+        .getState()
+        .setActiveReview(agentSessionId, response.review);
     });
 
   const updateCompiledDraft = (config: SceneProjectConfig) => {
@@ -732,7 +746,7 @@ export default function Script() {
               onClick={() => {
                 setIsSceneModalOpen(true);
               }}
-              disabled={!compiledConfig}
+              disabled={!completedSceneConfig}
               className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-700 dark:text-cyan-200 transition-colors hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ArrowRight className="h-3.5 w-3.5" />
@@ -1096,7 +1110,7 @@ export default function Script() {
         isOpen={isSceneModalOpen}
         onClose={() => setIsSceneModalOpen(false)}
         title={editableTitle.trim() || '未命名场景'}
-        config={compiledConfig}
+        config={completedSceneConfig}
       />
     </div>
   );

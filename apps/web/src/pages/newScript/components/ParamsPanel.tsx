@@ -13,12 +13,12 @@ import {
   Activity,
   ArrowRight,
   Box,
+  Camera,
   ChevronRight,
   FileJson,
   Layers,
   Map as MapIcon,
   MapPin,
-  Music,
   Play,
   Search,
   Settings2,
@@ -28,6 +28,12 @@ import {
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DataImportButton } from './DataImportButton';
+import {
+  isSceneTrackType,
+  SCENE_TRACK_LABELS,
+  SCENE_TRACK_TYPES,
+  type SceneTrackType
+} from './sceneTrackMetadata';
 
 /**
  * 轨道配置元数据接口
@@ -50,10 +56,12 @@ const ATTR_MAP: Record<string, string> = {
   finish: '结束时间 (ms)',
   role: '角色身份',
   paths: '轨道素材',
-  audio: '音频轨',
-  text: '字幕轨',
+  subtitle: '字幕轨',
+  image: '图片轨',
+  camera: '镜头轨',
+  model: '模型轨',
+  text: '字幕内容',
   geojson: '地理轨',
-  picture: '图片轨',
   marker: '标注轨',
   video: '视频轨',
   volume: '音量音效',
@@ -123,61 +131,48 @@ const ATTR_MAP: Record<string, string> = {
  * 包含英文 key 到中文名称、轨道类型图标、默认颜色、受控字段列表等元数据
  * 新增轨道类型时只需在此扩展即可自动生效
  */
-const TRACK_CONFIG: Record<string, TrackConfig> = {
-  video: {
-    label: '视频轨',
-    icon: <Activity className="w-3.5 h-3.5" />,
-    color: '#3b82f6',
-    controlledFields: ['start', 'finish', 'volume', 'currentTime']
-  },
-  audio: {
-    label: '音频轨',
-    icon: <Music className="w-3.5 h-3.5" />,
-    color: '#10b981',
-    controlledFields: ['start', 'finish', 'volume', 'fadeInTime', 'fadeOutTime']
-  },
-  text: {
-    label: '字幕轨',
+const TRACK_CONFIG: Record<SceneTrackType, TrackConfig> = {
+  subtitle: {
+    label: SCENE_TRACK_LABELS.subtitle,
     icon: <Type className="w-3.5 h-3.5" />,
     color: '#f59e0b',
-    controlledFields: ['start', 'finish', 'content', 'font_style']
+    controlledFields: []
   },
-  geojson: {
-    label: '地理轨',
-    icon: <MapIcon className="w-3.5 h-3.5" />,
-    color: '#8b5cf6',
-    controlledFields: ['start', 'finish', 'paint', 'layout']
-  },
-  picture: {
-    label: '图片轨',
+  image: {
+    label: SCENE_TRACK_LABELS.image,
     icon: <Layers className="w-3.5 h-3.5" />,
     color: '#ec4899',
-    controlledFields: ['start', 'finish', 'width', 'height']
+    controlledFields: []
   },
-  marker: {
-    label: '标注轨',
-    icon: <MapPin className="w-3.5 h-3.5" />,
-    color: '#f43f5e',
-    controlledFields: ['start', 'finish', 'content']
-  },
-  // 兼容性映射
-  videoTrack: {
-    label: '视频轨',
+  video: {
+    label: SCENE_TRACK_LABELS.video,
     icon: <Activity className="w-3.5 h-3.5" />,
     color: '#3b82f6',
-    controlledFields: ['start', 'finish', 'volume', 'currentTime']
+    controlledFields: []
   },
-  audioTrack: {
-    label: '音频轨',
-    icon: <Music className="w-3.5 h-3.5" />,
-    color: '#10b981',
-    controlledFields: ['start', 'finish', 'volume', 'fadeInTime', 'fadeOutTime']
+  geojson: {
+    label: SCENE_TRACK_LABELS.geojson,
+    icon: <MapIcon className="w-3.5 h-3.5" />,
+    color: '#8b5cf6',
+    controlledFields: []
   },
-  subtitleTrack: {
-    label: '字幕轨',
-    icon: <Type className="w-3.5 h-3.5" />,
-    color: '#f59e0b',
-    controlledFields: ['start', 'finish', 'content', 'font_style']
+  marker: {
+    label: SCENE_TRACK_LABELS.marker,
+    icon: <MapPin className="w-3.5 h-3.5" />,
+    color: '#f43f5e',
+    controlledFields: []
+  },
+  camera: {
+    label: SCENE_TRACK_LABELS.camera,
+    icon: <Camera className="w-3.5 h-3.5" />,
+    color: '#06b6d4',
+    controlledFields: []
+  },
+  model: {
+    label: SCENE_TRACK_LABELS.model,
+    icon: <Box className="w-3.5 h-3.5" />,
+    color: '#64748b',
+    controlledFields: []
   }
 };
 
@@ -199,8 +194,8 @@ export const ParamsPanel = ({
    * 获取轨道配置，包含翻译和降级逻辑
    */
   const getTrackConfigWithTranslation = (type: string): TrackConfig => {
-    const config = TRACK_CONFIG[type] || TRACK_CONFIG[type.toLowerCase()];
-    if (config) {
+    if (isSceneTrackType(type)) {
+      const config = TRACK_CONFIG[type];
       return {
         ...config,
         label: t(`tracks.${type.toLowerCase()}`, config.label)
@@ -236,6 +231,7 @@ export const ParamsPanel = ({
       }
     >();
     for (const track of sceneConfig.tracks) {
+      if (!isSceneTrackType(track.type)) continue;
       for (const item of track.items) {
         const current = units.get(item.eventUnitId) ?? {
           id: item.eventUnitId,
@@ -702,7 +698,7 @@ export const ParamsPanel = ({
                       </div>
 
                       <div className="space-y-3">
-                        {Object.keys(TRACK_CONFIG).map((type) => {
+                        {SCENE_TRACK_TYPES.map((type) => {
                           const items = unit.paths?.[type];
                           if (!items || items.length === 0) return null;
                           return (
@@ -713,11 +709,8 @@ export const ParamsPanel = ({
                         })}
                         {/* 处理不在 TRACK_CONFIG 中的其他可能轨道 */}
                         {Object.keys(unit.paths || {}).map((type) => {
-                          if (
-                            TRACK_CONFIG[type] ||
-                            (unit.paths?.[type]?.length ?? 0) === 0
-                          )
-                            return null;
+                          if (isSceneTrackType(type)) return null;
+                          if ((unit.paths?.[type]?.length ?? 0) === 0) return null;
                           return (
                             <React.Fragment key={type}>
                               {renderPathItems(unit.id, type, unit.paths[type])}
