@@ -9,6 +9,7 @@ import { PersistentArtifactStore } from '../persistence/persistentArtifactStore.
 import { PersistentDomainStateStore } from '../persistence/persistentDomainStateStore.ts'
 import { IseAgentHost } from '../runtime/IseAgentHost.ts'
 import { createSessionToolRegistry } from '../runtime/toolAssembly.ts'
+import { createAssetRegistrySnapshot } from '../services/assetRegistry.ts'
 import { EventBroker } from './eventBroker.ts'
 import { PublicEventSink } from './publicEventSink.ts'
 import { SessionAttachmentReader } from './sessionAttachmentReader.ts'
@@ -118,6 +119,9 @@ export class SessionAgentRunner {
             authorization,
             this.options.repositories.attachments,
             this.options.nest,
+          ),
+          loadAssetSnapshot: async () => createAssetRegistrySnapshot(
+            await this.options.nest.listAssetMetadata(authorization),
           ),
         }),
         skills: this.options.skills,
