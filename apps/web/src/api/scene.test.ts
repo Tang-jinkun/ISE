@@ -1,5 +1,28 @@
-import { describe, expect, it } from 'vitest';
-import { buildSceneUpdate, type SceneItem } from './scene';
+import type { SceneProjectConfig } from '@ise/runtime-contracts';
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { http } from './http';
+import {
+  buildSceneUpdate,
+  createBlankScene,
+  createScene,
+  type SceneItem
+} from './scene';
+
+const config: SceneProjectConfig = {
+  schemaVersion: 'ise-scene/v1',
+  sourceDocumentId: 'document-1',
+  eventPlanArtifactId: 'event-plan-1',
+  runtimePlanArtifactId: 'runtime-plan-1',
+  totalDurationMs: 0,
+  entities: [],
+  tracks: [],
+  diagnostics: []
+};
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.spyOn(http, 'post').mockResolvedValue({ data: { id: 'scene-1' } });
+});
 
 describe('buildSceneUpdate', () => {
   it('keeps only mutable Scene fields in the API payload', () => {
@@ -17,17 +40,39 @@ describe('buildSceneUpdate', () => {
       image: 'https://example.com/image.png'
     };
 
-    const payload = buildSceneUpdate(scene, '[{"id":"track-1"}]');
+    const payload = buildSceneUpdate(scene, config);
 
     expect(payload).toStrictEqual({
       title: 'Updated scene',
       type: 'PRIVATE',
-      config: '[{"id":"track-1"}]'
+      config
     });
     expect(payload).not.toHaveProperty('id');
     expect(payload).not.toHaveProperty('userId');
     expect(payload).not.toHaveProperty('ownerType');
     expect(payload).not.toHaveProperty('createdAt');
     expect(payload).not.toHaveProperty('updatedAt');
+  });
+});
+
+describe('Scene creation APIs', () => {
+  it('requires and forwards a compiled SceneProjectConfig', async () => {
+    expectTypeOf(createScene).parameter(0).toEqualTypeOf<{
+      title: string;
+      config: SceneProjectConfig;
+    }>();
+
+    await createScene({ title: 'Compiled scene', config });
+
+    expect(http.post).toHaveBeenCalledWith('scene', {
+      title: 'Compiled scene',
+      config
+    });
+  });
+
+  it('keeps blank scene creation on an explicit title-only API', async () => {
+    await createBlankScene({ title: 'Blank scene' });
+
+    expect(http.post).toHaveBeenCalledWith('scene', { title: 'Blank scene' });
   });
 });

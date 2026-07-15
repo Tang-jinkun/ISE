@@ -9,17 +9,16 @@ import { message } from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useParamsStore } from '@/stores/paramsStore';
-import { useWarDataStore } from '@/stores/warDataStore';
 import {
   Activity,
   ArrowRight,
   Box,
+  Camera,
   ChevronRight,
   FileJson,
   Layers,
-  Map,
+  Map as MapIcon,
   MapPin,
-  Music,
   Play,
   Search,
   Settings2,
@@ -29,6 +28,12 @@ import {
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DataImportButton } from './DataImportButton';
+import {
+  isSceneTrackType,
+  SCENE_TRACK_LABELS,
+  SCENE_TRACK_TYPES,
+  type SceneTrackType
+} from './sceneTrackMetadata';
 
 /**
  * 轨道配置元数据接口
@@ -51,10 +56,12 @@ const ATTR_MAP: Record<string, string> = {
   finish: '结束时间 (ms)',
   role: '角色身份',
   paths: '轨道素材',
-  audio: '音频轨',
-  text: '字幕轨',
+  subtitle: '字幕轨',
+  image: '图片轨',
+  camera: '镜头轨',
+  model: '模型轨',
+  text: '字幕内容',
   geojson: '地理轨',
-  picture: '图片轨',
   marker: '标注轨',
   video: '视频轨',
   volume: '音量音效',
@@ -124,61 +131,48 @@ const ATTR_MAP: Record<string, string> = {
  * 包含英文 key 到中文名称、轨道类型图标、默认颜色、受控字段列表等元数据
  * 新增轨道类型时只需在此扩展即可自动生效
  */
-const TRACK_CONFIG: Record<string, TrackConfig> = {
-  video: {
-    label: '视频轨',
-    icon: <Activity className="w-3.5 h-3.5" />,
-    color: '#3b82f6',
-    controlledFields: ['start', 'finish', 'volume', 'currentTime']
-  },
-  audio: {
-    label: '音频轨',
-    icon: <Music className="w-3.5 h-3.5" />,
-    color: '#10b981',
-    controlledFields: ['start', 'finish', 'volume', 'fadeInTime', 'fadeOutTime']
-  },
-  text: {
-    label: '字幕轨',
+const TRACK_CONFIG: Record<SceneTrackType, TrackConfig> = {
+  subtitle: {
+    label: SCENE_TRACK_LABELS.subtitle,
     icon: <Type className="w-3.5 h-3.5" />,
     color: '#f59e0b',
-    controlledFields: ['start', 'finish', 'content', 'font_style']
+    controlledFields: []
   },
-  geojson: {
-    label: '地理轨',
-    icon: <Map className="w-3.5 h-3.5" />,
-    color: '#8b5cf6',
-    controlledFields: ['start', 'finish', 'paint', 'layout']
-  },
-  picture: {
-    label: '图片轨',
+  image: {
+    label: SCENE_TRACK_LABELS.image,
     icon: <Layers className="w-3.5 h-3.5" />,
     color: '#ec4899',
-    controlledFields: ['start', 'finish', 'width', 'height']
+    controlledFields: []
   },
-  marker: {
-    label: '标注轨',
-    icon: <MapPin className="w-3.5 h-3.5" />,
-    color: '#f43f5e',
-    controlledFields: ['start', 'finish', 'content']
-  },
-  // 兼容性映射
-  videoTrack: {
-    label: '视频轨',
+  video: {
+    label: SCENE_TRACK_LABELS.video,
     icon: <Activity className="w-3.5 h-3.5" />,
     color: '#3b82f6',
-    controlledFields: ['start', 'finish', 'volume', 'currentTime']
+    controlledFields: []
   },
-  audioTrack: {
-    label: '音频轨',
-    icon: <Music className="w-3.5 h-3.5" />,
-    color: '#10b981',
-    controlledFields: ['start', 'finish', 'volume', 'fadeInTime', 'fadeOutTime']
+  geojson: {
+    label: SCENE_TRACK_LABELS.geojson,
+    icon: <MapIcon className="w-3.5 h-3.5" />,
+    color: '#8b5cf6',
+    controlledFields: []
   },
-  subtitleTrack: {
-    label: '字幕轨',
-    icon: <Type className="w-3.5 h-3.5" />,
-    color: '#f59e0b',
-    controlledFields: ['start', 'finish', 'content', 'font_style']
+  marker: {
+    label: SCENE_TRACK_LABELS.marker,
+    icon: <MapPin className="w-3.5 h-3.5" />,
+    color: '#f43f5e',
+    controlledFields: []
+  },
+  camera: {
+    label: SCENE_TRACK_LABELS.camera,
+    icon: <Camera className="w-3.5 h-3.5" />,
+    color: '#06b6d4',
+    controlledFields: []
+  },
+  model: {
+    label: SCENE_TRACK_LABELS.model,
+    icon: <Box className="w-3.5 h-3.5" />,
+    color: '#64748b',
+    controlledFields: []
   }
 };
 
@@ -187,20 +181,21 @@ const TRACK_CONFIG: Record<string, TrackConfig> = {
  * 初始加载即渲染 chibi_battle.mock.ts 中全部 unit 的 path 配置数据
  */
 export const ParamsPanel = ({
+  sceneConfig,
   onUpdate
 }: {
-  onUpdate?: (id: string, data: any) => void;
+  sceneConfig: SceneProjectConfig | null;
+  onUpdate?: (config: SceneProjectConfig) => void;
 }) => {
   const { t } = useTranslation();
-  const { currentData } = useWarDataStore();
   const [searchTerm, setSearchTerm] = useState('');
 
   /**
    * 获取轨道配置，包含翻译和降级逻辑
    */
   const getTrackConfigWithTranslation = (type: string): TrackConfig => {
-    const config = TRACK_CONFIG[type] || TRACK_CONFIG[type.toLowerCase()];
-    if (config) {
+    if (isSceneTrackType(type)) {
+      const config = TRACK_CONFIG[type];
       return {
         ...config,
         label: t(`tracks.${type.toLowerCase()}`, config.label)
@@ -225,22 +220,39 @@ export const ParamsPanel = ({
 
   // 1. 预处理数据
   const allUnitsData = useMemo(() => {
-    if (!currentData) return [];
-    const units: any[] = [];
-    currentData.outline.forEach((outline: any) => {
-      outline.descriptions.forEach((desc: any) => {
-        desc.units.forEach((unit: any) => {
-          units.push({
-            id: unit.id,
-            core_content: unit.core_content,
-            paths: unit.paths,
-            time: unit.time
-          });
-        });
-      });
-    });
-    return units;
-  }, [currentData]);
+    if (!sceneConfig) return [];
+    const units = new globalThis.Map<
+      string,
+      {
+        id: string;
+        core_content: string;
+        paths: Record<string, unknown[]>;
+        time: { start: number; finish: number };
+      }
+    >();
+    for (const track of sceneConfig.tracks) {
+      if (!isSceneTrackType(track.type)) continue;
+      for (const item of track.items) {
+        const current = units.get(item.eventUnitId) ?? {
+          id: item.eventUnitId,
+          core_content: item.eventUnitId,
+          paths: {},
+          time: { start: item.startMs, finish: item.startMs + item.durationMs }
+        };
+        current.time.start = Math.min(current.time.start, item.startMs);
+        current.time.finish = Math.max(
+          current.time.finish,
+          item.startMs + item.durationMs
+        );
+        current.paths[track.type] = [
+          ...(current.paths[track.type] ?? []),
+          item
+        ];
+        units.set(item.eventUnitId, current);
+      }
+    }
+    return Array.from(units.values());
+  }, [sceneConfig]);
 
   const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>(
     () => {
@@ -273,10 +285,42 @@ export const ParamsPanel = ({
    * 自动保存处理
    */
   const handleSave = useCallback(
-    async (unitId: string, fieldPath: string, value: any) => {
+    async (itemId: string, fieldPath: string, value: any) => {
       try {
-        if (onUpdate) {
-          onUpdate(unitId, { [fieldPath]: value });
+        if (onUpdate && sceneConfig) {
+          const path = fieldPath.split('.');
+          const replaceField = (
+            source: Record<string, unknown>,
+            [field, ...remaining]: string[]
+          ): Record<string, unknown> => {
+            if (!field) return source;
+            if (remaining.length === 0) return { ...source, [field]: value };
+            const nested = source[field];
+            return {
+              ...source,
+              [field]: replaceField(
+                typeof nested === 'object' && nested !== null
+                  ? (nested as Record<string, unknown>)
+                  : {},
+                remaining
+              )
+            };
+          };
+          const next = {
+            ...sceneConfig,
+            tracks: sceneConfig.tracks.map((track) => ({
+              ...track,
+              items: track.items.map((item) =>
+                item.id === itemId
+                  ? (replaceField(
+                      item as unknown as Record<string, unknown>,
+                      path
+                    ) as typeof item)
+                  : item
+              )
+            }))
+          } as SceneProjectConfig;
+          onUpdate(next);
         }
         message.success(
           `已保存 ${ATTR_MAP[fieldPath.split('.').pop() || ''] || fieldPath}`
@@ -285,7 +329,7 @@ export const ParamsPanel = ({
         message.error('保存失败，请检查网络连接');
       }
     },
-    [onUpdate]
+    [onUpdate, sceneConfig]
   );
 
   /**
@@ -489,7 +533,7 @@ export const ParamsPanel = ({
                               ([subK, subV]: [string, any]) => (
                                 <div key={subK}>
                                   {renderInput(
-                                    unitId,
+                                    item.id,
                                     `${k}.${subK}`,
                                     subV,
                                     ATTR_MAP[subK] || subK
@@ -503,7 +547,7 @@ export const ParamsPanel = ({
                     }
 
                     return (
-                      <div key={k}>{renderInput(unitId, k, v, label)}</div>
+                      <div key={k}>{renderInput(item.id, k, v, label)}</div>
                     );
                   })}
                 </div>
@@ -549,7 +593,7 @@ export const ParamsPanel = ({
           </div>
         </div>
         <h2 className="text-sm font-black text-foreground tracking-tight flex items-center gap-2">
-          {currentData?.war_name || '未加载'}{' '}
+          {sceneConfig?.sourceDocumentId || '未加载'}{' '}
           <span className="text-[10px] font-mono font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
             {allUnitsData.length} UNITS
           </span>
@@ -654,7 +698,7 @@ export const ParamsPanel = ({
                       </div>
 
                       <div className="space-y-3">
-                        {Object.keys(TRACK_CONFIG).map((type) => {
+                        {SCENE_TRACK_TYPES.map((type) => {
                           const items = unit.paths?.[type];
                           if (!items || items.length === 0) return null;
                           return (
@@ -665,11 +709,8 @@ export const ParamsPanel = ({
                         })}
                         {/* 处理不在 TRACK_CONFIG 中的其他可能轨道 */}
                         {Object.keys(unit.paths || {}).map((type) => {
-                          if (
-                            TRACK_CONFIG[type] ||
-                            (unit.paths?.[type]?.length ?? 0) === 0
-                          )
-                            return null;
+                          if (isSceneTrackType(type)) return null;
+                          if ((unit.paths?.[type]?.length ?? 0) === 0) return null;
                           return (
                             <React.Fragment key={type}>
                               {renderPathItems(unit.id, type, unit.paths[type])}
@@ -797,3 +838,4 @@ export const ParamsPanel = ({
     </div>
   );
 };
+import type { SceneProjectConfig } from '@ise/runtime-contracts';

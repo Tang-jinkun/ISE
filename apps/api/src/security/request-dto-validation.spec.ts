@@ -3,6 +3,7 @@ import { FileController } from '../modules/file/file.controller';
 import { FolderController } from '../modules/folder/folder.controller';
 import { CreateScriptDto } from '../modules/script/dto/create-script.dto';
 import { UpdateScriptDto } from '../modules/script/dto/update-script.dto';
+import { UpdateFileDto } from '../modules/file/dto/update-file.dto';
 
 jest.mock('../modules/file/file.service', () => ({ FileService: class FileService {} }));
 jest.mock('../modules/folder/folder.service', () => ({ FolderService: class FolderService {} }));
@@ -94,6 +95,15 @@ describe('strict request DTO compatibility', () => {
     expect(result).toMatchObject({ config: '{"tracks":[]}', conversation });
   });
 
+  it('rejects a non-array script conversation', async () => {
+    await expect(
+      pipe.transform(
+        { title: 'Scene script', conversation: 'hidden transcript' },
+        { type: 'body', metatype: CreateScriptDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('keeps the existing title-only script creation request valid', async () => {
     const result = await pipe.transform(
       { title: 'Untitled script' },
@@ -112,4 +122,22 @@ describe('strict request DTO compatibility', () => {
 
     expect(result).toMatchObject({ config: '{"tracks":[1]}', conversation });
   });
+
+  it('accepts apostrophes when renaming a file', async () => {
+    const result = await pipe.transform(
+      { name: "O'Brien.docx" },
+      { type: 'body', metatype: UpdateFileDto },
+    );
+
+    expect(result).toEqual({ name: "O'Brien.docx" });
+  });
+
+  it.each(['report\r\nX-Injected.txt', 'control\u0000name.txt', 'delete\u007fname.txt'])(
+    'rejects control characters in renamed file %p',
+    async (name) => {
+      await expect(
+        pipe.transform({ name }, { type: 'body', metatype: UpdateFileDto }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
 });

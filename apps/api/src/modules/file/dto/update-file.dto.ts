@@ -1,9 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsOptional, IsString, Matches } from 'class-validator';
 
 export class UpdateFileDto {
   @ApiPropertyOptional({ description: '文件名称' })
   @IsString()
+  @Matches(/^[^\u0000-\u001f\u007f-\u009f]+$/, {
+    message: '文件名称不能包含控制字符',
+  })
   @IsOptional()
   name?: string;
 

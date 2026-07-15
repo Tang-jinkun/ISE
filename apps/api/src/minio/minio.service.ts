@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as Minio from 'minio';
 import * as archiver from 'archiver';
-import { PassThrough } from 'stream';
+import { PassThrough, Readable } from 'stream';
 import { SaveMinioFile } from './dto/save_minio.dto';
 import { ParamMinioFile } from './dto/param_minio.dto';
 
@@ -45,6 +45,23 @@ export class MinioService {
     await this.ensureBucketExists();
     await this.minioClient.fPutObject(this.bucketName, objectName, filePath);
     return { bucket: this.bucketName, objectName };
+  }
+
+  async presignRead(objectName: string, expiresSeconds: number): Promise<string> {
+    await this.ensureBucketExists();
+    return this.minioClient.presignedGetObject(this.bucketName, objectName, expiresSeconds);
+  }
+
+  async openRead(objectName: string): Promise<Readable> {
+    await this.ensureBucketExists();
+    return this.minioClient.getObject(this.bucketName, objectName);
+  }
+
+  async putObject(objectName: string, bytes: Buffer, mediaType: string): Promise<void> {
+    await this.ensureBucketExists();
+    await this.minioClient.putObject(this.bucketName, objectName, bytes, bytes.byteLength, {
+      'Content-Type': mediaType,
+    });
   }
 
   async deleteFile(body: ParamMinioFile) {

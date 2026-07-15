@@ -1,4 +1,10 @@
 {
+  "ts-node": {
+    "experimentalResolver": true,
+    "moduleTypes": {
+      "../../packages/runtime-contracts/src/**/*.ts": "cjs"
+    }
+  },
   "compilerOptions": {
     "module": "commonjs",
     "declaration": true,
@@ -11,7 +17,9 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@ise/runtime-contracts": ["../../packages/runtime-contracts/src/index.ts"],
+      "@ise/runtime-contracts/node": ["../../packages/runtime-contracts/src/node.ts"]
     },
     "moduleResolution": "node",
     "incremental": true,

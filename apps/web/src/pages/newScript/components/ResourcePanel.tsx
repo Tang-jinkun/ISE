@@ -1,6 +1,5 @@
+import type { Diagnostic, SceneProjectConfig } from '@ise/runtime-contracts';
 import { cn } from '@/lib/utils';
-import { type WarUnit } from '@/mock/core.type';
-import { useWarDataStore } from '@/stores/warDataStore';
 import {
   Activity,
   Box,
@@ -9,72 +8,96 @@ import {
   Info,
   Layers,
   Link,
-  Map,
+  Map as MapIcon,
   MapPin,
-  Music,
   Type,
-  Users,
-  Zap
+  Users
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { DataImportButton } from './DataImportButton';
+import { isSceneTrackType } from './sceneTrackMetadata';
 
 /**
  * 叙事单元接口定义 (扩展 WarUnit 以包含业务分类)
  */
-interface NarrativeUnit extends WarUnit {
+interface NarrativeUnit {
+  id: string;
+  core_content: string;
+  time: { start: number; finish: number };
+  paths: Record<string, unknown[]>;
   category: string;
+  logic_causal?: { role?: string };
+  entities?: {
+    persons?: string[];
+    spaces?: string[];
+    objects?: string[];
+    events?: string[];
+  };
+  relation?: unknown[];
+  view_bbox?: [[number, number], [number, number]];
 }
 
 /**
  * ResourcePanel 组件
  * 可视化展示叙事单元数据为竖型时间线
  */
-export const ResourcePanel = (props: any) => {
-  const { currentData } = useWarDataStore();
+export const ResourcePanel = ({
+  sceneConfig,
+  diagnostics
+}: {
+  sceneConfig: SceneProjectConfig | null;
+  diagnostics: Diagnostic[];
+}) => {
 
   // 解析并处理数据：将所有 units 提取出来，并标记其所属分类
   const timelineUnits = useMemo(() => {
-    if (!currentData) return [];
-    const units: NarrativeUnit[] = [];
-
-    currentData.outline.forEach((outlineItem) => {
-      outlineItem.descriptions.forEach((desc) => {
-        desc.units.forEach((unit) => {
-          units.push({
-            ...(unit as WarUnit),
-            category: desc.title
-          });
-        });
-      });
-    });
+    if (!sceneConfig) return [];
+    const units = new globalThis.Map<string, NarrativeUnit>();
+    for (const track of sceneConfig.tracks) {
+      if (!isSceneTrackType(track.type)) continue;
+      for (const item of track.items) {
+        const current = units.get(item.eventUnitId) ?? {
+          id: item.eventUnitId,
+          core_content: item.eventUnitId,
+          time: { start: item.startMs, finish: item.startMs + item.durationMs },
+          paths: {},
+          category: '场景事件'
+        };
+        current.time.start = Math.min(current.time.start, item.startMs);
+        current.time.finish = Math.max(
+          current.time.finish,
+          item.startMs + item.durationMs
+        );
+        current.paths[track.type] = [
+          ...(current.paths[track.type] ?? []),
+          item
+        ];
+        units.set(item.eventUnitId, current);
+      }
+    }
 
     // 按时间顺序排列
-    return units.sort((a, b) => a.time.start - b.time.start);
-  }, [currentData]);
+    return Array.from(units.values()).sort(
+      (a, b) => a.time.start - b.time.start
+    );
+  }, [sceneConfig]);
 
   /**
    * 统计路径类型的数量
    */
-  const getPathCounts = (paths: WarUnit['paths']) => {
+  const getPathCounts = (paths: NarrativeUnit['paths']) => {
     if (!paths) return [];
     const counts = [
       {
-        key: 'audio',
-        label: '音频',
-        icon: <Music className="w-3 h-3" />,
-        count: paths.audio?.length || 0
-      },
-      {
-        key: 'text',
-        label: '文本',
+        key: 'subtitle',
+        label: '字幕',
         icon: <Type className="w-3 h-3" />,
-        count: paths.text?.length || 0
+        count: paths.subtitle?.length || 0
       },
       {
         key: 'geojson',
         label: '地理',
-        icon: <Map className="w-3 h-3" />,
+        icon: <MapIcon className="w-3 h-3" />,
         count: paths.geojson?.length || 0
       },
       {
@@ -84,10 +107,10 @@ export const ResourcePanel = (props: any) => {
         count: paths.video?.length || 0
       },
       {
-        key: 'picture',
+        key: 'image',
         label: '图片',
         icon: <Layers className="w-3 h-3" />,
-        count: paths.picture?.length || 0
+        count: paths.image?.length || 0
       },
       {
         key: 'marker',
@@ -96,16 +119,16 @@ export const ResourcePanel = (props: any) => {
         count: paths.marker?.length || 0
       },
       {
-        key: 'dynamic_line',
-        label: '动态线',
-        icon: <Activity className="w-3 h-3" />,
-        count: paths.dynamic_line?.length || 0
+        key: 'camera',
+        label: '镜头',
+        icon: <Camera className="w-3 h-3" />,
+        count: paths.camera?.length || 0
       },
       {
-        key: 'plot_symbol',
-        label: '标绘',
-        icon: <Zap className="w-3 h-3" />,
-        count: paths.plot_symbol?.length || 0
+        key: 'model',
+        label: '模型',
+        icon: <Box className="w-3 h-3" />,
+        count: paths.model?.length || 0
       }
     ];
     return counts.filter((c) => c.count > 0);
@@ -141,11 +164,21 @@ export const ResourcePanel = (props: any) => {
             </span>
           </div>
           <h2 className="text-lg font-bold">
-            {currentData?.war_name || '未加载数据'}
+            {sceneConfig?.sourceDocumentId || '未加载数据'}
           </h2>
         </div>
         <DataImportButton />
       </div>
+
+      {diagnostics.length > 0 && (
+        <div className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          {diagnostics.map((diagnostic) => (
+            <p key={`${diagnostic.code}:${diagnostic.message}`}>
+              {diagnostic.message}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* 时间线滚动区域 */}
       <div className="flex-1 overflow-y-auto p-6 thin-scrollbar">

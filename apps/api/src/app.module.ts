@@ -12,6 +12,7 @@ import { FileModule } from './modules/file/file.module';
 import { FolderModule } from './modules/folder/folder.module';
 import { SceneModule } from './modules/scene/scene.module';
 import { ScriptModule } from './modules/script/script.module';
+import { AssetCatalogModule } from './modules/asset-catalog/asset-catalog.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ScriptModule } from './modules/script/script.module';
     FolderModule,
     SceneModule,
     ScriptModule,
+    AssetCatalogModule,
     WinstonModule.forRoot({
       transports: winstonLogger.transports,
       format: winstonLogger.format,
