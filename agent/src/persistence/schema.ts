@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS session_attachments (
 );
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), objective TEXT NOT NULL,
-  status TEXT NOT NULL, started_at TEXT, finished_at TEXT, error_json TEXT, created_at TEXT NOT NULL
+  status TEXT NOT NULL, started_at TEXT, finished_at TEXT, error_json TEXT,
+  expected_accepted_artifact_id TEXT, expected_accepted_version INTEGER, expected_accepted_fingerprint TEXT,
+  created_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_run_per_session
   ON runs(session_id) WHERE status IN ('queued','running');

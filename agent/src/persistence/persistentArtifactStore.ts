@@ -24,8 +24,13 @@ function toArtifactInput(artifact: Artifact): ArtifactInput {
 
 export class PersistentArtifactStore implements ArtifactRepository {
   readonly #memory = new ArtifactStore()
+  readonly #createdInRun = new Set<string>()
 
-  constructor(readonly sessionId: string, readonly repository: ArtifactRepositorySqlite) {
+  constructor(
+    readonly sessionId: string,
+    readonly repository: ArtifactRepositorySqlite,
+    readonly runId?: string,
+  ) {
     this.#memory.createMany(repository.listLedger(sessionId).map(toArtifactInput))
   }
 
@@ -38,6 +43,7 @@ export class PersistentArtifactStore implements ArtifactRepository {
 
   createMany(inputs: readonly ArtifactInput[]): Artifact[] {
     const created = this.#memory.createMany(inputs)
+    if (this.runId) for (const artifact of created) this.#createdInRun.add(artifact.id)
     this.persist()
     return created
   }
@@ -53,6 +59,13 @@ export class PersistentArtifactStore implements ArtifactRepository {
   }
 
   private persist(): void {
-    this.repository.replaceLedger(this.sessionId, this.#memory.list(undefined, { includeSuperseded: true }))
+    const provenance = this.runId
+      ? new Map([...this.#createdInRun].map(artifactId => [artifactId, this.runId!]))
+      : new Map<string, string>()
+    this.repository.replaceLedger(
+      this.sessionId,
+      this.#memory.list(undefined, { includeSuperseded: true }),
+      provenance,
+    )
   }
 }

@@ -73,7 +73,7 @@ test('approve invokes accept_event_plan with a trusted exact binding', async () 
     method: 'POST', url: `/sessions/${f.sessionId}/reviews/${f.review.id}/approve`, headers: bearer(),
     payload: { artifactId: f.draft.id, version: 1, fingerprint: f.review.fingerprint },
   })
-  assert.equal(response.statusCode, 202)
+  assert.equal(response.statusCode, 202, response.body)
   const accepted = f.repositories.artifacts.list(f.sessionId).find(item => item.type === EVENT_PLAN_ACCEPTED_ARTIFACT)
   assert.equal(accepted?.createdBy, 'user')
   assert.equal(accepted?.metadata?.confirmationId, `review:${f.review.id}:user-1`)
@@ -120,6 +120,81 @@ test('reject resolves only the exact tuple and preserves the draft', async () =>
   assert.deepEqual(response.json(), { reviewId: f.review.id, status: 'rejected' })
   assert.equal(f.repositories.artifacts.get(f.sessionId, f.draft.id)?.superseded, false)
   assert.equal(f.repositories.sessions.get(f.sessionId)?.status, 'completed')
+  await f.app.close()
+  f.database.close()
+})
+
+test('concurrent approve and reject leave only the winning decision effects', async () => {
+  const f = await fixture()
+  const tuple = { artifactId: f.draft.id, version: 1, fingerprint: f.review.fingerprint }
+  const [approval, rejection] = await Promise.all([
+    f.app.inject({
+      method: 'POST', url: `/sessions/${f.sessionId}/reviews/${f.review.id}/approve`, headers: bearer(), payload: tuple,
+    }),
+    f.app.inject({
+      method: 'POST', url: `/sessions/${f.sessionId}/reviews/${f.review.id}/reject`, headers: bearer(),
+      payload: { ...tuple, reason: 'race' },
+    }),
+  ])
+  assert.equal([approval.statusCode, rejection.statusCode].filter(status => status >= 200 && status < 300).length, 1)
+  assert.equal([approval.statusCode, rejection.statusCode].filter(status => status === 409).length, 1)
+  const review = f.repositories.reviews.get(f.sessionId, f.review.id)!
+  const accepted = f.repositories.artifacts.list(f.sessionId).filter(item => item.type === EVENT_PLAN_ACCEPTED_ARTIFACT)
+  const runCount = Number(f.repositories.database.prepare('SELECT COUNT(*) AS count FROM runs WHERE session_id = ?').get([f.sessionId])!.count)
+  const resolved = f.repositories.events.after(f.sessionId, '0').filter(event => event.type === 'review.resolved')
+  assert.equal(resolved.length, 1)
+  assert.equal(accepted.length, review.status === 'approved' ? 1 : 0)
+  assert.equal(runCount, review.status === 'approved' ? 1 : 0)
+  await f.app.close()
+  f.database.close()
+})
+
+test('concurrent revisions cannot mint the same next version', async () => {
+  const f = await fixture()
+  const request = {
+    method: 'POST' as const,
+    url: `/sessions/${f.sessionId}/event-plans/${f.draft.id}/revisions`,
+    headers: bearer(),
+    payload: { baseArtifactId: f.draft.id, eventUnits: [...f.plan.eventUnits].reverse() },
+  }
+  const responses = await Promise.all([f.app.inject(request), f.app.inject(request)])
+  assert.equal(responses.filter(response => response.statusCode === 201).length, 1)
+  assert.equal(responses.filter(response => [404, 409].includes(response.statusCode)).length, 1)
+  const versions = f.repositories.artifacts.list(f.sessionId)
+    .filter(item => item.type === EVENT_PLAN_DRAFT_ARTIFACT).map(item => item.version)
+  assert.equal(versions.filter(version => version === 2).length, 1)
+  await f.app.close()
+  f.database.close()
+})
+
+test('approval rolls back accepted artifact, event, and decision when queued run creation fails', async () => {
+  const f = await fixture()
+  f.repositories.runs.createQueued = () => { throw new Error('INJECTED_RUN_CREATE_FAILURE') }
+  const response = await f.app.inject({
+    method: 'POST', url: `/sessions/${f.sessionId}/reviews/${f.review.id}/approve`, headers: bearer(),
+    payload: { artifactId: f.draft.id, version: 1, fingerprint: f.review.fingerprint },
+  })
+  assert.equal(response.statusCode, 500)
+  assert.equal(f.repositories.reviews.get(f.sessionId, f.review.id)?.status, 'pending')
+  assert.equal(f.repositories.artifacts.list(f.sessionId).some(item => item.type === EVENT_PLAN_ACCEPTED_ARTIFACT), false)
+  assert.equal(f.repositories.events.after(f.sessionId, '0').some(event => event.type === 'review.resolved'), false)
+  assert.equal(Number(f.repositories.database.prepare('SELECT COUNT(*) AS count FROM runs').get()!.count), 0)
+  await f.app.close()
+  f.database.close()
+})
+
+test('revision rolls back its artifact and old review mutation when pending review creation fails', async () => {
+  const f = await fixture()
+  f.repositories.reviews.createPending = () => { throw new Error('INJECTED_REVIEW_CREATE_FAILURE') }
+  const response = await f.app.inject({
+    method: 'POST', url: `/sessions/${f.sessionId}/event-plans/${f.draft.id}/revisions`, headers: bearer(),
+    payload: { baseArtifactId: f.draft.id, eventUnits: [...f.plan.eventUnits].reverse() },
+  })
+  assert.equal(response.statusCode, 500)
+  assert.equal(f.repositories.reviews.get(f.sessionId, f.review.id)?.status, 'pending')
+  assert.deepEqual(f.repositories.artifacts.listLedger(f.sessionId)
+    .filter(item => item.type === EVENT_PLAN_DRAFT_ARTIFACT).map(item => item.version), [1])
+  assert.equal(f.repositories.events.after(f.sessionId, '0').some(event => event.type === 'review.requested'), false)
   await f.app.close()
   f.database.close()
 })

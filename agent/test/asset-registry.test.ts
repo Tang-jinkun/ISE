@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { ArtifactStore, DomainStateStore, type AgentContext } from '@ise/agent-core'
 import {
@@ -85,6 +86,35 @@ test('shared manifest projection strips paths and computes a stable version', ()
   assert.equal(first.registryVersion, second.registryVersion)
   assert.equal(JSON.stringify(first).includes('sourceRelativePath'), false)
   assert.equal(JSON.stringify(first).includes('objectName'), false)
+})
+
+test('storage-less public catalog entries cross the Nest boundary without leaking access fields', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/public-asset-catalog.json', import.meta.url), 'utf8'))
+  const registry = createAssetRegistrySnapshot(fixture)
+  assert.deepEqual(registry.assets.map(asset => asset.assetId), ['model:jf17'])
+  assert.equal(/sourceRelativePath|objectName|url|token/i.test(JSON.stringify(registry)), false)
+})
+
+test('fallback resolution exhausts declared branches and reports failure from the root asset', () => {
+  const registry = new AssetRegistry(snapshot([
+    imageEntry('image:root', {
+      availability: 'missing', criticality: 'required', allowFallback: true,
+      fallbackAssetIds: ['image:missing', 'image:available'],
+    }),
+    imageEntry('image:missing', { availability: 'missing', criticality: 'required' }),
+    imageEntry('image:available'),
+  ]))
+  assert.equal(registry.resolve('image:root')?.assetId, 'image:available')
+
+  const unavailable = new AssetRegistry(snapshot([
+    imageEntry('image:optional-root', {
+      availability: 'missing', criticality: 'optional', allowFallback: true,
+      fallbackAssetIds: ['image:required-missing'],
+    }),
+    imageEntry('image:required-missing', { availability: 'missing', criticality: 'required' }),
+  ]))
+  assert.equal(unavailable.resolve('image:optional-root'), undefined)
+  assert.ok(unavailable.diagnostics.some(item => item.code === 'OPTIONAL_ASSET_UNAVAILABLE' && item.assetId === 'image:optional-root'))
 })
 
 test('fallback cycles and kind mismatches are rejected by the snapshot schema', () => {

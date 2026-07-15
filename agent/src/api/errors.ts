@@ -19,5 +19,5 @@ export function agentError(status: number, code: string, message = code, details
 export function mapAgentError(error: unknown): AgentServiceError {
   if (error instanceof AgentServiceError) return error
   if (error instanceof z.ZodError) return agentError(400, 'INVALID_REQUEST', 'Request validation failed', error.issues)
-  return agentError(500, 'INTERNAL_ERROR', error instanceof Error ? error.message : 'Internal error')
+  return agentError(500, 'INTERNAL_ERROR', 'Internal server error')
 }

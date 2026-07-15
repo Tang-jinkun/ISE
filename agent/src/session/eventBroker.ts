@@ -1,4 +1,4 @@
-import { EventEmitter, once } from 'node:events'
+import { EventEmitter } from 'node:events'
 import type { Writable } from 'node:stream'
 import type { AgentEventEnvelope, PublicAgentEventType } from '../api/contracts.ts'
 import type { EventRepository, EventRecord } from '../persistence/repositories.ts'
@@ -58,9 +58,22 @@ export class EventBroker {
     type: PublicAgentEventType,
     data: Record<string, unknown>,
   ): AgentEventEnvelope {
-    const event = toEnvelope(this.events.append(sessionId, runId, type, data))
-    this.#emitter.emit(sessionId, event)
+    const event = this.record(sessionId, runId, type, data)
+    this.publish(sessionId, event)
     return event
+  }
+
+  record(
+    sessionId: string,
+    runId: string | undefined,
+    type: PublicAgentEventType,
+    data: Record<string, unknown>,
+  ): AgentEventEnvelope {
+    return toEnvelope(this.events.append(sessionId, runId, type, data))
+  }
+
+  publish(sessionId: string, event: AgentEventEnvelope): void {
+    this.#emitter.emit(sessionId, event)
   }
 
   replayAfter(sessionId: string, lastEventId: string): AgentEventEnvelope[] {
@@ -105,6 +118,29 @@ export async function writeSseSession(
 ): Promise<void> {
   for await (const event of events) {
     if (signal?.aborted || stream.destroyed) break
-    if (!stream.write(formatSse(event))) await once(stream, 'drain')
+    if (!stream.write(formatSse(event)) && !(await waitForDrain(stream, signal))) break
   }
+}
+
+function waitForDrain(stream: Writable, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted || stream.destroyed) return Promise.resolve(false)
+  return new Promise(resolve => {
+    const cleanup = () => {
+      stream.off('drain', onDrain)
+      stream.off('close', onEnd)
+      stream.off('error', onEnd)
+      signal?.removeEventListener('abort', onEnd)
+    }
+    const finish = (drained: boolean) => {
+      cleanup()
+      resolve(drained)
+    }
+    const onDrain = () => finish(true)
+    const onEnd = () => finish(false)
+    stream.once('drain', onDrain)
+    stream.once('close', onEnd)
+    stream.once('error', onEnd)
+    signal?.addEventListener('abort', onEnd, { once: true })
+    if (signal?.aborted || stream.destroyed) onEnd()
+  })
 }

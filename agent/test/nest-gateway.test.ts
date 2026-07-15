@@ -36,6 +36,14 @@ function sequenceFetch(...responses: Response[]): typeof fetch {
   }) as typeof fetch
 }
 
+async function rejectsAsBridge(work: Promise<unknown>): Promise<void> {
+  await assert.rejects(work, (error: unknown) =>
+    error instanceof Error
+    && error.message === 'Agent bridge error'
+    && 'status' in error && error.status === 502
+    && 'code' in error && error.code === 'NEST_BRIDGE_FAILED')
+}
+
 test('file bridge checks header and byte fingerprints', async () => {
   const bytes = Buffer.from('PK\u0003\u0004docx')
   const gateway = new FetchNestGateway({
@@ -55,8 +63,7 @@ test('file bridge rejects a fingerprint header that differs from bytes', async (
     baseUrl: 'http://nest.test',
     fetch: sequenceFetch(fileResponse(bytes, `sha256:${'0'.repeat(64)}`)),
   })
-  await assert.rejects(gateway.readOwnedFile('file-1', 'Bearer token'), (error: unknown) =>
-    error instanceof Error && error.message.includes('ATTACHMENT_FINGERPRINT_MISMATCH'))
+  await rejectsAsBridge(gateway.readOwnedFile('file-1', 'Bearer token'))
 })
 
 test('gateway rejects non-opaque ids, redirects, and invalid DOCX identity', async () => {
@@ -69,14 +76,37 @@ test('gateway rejects non-opaque ids, redirects, and invalid DOCX identity', asy
 
   const bytes = Buffer.from('not-a-zip')
   const invalid = new FetchNestGateway({ baseUrl: 'http://nest.test', fetch: sequenceFetch(fileResponse(bytes)) })
-  await assert.rejects(invalid.readOwnedFile('file-1', 'Bearer token'), /ATTACHMENT_MAGIC_MISMATCH/)
+  await rejectsAsBridge(invalid.readOwnedFile('file-1', 'Bearer token'))
 })
 
 test('asset catalog returns only the nested Nest data payload', async () => {
-  const assets = [{ assetId: 'model:jf17' }]
+  const assets = [{
+    assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [],
+    fingerprint: `sha256:${'1'.repeat(64)}`, size: 10, mediaType: 'model/gltf-binary',
+    availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+    model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+  }]
   const gateway = new FetchNestGateway({
     baseUrl: 'http://nest.test',
     fetch: sequenceFetch(jsonResponse({ code: 200, data: assets, msg: 'ok', timestamp: 1 })),
   })
   assert.deepEqual(await gateway.listAssetMetadata('Bearer token'), assets)
+})
+
+test('malformed auth JSON and failed catalog envelopes map to one bridge error', async () => {
+  const gateway = new FetchNestGateway({
+    baseUrl: 'http://nest.test',
+    fetch: sequenceFetch(
+      new Response('{not-json', { headers: { 'content-type': 'application/json' } }),
+      jsonResponse({ code: 500, data: [], msg: 'provider body with token' }),
+    ),
+  })
+  await rejectsAsBridge(gateway.verifyBearer('Bearer token'))
+  await rejectsAsBridge(gateway.listAssetMetadata('Bearer token'))
+})
+
+test('malformed successful file responses map to the same bridge error', async () => {
+  const bytes = Buffer.from('not-a-docx')
+  const gateway = new FetchNestGateway({ baseUrl: 'http://nest.test', fetch: sequenceFetch(fileResponse(bytes)) })
+  await rejectsAsBridge(gateway.readOwnedFile('file-1', 'Bearer token'))
 })

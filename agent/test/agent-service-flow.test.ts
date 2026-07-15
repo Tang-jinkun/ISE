@@ -9,6 +9,8 @@ import type { ReviewTuple } from '../src/api/contracts.ts'
 import {
   COMPILED_RUNTIME_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
+  EVENT_PLAN_DRAFT_ARTIFACT,
+  NARRATIVE_PLAN_ARTIFACT,
   type CompiledRuntimeArtifactData,
 } from '../src/contracts/artifactTypes.ts'
 import type { EventPlan } from '../src/contracts/eventPlan.ts'
@@ -16,7 +18,7 @@ import { AgentDatabase } from '../src/persistence/database.ts'
 import { PersistentArtifactStore } from '../src/persistence/persistentArtifactStore.ts'
 import { AgentRepositories } from '../src/persistence/repositories.ts'
 import { parseBattleReport } from '../src/services/documentParser.ts'
-import { sha256 } from '../src/services/fingerprint.ts'
+import { fingerprint, sha256 } from '../src/services/fingerprint.ts'
 
 const hash = `sha256:${'2'.repeat(64)}`
 
@@ -170,11 +172,94 @@ test('DOCX to revision to exact approval to compiled scene survives event reconn
   })
   assert.equal(approval.statusCode, 202)
   const completed = await waitForEvent(f.repositories, flow.sessionId, 'run.completed', flow.requested.id, approval.json().runId)
+  const downstreamRun = f.repositories.runs.get(approval.json().runId)!
+  assert.equal(downstreamRun.expectedAccepted?.artifactId, (f.repositories.artifacts.listLedger(flow.sessionId)
+    .find(item => item.type === EVENT_PLAN_ACCEPTED_ARTIFACT && !item.superseded))?.id)
+  assert.ok(f.repositories.artifacts.listByRun(flow.sessionId, downstreamRun.id)
+    .some(item => item.type === COMPILED_RUNTIME_ARTIFACT))
   assert.deepEqual(sceneProjectConfigSchema.parse(completed.data.sceneProjectConfig), completed.data.sceneProjectConfig)
   const compiled = f.repositories.artifacts.get(flow.sessionId, completed.data.runtimeArtifactId as string)!
   assert.deepEqual((compiled.data as CompiledRuntimeArtifactData).sceneProjectConfig, completed.data.sceneProjectConfig)
   assert.equal(JSON.stringify(compiled).includes('https://'), false)
   assert.ok(f.repositories.events.after(flow.sessionId, flow.requested.id).every(event => BigInt(event.id) > BigInt(flow.requested.id)))
+  await f.app.close()
+  f.database.close()
+})
+
+test('draft review observer failure cannot leave a completed run with a running session', async () => {
+  const f = await service()
+  f.repositories.reviews.createPending = () => { throw new Error('INJECTED_REVIEW_OBSERVER_FAILURE') }
+  const created = await f.app.inject({ method: 'POST', url: '/sessions', headers, payload: {} })
+  const sessionId = created.json().sessionId as string
+  await f.app.inject({ method: 'POST', url: `/sessions/${sessionId}/attachments`, headers, payload: { fileId: 'file-report-1' } })
+  const queued = await f.app.inject({
+    method: 'POST', url: `/sessions/${sessionId}/messages`, headers, payload: { content: 'Parse report and propose EventPlan' },
+  })
+  const failed = await waitForEvent(f.repositories, sessionId, 'run.failed', '0', queued.json().runId)
+  assert.equal(failed.data.status, 'failed')
+  assert.equal(f.repositories.runs.get(queued.json().runId)?.status, 'failed')
+  assert.equal(f.repositories.sessions.get(sessionId)?.status, 'failed')
+  assert.equal(f.repositories.reviews.listPending(sessionId).length, 0)
+  assert.equal(f.repositories.events.after(sessionId, '0').some(event => event.type === 'review.requested'), false)
+  await f.app.close()
+  f.database.close()
+})
+
+test('a second approval compiles only artifacts created for its accepted tuple', async () => {
+  const f = await service()
+  const flow = await draftAndRevise(f)
+  const firstApproval = await f.app.inject({
+    method: 'POST', url: `/sessions/${flow.sessionId}/reviews/${flow.revision.review.reviewId}/approve`, headers,
+    payload: {
+      artifactId: flow.revision.review.artifactId,
+      version: flow.revision.review.version,
+      fingerprint: flow.revision.review.fingerprint,
+    },
+  })
+  await waitForEvent(f.repositories, flow.sessionId, 'run.completed', '0', firstApproval.json().runId)
+
+  const priorNarrativeIds = new Set(f.repositories.artifacts.listLedger(flow.sessionId)
+    .filter(item => item.type === NARRATIVE_PLAN_ARTIFACT).map(item => item.id))
+  const activeDraft = f.repositories.artifacts.listLedger(flow.sessionId)
+    .find(item => item.type === EVENT_PLAN_DRAFT_ARTIFACT && !item.superseded)!
+  const priorPlan = activeDraft.data as EventPlan
+  const nextPlan = { ...priorPlan, version: priorPlan.version + 1, eventUnits: [...priorPlan.eventUnits].reverse() }
+  const nextFingerprint = fingerprint(nextPlan)
+  const nextDraft = new PersistentArtifactStore(flow.sessionId, f.repositories.artifacts).create({
+    type: EVENT_PLAN_DRAFT_ARTIFACT,
+    version: nextPlan.version,
+    createdBy: 'agent',
+    logicalKey: activeDraft.logicalKey,
+    data: nextPlan,
+    metadata: {
+      planId: nextPlan.planId,
+      documentId: nextPlan.documentId,
+      version: nextPlan.version,
+      fingerprint: nextFingerprint,
+      status: 'draft',
+    },
+  })
+  const nextReview = f.repositories.reviews.createPending({
+    sessionId: flow.sessionId,
+    artifactId: nextDraft.id,
+    artifactVersion: nextPlan.version,
+    fingerprint: nextFingerprint,
+  })
+  f.repositories.sessions.transition(flow.sessionId, ['completed'], 'awaiting_review')
+  const secondApproval = await f.app.inject({
+    method: 'POST', url: `/sessions/${flow.sessionId}/reviews/${nextReview.id}/approve`, headers,
+    payload: { artifactId: nextDraft.id, version: nextPlan.version, fingerprint: nextFingerprint },
+  })
+  const completed = await waitForEvent(f.repositories, flow.sessionId, 'run.completed', '0', secondApproval.json().runId)
+  const secondRun = f.repositories.runs.get(secondApproval.json().runId)!
+  const accepted = f.repositories.artifacts.get(flow.sessionId, secondRun.expectedAccepted!.artifactId)!
+  assert.equal(accepted.version, nextPlan.version)
+  const createdBySecondRun = f.repositories.artifacts.listByRun(flow.sessionId, secondRun.id)
+  const narrative = createdBySecondRun.find(item => item.type === NARRATIVE_PLAN_ARTIFACT)!
+  assert.equal((narrative.data as { sourceEventPlan: { artifactId: string } }).sourceEventPlan.artifactId, accepted.id)
+  assert.equal(priorNarrativeIds.has(narrative.id), false)
+  const compiled = f.repositories.artifacts.get(flow.sessionId, completed.data.runtimeArtifactId as string)!
+  assert.equal(compiled.metadata?.eventPlanArtifactId, accepted.id)
   await f.app.close()
   f.database.close()
 })

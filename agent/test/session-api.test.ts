@@ -5,6 +5,13 @@ import type { AuthorizedFile, NestGateway } from '../src/adapters/nestGateway.ts
 import { createHttpApp } from '../src/api/httpApp.ts'
 import { AgentDatabase } from '../src/persistence/database.ts'
 import { AgentRepositories } from '../src/persistence/repositories.ts'
+import { PersistentArtifactStore } from '../src/persistence/persistentArtifactStore.ts'
+import {
+  COMPILED_RUNTIME_ARTIFACT,
+  EVENT_PLAN_ACCEPTED_ARTIFACT,
+  NARRATIVE_PLAN_ARTIFACT,
+} from '../src/contracts/artifactTypes.ts'
+import { fingerprint } from '../src/services/fingerprint.ts'
 
 class TestNestGateway implements NestGateway {
   readonly file: AuthorizedFile = {
@@ -54,6 +61,49 @@ async function createSession(app: Awaited<ReturnType<typeof createHttpApp>>, sub
   const response = await app.inject({ method: 'POST', url: '/sessions', headers: bearer(subject), payload: {} })
   assert.equal(response.statusCode, 201)
   return response.json().sessionId as string
+}
+
+async function waitForTerminal(repositories: AgentRepositories, sessionId: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if (!['queued', 'running'].includes(repositories.sessions.get(sessionId)?.status ?? '')) return
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  throw new Error('Timed out waiting for terminal session')
+}
+
+function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
+  const store = new PersistentArtifactStore(sessionId, repositories.artifacts)
+  const eventPlan = {
+    schemaVersion: 'event-plan/v1' as const, planId: 'old-plan', documentId: 'old-document', version: 1,
+    eventUnits: [{
+      eventUnitId: 'old-unit', title: 'Old event', worldStateChange: 'Old state', participants: ['Old aircraft'],
+      locationRefs: [], evidenceRefs: ['old-evidence'], inferenceRefs: [], uncertainties: [],
+      narrativePurpose: 'Old narrative', importance: 'low' as const,
+    }],
+    omittedEvidence: [], warnings: [],
+  }
+  const hash = fingerprint(eventPlan)
+  store.create({
+    id: 'old-accepted', type: EVENT_PLAN_ACCEPTED_ARTIFACT, version: 1, createdBy: 'user',
+    logicalKey: 'accepted-event-plan:old-plan', data: eventPlan,
+    metadata: { planId: 'old-plan', documentId: 'old-document', version: 1, fingerprint: hash, status: 'accepted' },
+  })
+  store.create({
+    id: 'old-narrative', type: NARRATIVE_PLAN_ARTIFACT, createdBy: 'agent',
+    logicalKey: 'narrative-plan:old-accepted',
+    data: {
+      schemaVersion: 'narrative-plan/v1', narrativePlanId: 'old-narrative-plan',
+      sourceEventPlan: { artifactId: 'old-accepted', planId: 'old-plan', version: 1, fingerprint: hash },
+      targetDurationMs: 180_000,
+      subtitles: [{ subtitleId: 'old-subtitle', eventUnitId: 'old-unit', text: 'Old state', evidenceRefs: ['old-evidence'], importance: 'low' }],
+      sceneRequirements: [{
+        requirementId: 'old-requirement', eventUnitId: 'old-unit', focusEntities: ['Old aircraft'], spatialRelations: [],
+        stateChanges: ['status'], motionRequirements: [], attentionRequirements: [], requiredFacts: ['Old state'],
+        forbiddenClaims: [], preferredTemplate: 'status_explanation',
+      }],
+    },
+  })
 }
 
 test('create session returns only sessionId and idle status', async () => {
@@ -135,4 +185,28 @@ test('Last-Event-ID accepts decimal integers only', async () => {
   assert.equal(response.statusCode, 400)
   await app.close()
   database.close()
+})
+
+test('ordinary and failed runs never compile a NarrativePlan left by an older run', async () => {
+  for (const model of [
+    { complete: async () => ({ content: 'ordinary response' }) },
+    { complete: async () => { throw new Error('C:\\private\\prompt.json Bearer top-secret provider body') } },
+  ] satisfies ModelAdapter[]) {
+    const { app, database, repositories } = await fixture(model)
+    const sessionId = await createSession(app)
+    seedOldNarrative(repositories, sessionId)
+    await app.inject({
+      method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'), payload: { content: 'ordinary message' },
+    })
+    await waitForTerminal(repositories, sessionId)
+    assert.equal(repositories.artifacts.list(sessionId).some(item => item.type === COMPILED_RUNTIME_ARTIFACT), false)
+    assert.equal(repositories.events.after(sessionId, '0').some(event =>
+      event.type === 'run.completed' && typeof event.data.runtimeArtifactId === 'string'), false)
+    const persistedFailure = repositories.runs.get(repositories.sessions.get(sessionId)?.activeRunId ?? '')?.error
+    assert.equal(/private|prompt\.json|Bearer|top-secret|provider body/i.test(JSON.stringify({
+      events: repositories.events.after(sessionId, '0'), persistedFailure,
+    })), false)
+    await app.close()
+    database.close()
+  }
 })

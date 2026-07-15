@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { publicAssetCatalogEntrySchema } from '@ise/runtime-contracts'
 import { z } from 'zod'
 import { agentError } from '../api/errors.ts'
 
@@ -13,7 +14,10 @@ const nestUserResponseSchema = z.object({
   msg: z.string().optional(),
   timestamp: z.union([z.number(), z.string()]).optional(),
 }).passthrough()
-const nestUnknownResponseSchema = z.object({ data: z.unknown() }).passthrough()
+const nestCatalogResponseSchema = z.object({
+  code: z.number(),
+  data: z.array(publicAssetCatalogEntrySchema),
+}).passthrough()
 
 export interface AuthorizedFile {
   fileId: string
@@ -32,6 +36,21 @@ export interface NestGateway {
 
 function ensureAuthorization(value: string): void {
   if (!/^Bearer\s+\S+$/.test(value)) throw agentError(401, 'INVALID_BEARER')
+}
+
+function bridgeError(): ReturnType<typeof agentError> {
+  return agentError(502, 'NEST_BRIDGE_FAILED', 'Agent bridge error')
+}
+
+async function parseSuccessEnvelope<T>(response: Response, schema: z.ZodType<T>): Promise<T> {
+  try {
+    const body = schema.parse(await response.json())
+    const code = (body as { code?: unknown }).code
+    if (typeof code !== 'number' || code < 200 || code >= 300) throw bridgeError()
+    return body
+  } catch {
+    throw bridgeError()
+  }
 }
 
 function ensureHttpOrigin(value: string): URL {
@@ -118,28 +137,32 @@ export class FetchNestGateway implements NestGateway {
 
   async verifyBearer(authorization: string): Promise<{ subject: string }> {
     const response = await this.request('/auth/getUserInfo', authorization)
-    const body = nestUserResponseSchema.parse(await response.json())
+    const body = await parseSuccessEnvelope(response, nestUserResponseSchema)
     return { subject: body.data.id }
   }
 
   async readOwnedFile(fileId: string, authorization: string): Promise<AuthorizedFile> {
     assertOpaqueId(fileId)
     const response = await this.request(`/file/${encodeURIComponent(fileId)}/content`, authorization)
-    const declaredSize = parseBoundedContentLength(response.headers.get('content-length'))
-    const bytes = Buffer.from(await response.arrayBuffer())
-    if (bytes.length !== declaredSize) throw agentError(415, 'ATTACHMENT_SIZE_MISMATCH')
-    return validateDocxIdentity({
-      fileId,
-      name: parseAttachmentFilename(response.headers.get('content-disposition')),
-      mimeType: response.headers.get('content-type') ?? '',
-      headerFingerprint: response.headers.get('x-content-sha256') ?? '',
-      bytes,
-    })
+    try {
+      const declaredSize = parseBoundedContentLength(response.headers.get('content-length'))
+      const bytes = Buffer.from(await response.arrayBuffer())
+      if (bytes.length !== declaredSize) throw bridgeError()
+      return validateDocxIdentity({
+        fileId,
+        name: parseAttachmentFilename(response.headers.get('content-disposition')),
+        mimeType: response.headers.get('content-type') ?? '',
+        headerFingerprint: response.headers.get('x-content-sha256') ?? '',
+        bytes,
+      })
+    } catch {
+      throw bridgeError()
+    }
   }
 
   async listAssetMetadata(authorization: string): Promise<unknown> {
     const response = await this.request('/asset-catalog', authorization)
-    return nestUnknownResponseSchema.parse(await response.json()).data
+    return (await parseSuccessEnvelope(response, nestCatalogResponseSchema)).data
   }
 
   private async request(path: string, authorization: string): Promise<Response> {
@@ -154,7 +177,7 @@ export class FetchNestGateway implements NestGateway {
         signal: AbortSignal.timeout(10_000),
       })
     } catch (error) {
-      throw agentError(502, 'NEST_BRIDGE_FAILED', 'Nest bridge request failed', error)
+      throw bridgeError()
     }
     if (response.status >= 300 && response.status < 400) throw agentError(502, 'NEST_REDIRECT_REJECTED')
     if (response.status === 401 || response.status === 403) throw agentError(401, 'INVALID_BEARER')

@@ -4,7 +4,7 @@ import type { SkillRegistry } from '@ise/skills-core'
 import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { QueuedRunResponse } from '../api/contracts.ts'
 import { agentError } from '../api/errors.ts'
-import { EVENT_PLAN_DRAFT_ARTIFACT } from '../contracts/artifactTypes.ts'
+import { EVENT_PLAN_ACCEPTED_ARTIFACT, EVENT_PLAN_DRAFT_ARTIFACT } from '../contracts/artifactTypes.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
@@ -18,10 +18,12 @@ import { IseAgentHost } from '../runtime/IseAgentHost.ts'
 import { createSessionToolRegistry } from '../runtime/toolAssembly.ts'
 import { createAssetRegistrySnapshot } from '../services/assetRegistry.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
+import { publicFailureCode, publicFailureDiagnostics, publicFailureMessage } from '../services/publicFailures.ts'
 import { createCompilerTools } from '../tools/compilerTools.ts'
 import { capabilityManifest } from '../compiler/capabilityManifest.ts'
 import { assetRegistrySnapshotSchema } from '../contracts/assetRegistry.ts'
 import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
+import { eventPlanSchema } from '../contracts/eventPlan.ts'
 import { EventBroker } from './eventBroker.ts'
 import { PublicEventSink } from './publicEventSink.ts'
 import { SessionAttachmentReader } from './sessionAttachmentReader.ts'
@@ -79,17 +81,35 @@ export class SessionAgentRunner {
     authorization: string
     acceptedArtifactId: string
   }): QueuedRunResponse {
-    const run = this.options.repositories.transaction(() => {
-      this.options.repositories.sessions.requireOwned(input.sessionId, input.subject)
-      const created = this.options.repositories.runs.createQueued(
-        input.sessionId,
-        `Create exactly one grounded NarrativePlan for accepted EventPlan artifact ${input.acceptedArtifactId} through propose_scene_plan, then stop.`,
-      )
-      this.options.repositories.sessions.transition(input.sessionId, ['awaiting_review'], 'queued', created.id)
-      return created
-    })
-    queueMicrotask(() => void this.execute(run.id, input.authorization))
+    const run = this.options.repositories.transaction(() => this.createAfterApproval(input))
+    this.startQueued(run.id, input.authorization)
     return { runId: run.id, status: 'queued' }
+  }
+
+  createAfterApproval(input: {
+    sessionId: string
+    subject: string
+    acceptedArtifactId: string
+  }): RunRecord {
+    this.options.repositories.sessions.requireOwned(input.sessionId, input.subject)
+    const accepted = this.options.repositories.artifacts.get(input.sessionId, input.acceptedArtifactId)
+    if (!accepted || accepted.type !== EVENT_PLAN_ACCEPTED_ARTIFACT || accepted.superseded) {
+      throw agentError(409, 'ACCEPTED_EVENT_PLAN_NOT_FOUND')
+    }
+    const plan = eventPlanSchema.parse(accepted.data)
+    const acceptedFingerprint = accepted.metadata?.fingerprint
+    if (typeof acceptedFingerprint !== 'string') throw agentError(409, 'ACCEPTED_EVENT_PLAN_INVALID')
+    const created = this.options.repositories.runs.createQueued(
+      input.sessionId,
+      `Create exactly one grounded NarrativePlan for accepted EventPlan artifact ${input.acceptedArtifactId} through propose_scene_plan, then stop.`,
+      { artifactId: accepted.id, version: plan.version, fingerprint: acceptedFingerprint },
+    )
+    this.options.repositories.sessions.transition(input.sessionId, ['awaiting_review'], 'queued', created.id)
+    return created
+  }
+
+  startQueued(runId: string, authorization: string): void {
+    queueMicrotask(() => void this.execute(runId, authorization))
   }
 
   interrupt(sessionId: string, subject: string): { runId: string; status: 'cancelled' } {
@@ -122,7 +142,7 @@ export class SessionAgentRunner {
       if (current.status === 'queued') {
         this.options.repositories.sessions.transition(run.sessionId, ['queued'], 'running', run.id)
       }
-      const artifacts = new PersistentArtifactStore(run.sessionId, this.options.repositories.artifacts)
+      const artifacts = new PersistentArtifactStore(run.sessionId, this.options.repositories.artifacts, run.id)
       const result = await new IseAgentHost({
         model: this.options.modelFactory(run.sessionId),
         tools: createSessionToolRegistry({
@@ -149,11 +169,21 @@ export class SessionAgentRunner {
         eventSink: new PublicEventSink(run.sessionId, this.events, run.id),
         signal: controller.signal,
       }).run(run.objective)
-      const narrative = result.artifacts.find(artifact => artifact.type === NARRATIVE_PLAN_ARTIFACT)
+      if (result.goal.status !== 'completed') {
+        await this.finishFromThrownError(run.id, new Error(result.goal.remainingIssues.join('; ') || 'Agent run failed'), false)
+        return
+      }
+      const runArtifacts = this.options.repositories.artifacts.listByRun(run.sessionId, run.id)
+        .filter(artifact => !artifact.superseded)
+      this.assertExpectedAccepted(run)
+      const narrative = this.currentNarrative(run, runArtifacts)
       const compiled = narrative
         ? await this.compileNarrative(run, authorization, artifacts, narrative)
-        : result.artifacts.find(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)
-      await this.finishFromResult(run, result, compiled)
+        : this.currentCompiled(run, runArtifacts)
+      const drafts = runArtifacts.filter(artifact => artifact.type === EVENT_PLAN_DRAFT_ARTIFACT)
+      if (drafts.length > 1) throw new CompilationError([diagnostic('RUN_OUTPUT_AMBIGUOUS', EVENT_PLAN_DRAFT_ARTIFACT)])
+      const draft = drafts[0]
+      await this.finishFromResult(run, result, compiled, draft)
     } catch (error) {
       await this.finishFromThrownError(runId, error, controller.signal.aborted)
     } finally {
@@ -161,11 +191,12 @@ export class SessionAgentRunner {
     }
   }
 
-  private async finishFromResult(run: RunRecord, result: AgentRunResult, compiled?: Artifact): Promise<void> {
-    if (result.goal.status !== 'completed') {
-      await this.finishFromThrownError(run.id, new Error(result.goal.remainingIssues.join('; ') || 'Agent run failed'), false)
-      return
-    }
+  private async finishFromResult(
+    run: RunRecord,
+    result: AgentRunResult,
+    compiled?: Artifact,
+    draft?: Artifact,
+  ): Promise<void> {
     const summary = result.turnOutcome?.finalAnswer ?? result.goal.finalSummary
     if (compiled) {
       const data = compiled.data as CompiledRuntimeArtifactData
@@ -183,25 +214,21 @@ export class SessionAgentRunner {
       })
       return
     }
-    const draft = result.artifacts.find(artifact => artifact.type === EVENT_PLAN_DRAFT_ARTIFACT)
     this.options.repositories.transaction(() => {
       if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
       this.options.repositories.runs.finish(run.id, 'completed')
-      if (!draft) this.options.repositories.sessions.transition(run.sessionId, ['running'], 'completed')
+      if (draft && this.#draftObserver) this.#draftObserver({ sessionId: run.sessionId, runId: run.id, draft })
+      else this.options.repositories.sessions.transition(run.sessionId, ['running'], draft ? 'awaiting_review' : 'completed')
     })
-    if (draft) {
-      if (this.#draftObserver) this.#draftObserver({ sessionId: run.sessionId, runId: run.id, draft })
-      else this.options.repositories.sessions.transition(run.sessionId, ['running'], 'awaiting_review')
-    }
   }
 
   private async finishFromThrownError(runId: string, error: unknown, aborted: boolean): Promise<void> {
     const run = this.options.repositories.runs.get(runId)
     if (!run || ['completed', 'failed', 'cancelled'].includes(run.status)) return
     const compilationDiagnostics = error instanceof CompilationError ? error.diagnostics : undefined
-    const code = aborted ? 'RUN_CANCELLED' : compilationDiagnostics?.[0]?.code ?? 'AGENT_RUN_FAILED'
-    const message = error instanceof Error ? error.message : String(error)
-    const diagnostics = compilationDiagnostics ?? [diagnostic(code, message)]
+    const code = publicFailureCode(aborted ? 'RUN_CANCELLED' : compilationDiagnostics?.[0]?.code ?? 'AGENT_RUN_FAILED')
+    const message = publicFailureMessage(code)
+    const diagnostics = publicFailureDiagnostics(compilationDiagnostics ?? [{ code, severity: 'error' }])
     this.options.repositories.transaction(() => {
       this.options.repositories.runs.finish(run.id, aborted ? 'cancelled' : 'failed', { code, message, diagnostics })
       this.options.repositories.sessions.transition(
@@ -223,7 +250,13 @@ export class SessionAgentRunner {
     artifacts: PersistentArtifactStore,
     narrativeArtifact: Artifact,
   ): Promise<Artifact> {
+    if (!run.expectedAccepted) throw new CompilationError([diagnostic('RUN_PROVENANCE_MISSING', run.id)])
     const narrativePlan = narrativePlanSchema.parse(narrativeArtifact.data)
+    if (
+      narrativePlan.sourceEventPlan.artifactId !== run.expectedAccepted.artifactId
+      || narrativePlan.sourceEventPlan.version !== run.expectedAccepted.version
+      || narrativePlan.sourceEventPlan.fingerprint !== run.expectedAccepted.fingerprint
+    ) throw new CompilationError([diagnostic('NARRATIVE_PROVENANCE_MISMATCH', narrativeArtifact.id)])
     const snapshot = createAssetRegistrySnapshot(await this.options.nest.listAssetMetadata(authorization))
     const logicalKey = `asset-registry:${snapshot.registryVersion}`
     let registryArtifact = artifacts.list(ASSET_REGISTRY_ARTIFACT).find(item => item.logicalKey === logicalKey)
@@ -290,6 +323,44 @@ export class SessionAgentRunner {
       artifacts,
       domainState: new PersistentDomainStateStore(run.sessionId, this.options.repositories.sessions),
     }
+  }
+
+  private currentNarrative(run: RunRecord, artifacts: readonly Artifact[]): Artifact | undefined {
+    if (!run.expectedAccepted) return undefined
+    const candidates = artifacts.filter(artifact => artifact.type === NARRATIVE_PLAN_ARTIFACT)
+    if (candidates.length > 1) throw new CompilationError([diagnostic('RUN_OUTPUT_AMBIGUOUS', NARRATIVE_PLAN_ARTIFACT)])
+    const candidate = candidates[0]
+    if (!candidate) return undefined
+    const plan = narrativePlanSchema.parse(candidate.data)
+    if (
+      plan.sourceEventPlan.artifactId !== run.expectedAccepted.artifactId
+      || plan.sourceEventPlan.version !== run.expectedAccepted.version
+      || plan.sourceEventPlan.fingerprint !== run.expectedAccepted.fingerprint
+    ) throw new CompilationError([diagnostic('NARRATIVE_PROVENANCE_MISMATCH', candidate.id)])
+    return candidate
+  }
+
+  private assertExpectedAccepted(run: RunRecord): void {
+    if (!run.expectedAccepted) return
+    const accepted = this.options.repositories.artifacts.get(run.sessionId, run.expectedAccepted.artifactId)
+    if (!accepted || accepted.type !== EVENT_PLAN_ACCEPTED_ARTIFACT) {
+      throw new CompilationError([diagnostic('RUN_PROVENANCE_MISSING', run.id)])
+    }
+    const plan = eventPlanSchema.parse(accepted.data)
+    if (
+      plan.version !== run.expectedAccepted.version
+      || accepted.version !== run.expectedAccepted.version
+      || accepted.metadata?.fingerprint !== run.expectedAccepted.fingerprint
+    ) throw new CompilationError([diagnostic('RUN_PROVENANCE_MISMATCH', run.id)])
+  }
+
+  private currentCompiled(run: RunRecord, artifacts: readonly Artifact[]): Artifact | undefined {
+    if (!run.expectedAccepted) return undefined
+    const candidates = artifacts.filter(artifact =>
+      artifact.type === COMPILED_RUNTIME_ARTIFACT
+      && artifact.metadata?.eventPlanArtifactId === run.expectedAccepted?.artifactId)
+    if (candidates.length > 1) throw new CompilationError([diagnostic('RUN_OUTPUT_AMBIGUOUS', COMPILED_RUNTIME_ARTIFACT)])
+    return candidates[0]
   }
 
   private buildBoundedObjective(sessionId: string, content: string): string {

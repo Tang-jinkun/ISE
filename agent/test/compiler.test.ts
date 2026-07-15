@@ -78,6 +78,10 @@ function assertNoOverlap(items: { startMs: number; durationMs: number }[]) {
   }
 }
 
+function cloneAsset<T extends AssetRegistryEntry>(entry: T, overrides: Partial<T>): T {
+  return { ...entry, ...overrides }
+}
+
 test('subtitle duration uses four Chinese characters per second and a four second floor', () => {
   assert.equal(subtitleDurationMs('短句', 'low'), 4_000)
   assert.equal(subtitleDurationMs('一二三四五六七八九十一二三四五六', 'high'), 6_000)
@@ -148,4 +152,55 @@ test('fixed state-change inference supplies movement assets when preferredTempla
   delete compilerInput.narrativePlan.sceneRequirements[0]!.preferredTemplate
   compilerInput.narrativePlan.sceneRequirements[0]!.stateChanges = ['deployment begins']
   assert.ok(compileScene(compilerInput).commands.some(command => command.type === 'model.follow_path'))
+})
+
+test('requirement aliases select one trajectory from multiple available candidates', () => {
+  const compilerInput = input('deployment')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:zzz-alternate', displayName: 'Alternate route', aliases: ['alternate registered route'],
+  }))
+  compilerInput.narrativePlan.sceneRequirements[0]!.motionRequirements = ['alternate registered route']
+  const follow = compileScene(compilerInput).commands.find(command => command.type === 'model.follow_path')
+  assert.equal(follow?.params.action === 'model.follow_path' ? follow.params.trajectoryAssetId : undefined, 'trajectory:zzz-alternate')
+})
+
+test('a missing first trajectory does not hide the only available candidate', () => {
+  const compilerInput = input('deployment', 'missing')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:available', displayName: 'Available route', availability: 'available',
+  }))
+  const follow = compileScene(compilerInput).commands.find(command => command.type === 'model.follow_path')
+  assert.equal(follow?.params.action === 'model.follow_path' ? follow.params.trajectoryAssetId : undefined, 'trajectory:available')
+})
+
+test('ambiguous trajectory candidates fail instead of choosing lexicographically', () => {
+  const compilerInput = input('deployment')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:alternate', displayName: 'Alternate route', aliases: [],
+  }))
+  assert.throws(() => compileScene(compilerInput), (error: unknown) =>
+    error instanceof CompilationError && error.diagnostics.some(item => item.code === 'ASSET_SELECTION_AMBIGUOUS'))
+})
+
+test('requirement aliases select image and video assets and reject ambiguity', () => {
+  for (const testCase of [
+    { template: 'return_and_summary' as const, kind: 'image' as const, requirementField: 'attentionRequirements' as const, alias: 'mission summary panel', command: 'image.show' },
+    { template: 'attack_chain' as const, kind: 'video' as const, requirementField: 'attentionRequirements' as const, alias: 'engagement clip', command: 'video.play' },
+  ]) {
+    const compilerInput = input(testCase.template)
+    const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === testCase.kind)!
+    compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+      assetId: `${testCase.kind}:zzz-alternate`, displayName: `Alternate ${testCase.kind}`, aliases: [testCase.alias],
+    }))
+    compilerInput.narrativePlan.sceneRequirements[0]![testCase.requirementField] = [testCase.alias]
+    const selected = compileScene(compilerInput).commands.find(command => command.type === testCase.command)
+    assert.equal(selected && 'assetId' in selected.params ? selected.params.assetId : undefined, `${testCase.kind}:zzz-alternate`)
+
+    compilerInput.narrativePlan.sceneRequirements[0]![testCase.requirementField] = ['no exact alias']
+    assert.throws(() => compileScene(compilerInput), (error: unknown) =>
+      error instanceof CompilationError && error.diagnostics.some(item => item.code === 'ASSET_SELECTION_AMBIGUOUS'))
+  }
 })

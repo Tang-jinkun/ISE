@@ -143,16 +143,28 @@ export class AttachmentRepository {
 
 export interface RunRecord {
   id: string; sessionId: string; objective: string; status: RunStatusRow
-  startedAt?: string; finishedAt?: string; error?: Record<string, unknown>; createdAt: string
+  startedAt?: string; finishedAt?: string; error?: Record<string, unknown>
+  expectedAccepted?: { artifactId: string; version: number; fingerprint: string }
+  createdAt: string
 }
 export class RunRepository {
   constructor(private readonly database: AgentDatabase) {}
-  createQueued(sessionId: string, objective: string): RunRecord {
+  createQueued(
+    sessionId: string,
+    objective: string,
+    expectedAccepted?: { artifactId: string; version: number; fingerprint: string },
+  ): RunRecord {
     const id = randomUUID()
     try {
       this.database.transaction(() => this.database.prepare(
-        'INSERT INTO runs(id,session_id,objective,status,created_at) VALUES(?,?,?,?,?)',
-      ).run([id, sessionId, objective, 'queued', now()]))
+        `INSERT INTO runs(
+          id,session_id,objective,status,expected_accepted_artifact_id,expected_accepted_version,
+          expected_accepted_fingerprint,created_at
+        ) VALUES(?,?,?,?,?,?,?,?)`,
+      ).run([
+        id, sessionId, objective, 'queued', expectedAccepted?.artifactId ?? null,
+        expectedAccepted?.version ?? null, expectedAccepted?.fingerprint ?? null, now(),
+      ]))
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) throw agentError(409, 'ACTIVE_RUN_EXISTS')
       throw error
@@ -184,6 +196,11 @@ export class RunRepository {
       ...(optionalString(row.started_at) ? { startedAt: optionalString(row.started_at) } : {}),
       ...(optionalString(row.finished_at) ? { finishedAt: optionalString(row.finished_at) } : {}),
       ...(optionalString(row.error_json) ? { error: parseJson(row.error_json) } : {}),
+      ...(optionalString(row.expected_accepted_artifact_id) ? { expectedAccepted: {
+        artifactId: requiredString(row.expected_accepted_artifact_id),
+        version: requiredNumber(row.expected_accepted_version),
+        fingerprint: requiredString(row.expected_accepted_fingerprint),
+      } } : {}),
       createdAt: requiredString(row.created_at),
     }
   }
@@ -220,8 +237,15 @@ export class EventRepository {
 
 export class ArtifactRepositorySqlite {
   constructor(private readonly database: AgentDatabase) {}
-  replaceLedger(sessionId: string, artifacts: readonly Artifact[]): void {
+  replaceLedger(
+    sessionId: string,
+    artifacts: readonly Artifact[],
+    createdByRun: ReadonlyMap<string, string> = new Map(),
+  ): void {
     this.database.transaction(() => {
+      const existingRunIds = new Map(this.database.prepare(
+        'SELECT id,run_id FROM artifacts WHERE session_id = ? AND run_id IS NOT NULL',
+      ).all([sessionId]).map(row => [requiredString(row.id), requiredString(row.run_id)]))
       this.database.prepare('DELETE FROM artifacts WHERE session_id = ?').run([sessionId])
       const insert = this.database.prepare(`INSERT INTO artifacts(
         id,session_id,run_id,type,version,created_at,created_by,data_json,metadata_json,
@@ -229,7 +253,8 @@ export class ArtifactRepositorySqlite {
       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       for (const artifact of artifacts) {
         insert.run([
-          artifact.id, sessionId, null, artifact.type, artifact.version, artifact.createdAt, artifact.createdBy,
+          artifact.id, sessionId, createdByRun.get(artifact.id) ?? existingRunIds.get(artifact.id) ?? null,
+          artifact.type, artifact.version, artifact.createdAt, artifact.createdBy,
           json(artifact.data), artifact.metadata === undefined ? null : json(artifact.metadata),
           artifact.logicalKey ?? null, artifact.scopeKey ?? null, artifact.supersedes ?? null,
           artifact.superseded ? 1 : 0,
@@ -241,6 +266,11 @@ export class ArtifactRepositorySqlite {
     return this.database.prepare('SELECT * FROM artifacts WHERE session_id = ? ORDER BY created_at,id').all([sessionId]).map(row => this.toArtifact(row))
   }
   list(sessionId: string): Artifact[] { return this.listLedger(sessionId) }
+  listByRun(sessionId: string, runId: string): Artifact[] {
+    return this.database.prepare(
+      'SELECT * FROM artifacts WHERE session_id = ? AND run_id = ? ORDER BY created_at,id',
+    ).all([sessionId, runId]).map(row => this.toArtifact(row))
+  }
   get(sessionId: string, id: string): Artifact | undefined {
     const row = this.database.prepare('SELECT * FROM artifacts WHERE session_id = ? AND id = ?').get([sessionId, id])
     return row ? this.toArtifact(row) : undefined
@@ -296,6 +326,17 @@ export class ReviewRepository {
   supersedePending(sessionId: string): void {
     this.database.transaction(() => this.database.prepare(`UPDATE reviews SET status = 'superseded', resolved_at = ? WHERE session_id = ? AND status = 'pending'`).run([now(), sessionId]))
   }
+  supersedeExact(input: {
+    sessionId: string; reviewId: string; artifactId: string; version: number; fingerprint: string
+  }): void {
+    const result = this.database.transaction(() => this.database.prepare(`UPDATE reviews
+      SET status = 'superseded', resolved_at = ?
+      WHERE id = ? AND session_id = ? AND status = 'pending'
+        AND artifact_id = ? AND artifact_version = ? AND fingerprint = ?`).run([
+      now(), input.reviewId, input.sessionId, input.artifactId, input.version, input.fingerprint,
+    ]))
+    if (result.changes !== 1) throw agentError(409, 'STALE_REVIEW_TUPLE')
+  }
   private toRecord(row: Record<string, unknown>): ReviewRecord {
     return {
       id: requiredString(row.id), sessionId: requiredString(row.session_id), artifactId: requiredString(row.artifact_id),
@@ -317,6 +358,7 @@ export class AgentRepositories {
   readonly events: EventRepository
   readonly artifacts: ArtifactRepositorySqlite
   readonly reviews: ReviewRepository
+  readonly #afterCommitFrames: (() => void)[][] = []
 
   constructor(readonly database: AgentDatabase) {
     this.sessions = new SessionRepository(database)
@@ -328,7 +370,28 @@ export class AgentRepositories {
     this.reviews = new ReviewRepository(database)
   }
 
-  transaction<T>(work: () => T): T { return this.database.transaction(work) }
+  transaction<T>(work: () => T): T {
+    const callbacks: (() => void)[] = []
+    this.#afterCommitFrames.push(callbacks)
+    let result: T
+    try {
+      result = this.database.transaction(work)
+    } catch (error) {
+      this.#afterCommitFrames.pop()
+      throw error
+    }
+    this.#afterCommitFrames.pop()
+    const parent = this.#afterCommitFrames.at(-1)
+    if (parent) parent.push(...callbacks)
+    else for (const callback of callbacks) callback()
+    return result
+  }
+
+  afterCommit(callback: () => void): void {
+    const frame = this.#afterCommitFrames.at(-1)
+    if (frame) frame.push(callback)
+    else callback()
+  }
 
   recoverInterruptedRuns(): void {
     this.database.transaction(() => {
@@ -338,6 +401,14 @@ export class AgentRepositories {
         this.database.prepare(`UPDATE runs SET status = 'failed', finished_at = ?, error_json = ? WHERE id = ?`).run([now(), failure, row.id as string])
         this.database.prepare(`UPDATE sessions SET status = 'failed', active_run_id = NULL, updated_at = ? WHERE id = ?`).run([now(), row.session_id as string])
       }
+      this.database.prepare(`UPDATE sessions SET status = 'failed', active_run_id = NULL, updated_at = ?
+        WHERE status IN ('queued','running') AND NOT EXISTS (
+          SELECT 1 FROM runs WHERE runs.id = sessions.active_run_id AND runs.status IN ('queued','running')
+        )`).run([now()])
+      this.database.prepare(`UPDATE sessions SET status = 'failed', active_run_id = NULL, updated_at = ?
+        WHERE status = 'awaiting_review' AND NOT EXISTS (
+          SELECT 1 FROM reviews WHERE reviews.session_id = sessions.id AND reviews.status = 'pending'
+        )`).run([now()])
     })
   }
 }

@@ -6,6 +6,7 @@ import test, { type TestContext } from 'node:test'
 import { AgentDatabase } from '../src/persistence/database.ts'
 import { PersistentArtifactStore } from '../src/persistence/persistentArtifactStore.ts'
 import { AgentRepositories } from '../src/persistence/repositories.ts'
+import { SqlJsDatabaseAdapter } from '../src/persistence/sqlJsDatabase.ts'
 
 async function memoryRepositories() {
   const database = await AgentDatabase.open(':memory:', 'sql.js')
@@ -82,5 +83,41 @@ test('compare-and-set transitions reject stale state and recovery fails interrup
   assert.equal(repositories.runs.get(run.id)?.error?.code, 'SERVICE_RESTARTED_DURING_RUN')
   assert.equal(repositories.sessions.get(session.id)?.activeRunId, undefined)
   assert.equal(repositories.sessions.get(session.id)?.status, 'failed')
+  database.close()
+})
+
+test('a persistence flush failure restores live state and cannot reappear after close', async (t) => {
+  const path = await databasePath(t)
+  let flushes = 0
+  const database = await SqlJsDatabaseAdapter.open(path, {
+    beforeRename: () => {
+      flushes += 1
+      if (flushes === 2) throw new Error('INJECTED_FLUSH_FAILURE')
+    },
+  })
+  database.transaction(() => database.exec('CREATE TABLE records (id TEXT PRIMARY KEY)'))
+  assert.throws(() => database.transaction(() => {
+    database.prepare('INSERT INTO records(id) VALUES(?)').run(['failed-row'])
+  }), /INJECTED_FLUSH_FAILURE/)
+  assert.equal(database.prepare('SELECT id FROM records WHERE id = ?').get(['failed-row']), undefined)
+  database.close()
+
+  const reopened = await SqlJsDatabaseAdapter.open(path)
+  assert.equal(reopened.prepare('SELECT id FROM records WHERE id = ?').get(['failed-row']), undefined)
+  reopened.close()
+})
+
+test('restart recovery repairs a terminal run left with a running session and no review', async () => {
+  const { database, repositories } = await memoryRepositories()
+  const session = repositories.sessions.create('user-1')
+  const run = repositories.runs.createQueued(session.id, 'draft run')
+  repositories.sessions.transition(session.id, ['idle'], 'queued', run.id)
+  repositories.runs.markRunning(run.id)
+  repositories.sessions.transition(session.id, ['queued'], 'running', run.id)
+  repositories.runs.finish(run.id, 'completed')
+
+  repositories.recoverInterruptedRuns()
+  assert.equal(repositories.sessions.get(session.id)?.status, 'failed')
+  assert.equal(repositories.sessions.get(session.id)?.activeRunId, undefined)
   database.close()
 })

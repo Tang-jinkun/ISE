@@ -27,20 +27,28 @@ export interface SqliteDatabaseAdapter {
   close(): void
 }
 
+export interface SqlJsPersistenceOptions {
+  beforeRename?: () => void
+}
+
+type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>
+
 export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
   #inTransaction = false
   #closed = false
 
   private constructor(
-    private readonly database: SqlJsDatabase,
+    private database: SqlJsDatabase,
     private readonly path: string,
+    private readonly SQL: SqlJsStatic,
+    private readonly persistenceOptions: SqlJsPersistenceOptions,
   ) {}
 
-  static async open(path: string): Promise<SqlJsDatabaseAdapter> {
+  static async open(path: string, persistenceOptions: SqlJsPersistenceOptions = {}): Promise<SqlJsDatabaseAdapter> {
     const require = createRequire(import.meta.url)
     const SQL = await initSqlJs({ locateFile: file => require.resolve(`sql.js/dist/${file}`) })
     const bytes = path !== ':memory:' && existsSync(path) ? readFileSync(path) : undefined
-    return new SqlJsDatabaseAdapter(new SQL.Database(bytes), path)
+    return new SqlJsDatabaseAdapter(new SQL.Database(bytes), path, SQL, persistenceOptions)
   }
 
   exec(sql: string): void {
@@ -77,6 +85,7 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
   transaction<T>(work: () => T): T {
     this.assertOpen()
     if (this.#inTransaction) return work()
+    const snapshot = this.database.export()
     this.#inTransaction = true
     this.database.run('BEGIN IMMEDIATE')
     let committed = false
@@ -84,7 +93,12 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
       const result = work()
       this.database.run('COMMIT')
       committed = true
-      this.persist()
+      try {
+        this.persist()
+      } catch (error) {
+        this.restore(snapshot)
+        throw error
+      }
       return result
     } catch (error) {
       if (!committed) this.database.run('ROLLBACK')
@@ -92,6 +106,11 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
     } finally {
       this.#inTransaction = false
     }
+  }
+
+  private restore(snapshot: Uint8Array): void {
+    this.database.close()
+    this.database = new this.SQL.Database(snapshot)
   }
 
   close(): void {
@@ -112,6 +131,7 @@ export class SqlJsDatabaseAdapter implements SqliteDatabaseAdapter {
     } finally {
       closeSync(handle)
     }
+    this.persistenceOptions.beforeRename?.()
     renameSync(temporary, this.path)
   }
 

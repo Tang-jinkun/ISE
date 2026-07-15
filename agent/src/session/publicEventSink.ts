@@ -1,5 +1,6 @@
-import type { AgentActionEvent, AgentEventSink, Diagnostic } from '@ise/agent-core'
+import type { AgentActionEvent, AgentEventSink } from '@ise/agent-core'
 import type { EventBroker } from './eventBroker.ts'
+import { publicFailureDiagnostics } from '../services/publicFailures.ts'
 
 function requiredString(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error('PUBLIC_EVENT_FIELD_REQUIRED')
@@ -8,27 +9,6 @@ function requiredString(value: unknown): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
-}
-
-function diagnostics(value: unknown): Diagnostic[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap(item => {
-    if (!item || typeof item !== 'object') return []
-    const record = item as Record<string, unknown>
-    if (
-      typeof record.code !== 'string'
-      || typeof record.message !== 'string'
-      || !['info', 'warning', 'error'].includes(String(record.severity))
-    ) return []
-    return [{
-      code: record.code,
-      message: record.message,
-      severity: record.severity as Diagnostic['severity'],
-      ...(Array.isArray(record.relatedArtifactIds)
-        ? { relatedArtifactIds: record.relatedArtifactIds.filter((id): id is string => typeof id === 'string') }
-        : {}),
-    }]
-  })
 }
 
 function publicArtifactMetadata(value: unknown): Record<string, unknown> | undefined {
@@ -92,7 +72,7 @@ export class PublicEventSink implements AgentEventSink {
         this.broker.append(this.sessionId, runId, 'run.failed', {
           runId,
           status: 'failed',
-          diagnostics: diagnostics(event.data?.diagnostics),
+          diagnostics: publicFailureDiagnostics(event.data?.diagnostics),
         })
         return
       default:

@@ -1,4 +1,4 @@
-import { assetManifestEntrySchema, type AssetManifestEntry } from '@ise/runtime-contracts'
+import { publicAssetCatalogEntrySchema } from '@ise/runtime-contracts'
 import {
   assetRegistrySnapshotSchema,
   type AssetRegistryEntry,
@@ -11,9 +11,13 @@ export function normalizeAssetName(value: string): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase('en-US')
 }
 
-function withoutStorageFields(entry: AssetManifestEntry): AssetRegistryEntry {
-  const { sourceRelativePath: _sourceRelativePath, objectName: _objectName, ...metadata } = entry
-  return assetRegistryEntrySchemaParse(metadata)
+function parsePublicEntry(value: unknown): AssetRegistryEntry {
+  let publicValue = value
+  if (typeof value === 'object' && value !== null) {
+    const { sourceRelativePath: _sourceRelativePath, objectName: _objectName, ...metadata } = value as Record<string, unknown>
+    publicValue = metadata
+  }
+  return assetRegistryEntrySchemaParse(publicAssetCatalogEntrySchema.parse(publicValue))
 }
 
 function assetRegistryEntrySchemaParse(value: unknown): AssetRegistryEntry {
@@ -42,7 +46,7 @@ export function createAssetRegistrySnapshot(input: unknown): AssetRegistrySnapsh
   if (!Array.isArray(input)) throw new CompilationError([diagnostic('ASSET_CATALOG_INVALID', 'Asset catalog must be an array')])
   let assets: AssetRegistryEntry[]
   try {
-    assets = input.map(value => withoutStorageFields(assetManifestEntrySchema.parse(value)))
+    assets = input.map(value => parsePublicEntry(value))
       .sort((left, right) => left.assetId.localeCompare(right.assetId))
   } catch (error) {
     throw new CompilationError([diagnostic('ASSET_CATALOG_INVALID', error instanceof Error ? error.message : String(error))])
@@ -105,8 +109,12 @@ export class AssetRegistry {
     if (entry.availability === 'available') return entry
     if (entry.allowFallback) {
       for (const fallbackId of entry.fallbackAssetIds) {
-        const fallback = this.resolveFallback(fallbackId, new Set(visited))
-        if (fallback?.kind === entry.kind) return fallback
+        try {
+          const fallback = this.resolveFallback(fallbackId, new Set(visited))
+          if (fallback?.kind === entry.kind) return fallback
+        } catch (error) {
+          if (!(error instanceof CompilationError)) throw error
+        }
       }
     }
     if (entry.criticality === 'optional') {
