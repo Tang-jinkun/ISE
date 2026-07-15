@@ -123,6 +123,11 @@ export class SessionAgentRunner {
           loadAssetSnapshot: async () => createAssetRegistrySnapshot(
             await this.options.nest.listAssetMetadata(authorization),
           ),
+          onCompileProgress: payload => this.events.append(run.sessionId, run.id, 'compile.progress', {
+            runId: run.id,
+            stage: payload.stage,
+            percentage: payload.percentage,
+          }),
         }),
         skills: this.options.skills,
         workspace: this.options.workspace,

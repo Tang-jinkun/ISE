@@ -15,6 +15,8 @@ import { scheduleNarrative } from './scheduler.ts'
 
 export interface CompilerInput {
   eventPlanArtifactId: string
+  narrativePlanArtifactId?: string
+  assetRegistryArtifactId?: string
   eventPlan: EventPlan
   narrativePlan: NarrativePlan
   assetRegistry: AssetRegistrySnapshot
@@ -205,7 +207,11 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     informationCardDrafts: cards,
     capabilities: capabilityManifest,
   })
-  const sourceArtifactIds = [rawInput.eventPlanArtifactId, narrativePlan.narrativePlanId, assetRegistry.registryVersion]
+  const sourceArtifactIds = [
+    rawInput.eventPlanArtifactId,
+    rawInput.narrativePlanArtifactId ?? narrativePlan.narrativePlanId,
+    rawInput.assetRegistryArtifactId ?? assetRegistry.registryVersion,
+  ]
   const outputIds = [
     ...scheduled.subtitles.map(item => [item.subtitleId, item.evidenceRefs] as const),
     ...scheduled.commands.map(item => [item.commandId, item.evidenceRefs] as const),
