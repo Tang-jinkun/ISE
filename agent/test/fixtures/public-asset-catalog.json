@@ -1,0 +1,21 @@
+[
+  {
+    "assetId": "model:jf17",
+    "kind": "model",
+    "displayName": "JF-17",
+    "aliases": ["Thunder"],
+    "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "size": 4096,
+    "mediaType": "model/gltf-binary",
+    "availability": "available",
+    "criticality": "required",
+    "fallbackAssetIds": [],
+    "allowFallback": false,
+    "model": {
+      "scale": 1,
+      "rotationOffsetDeg": [0, 0, 0],
+      "altitudeOffsetM": 0,
+      "entityTypes": ["aircraft"]
+    }
+  }
+]

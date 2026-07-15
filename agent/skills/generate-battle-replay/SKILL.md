@@ -7,6 +7,10 @@ allowed-tools:
   - inspect_report_evidence
   - propose_event_plan
   - accept_event_plan
+  - inspect_replay_assets
+  - propose_scene_plan
+  - compile_replay_runtime
+  - validate_replay_runtime
 user-invocable: true
 model-invocable: true
 execution: inline
@@ -24,3 +28,7 @@ Use `evidenceRefs` for explicit source facts. Use `inferenceRefs` plus `uncertai
 Submit the complete draft through `propose_event_plan`. Do not call `accept_event_plan` until the user has reviewed the exact draft version and fingerprint.
 
 Keep preparation, engagement, withdrawal, and summary content proportional to the user's target duration. Omit repetitive background and record the omitted evidence IDs.
+
+NarrativePlan contains evidence-linked subtitles and semantic scene requirements only.
+Never invent asset IDs, playback timestamps, runtime commands, URLs, object names, or file paths.
+Only deterministic tools may resolve assets, schedule playback, compile commands, and adapt SceneProjectConfig.

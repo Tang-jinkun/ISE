@@ -6,7 +6,7 @@ import {
 } from '../contracts/artifactTypes.ts'
 import type { DocumentIR } from '../contracts/document.ts'
 import { evidenceIrSchema, type EvidenceIR } from '../contracts/evidence.ts'
-import type { AttachmentRegistry } from '../services/attachmentRegistry.ts'
+import type { AttachmentReader } from '../session/sessionAttachmentReader.ts'
 import { parseBattleReport } from '../services/documentParser.ts'
 
 const parseInputSchema = z.object({
@@ -41,7 +41,7 @@ const inspectReportEvidenceInputSchema = {
   },
 } as const
 
-export function createDocumentTools(registry: AttachmentRegistry): AgentTool[] {
+export function createDocumentTools(registry: AttachmentReader): AgentTool[] {
   const parseTool: AgentTool = {
     name: 'parse_battle_report',
     description: 'Parse a registered battle report into document and evidence artifacts',

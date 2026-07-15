@@ -1,0 +1,160 @@
+import { sceneProjectConfigSchema, type SceneProjectConfig } from '@ise/runtime-contracts'
+import type { CanonicalCommand, CanonicalRuntimePlan } from '../contracts/runtimePlan.ts'
+
+type TrackType = SceneProjectConfig['tracks'][number]['type']
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported runtime command: ${JSON.stringify(value)}`)
+}
+
+function commandTrackType(command: CanonicalCommand): TrackType {
+  switch (command.type) {
+    case 'image.show': return 'image'
+    case 'video.play': return 'video'
+    case 'marker.show': return 'marker'
+    case 'geojson.show': return 'geojson'
+    case 'camera.transition': return 'camera'
+    case 'model.spawn':
+    case 'model.follow_path':
+    case 'model.set_state':
+    case 'model.hide': return 'model'
+    default: return assertNever(command)
+  }
+}
+
+function toModelAction(command: Extract<CanonicalCommand, { type: `model.${string}` }>) {
+  switch (command.type) {
+    case 'model.spawn': return { action: 'model.spawn' as const, entityId: command.params.entityId }
+    case 'model.follow_path': return {
+      action: 'model.follow_path' as const,
+      entityId: command.params.entityId,
+      trajectoryAssetId: command.params.trajectoryAssetId,
+    }
+    case 'model.set_state': return {
+      action: 'model.set_state' as const,
+      entityId: command.params.entityId,
+      state: command.params.state,
+    }
+    case 'model.hide': return { action: 'model.hide' as const, entityId: command.params.entityId }
+  }
+}
+
+function toTrackItem(command: CanonicalCommand): unknown {
+  const common = {
+    id: command.commandId,
+    eventUnitId: command.eventUnitId,
+    startMs: command.startMs,
+    durationMs: command.durationMs,
+    evidenceRefs: command.evidenceRefs,
+  }
+  switch (command.type) {
+    case 'image.show': return {
+      ...common,
+      assetId: command.params.assetId,
+      params: {
+        layout: { ...command.params.layout },
+        enter: command.params.enter,
+        exit: command.params.exit,
+      },
+    }
+    case 'video.play': return {
+      ...common,
+      assetId: command.params.assetId,
+      params: {
+        layout: { ...command.params.layout },
+        volume: command.params.volume,
+        playbackRate: command.params.playbackRate,
+        loop: command.params.loop,
+      },
+    }
+    case 'marker.show': return {
+      ...common,
+      params: {
+        coordinates: command.params.coordinates,
+        label: command.params.label,
+        color: command.params.color,
+      },
+    }
+    case 'geojson.show': return {
+      ...common,
+      assetId: command.params.assetId,
+      params: {
+        lineColor: command.params.lineColor,
+        lineWidth: command.params.lineWidth,
+        fillColor: command.params.fillColor,
+        fillOpacity: command.params.fillOpacity,
+        circleColor: command.params.circleColor,
+        circleRadius: command.params.circleRadius,
+        keepAfterEnd: command.params.keepAfterEnd,
+      },
+    }
+    case 'camera.transition': return {
+      ...common,
+      params: {
+        center: command.params.center,
+        zoom: command.params.zoom,
+        pitch: command.params.pitch,
+        bearing: command.params.bearing,
+        easing: command.params.easing,
+      },
+    }
+    case 'model.spawn':
+    case 'model.follow_path':
+    case 'model.set_state':
+    case 'model.hide': return { ...common, params: toModelAction(command) }
+    default: return assertNever(command)
+  }
+}
+
+export class BaseRuntimeAdapter {
+  adapt(plan: CanonicalRuntimePlan, runtimePlanArtifactId: string): SceneProjectConfig {
+    const items = new Map<TrackType, unknown[]>([
+      ['subtitle', [
+        ...plan.subtitles.map(subtitle => ({
+          id: subtitle.subtitleId,
+          eventUnitId: subtitle.eventUnitId,
+          startMs: subtitle.startMs,
+          durationMs: subtitle.durationMs,
+          evidenceRefs: subtitle.evidenceRefs,
+          params: { text: subtitle.text, position: subtitle.position, maxWidthPct: subtitle.maxWidthPct },
+        })),
+        ...plan.informationCards.map(card => ({
+          id: card.cardId,
+          eventUnitId: card.eventUnitId,
+          startMs: card.startMs,
+          durationMs: card.durationMs,
+          evidenceRefs: card.evidenceRefs,
+          params: { text: card.text, position: 'top', maxWidthPct: 70 },
+        })),
+      ]],
+      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []], ['model', []],
+    ])
+    for (const command of plan.commands) items.get(commandTrackType(command))!.push(toTrackItem(command))
+    const tracks = [...items.entries()]
+      .filter(([, trackItems]) => trackItems.length > 0)
+      .map(([type, trackItems]) => ({
+        trackId: `track:${type}`,
+        type,
+        label: `${type[0]!.toUpperCase()}${type.slice(1)}`,
+        visible: true,
+        items: trackItems,
+      }))
+    return sceneProjectConfigSchema.parse({
+      schemaVersion: 'ise-scene/v1',
+      sourceDocumentId: plan.sourceDocumentId,
+      eventPlanArtifactId: plan.eventPlanArtifactId,
+      runtimePlanArtifactId,
+      totalDurationMs: plan.totalDurationMs,
+      entities: plan.entities.map(source => ({
+        entityId: source.entityId,
+        displayName: source.displayName,
+        kind: source.kind,
+        ...(source.modelAssetId ? { modelAssetId: source.modelAssetId } : {}),
+        ...(source.defaultTrajectoryAssetId ? { defaultTrajectoryAssetId: source.defaultTrajectoryAssetId } : {}),
+        initialState: source.initialState,
+      })),
+      tracks,
+      diagnostics: plan.diagnostics,
+    })
+  }
+}

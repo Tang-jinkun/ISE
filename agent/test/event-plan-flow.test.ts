@@ -6,6 +6,7 @@ import {
   FakeModelAdapter,
   ToolRegistry,
   createSkillAgentTool,
+  type AgentTool,
 } from '@ise/agent-core'
 import { SkillLoader, SkillRegistry, SkillTool } from '@ise/skills-core'
 import {
@@ -134,6 +135,14 @@ test('root Agent turns a registered battle report into one reviewable five-unit 
   const registered = [
     ...createDocumentTools(attachments),
     ...createEventPlanTools(),
+    ...['inspect_replay_assets', 'propose_scene_plan', 'compile_replay_runtime', 'validate_replay_runtime']
+      .map(name => ({
+        name,
+        description: 'Downstream tool surface fixture',
+        risk: 'derive',
+        inputSchema: { type: 'object' },
+        async execute() { return { content: 'not exercised in EventPlan flow' } },
+      }) satisfies AgentTool),
   ]
   const tools = new ToolRegistry(registered)
   tools.register(createSkillAgentTool(new SkillTool(skills), {

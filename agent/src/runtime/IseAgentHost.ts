@@ -5,6 +5,8 @@ import {
   PermissionManager,
   type AgentEventSink,
   type AgentRunResult,
+  type ArtifactRepository,
+  type DomainStateRepository,
   type ModelAdapter,
   type PermissionDecision,
   type ToolGuardDecision,
@@ -24,8 +26,9 @@ export interface IseAgentHostOptions {
     toolName: string,
     input: unknown,
   ) => PermissionDecision | ToolGuardDecision | Promise<PermissionDecision | ToolGuardDecision>
-  artifacts?: ArtifactStore
-  domainState?: DomainStateStore
+  artifacts?: ArtifactRepository
+  domainState?: DomainStateRepository
+  signal?: AbortSignal
 }
 
 export class IseAgentHost {
@@ -41,6 +44,7 @@ export class IseAgentHost {
       artifacts: this.options.artifacts ?? new ArtifactStore(),
       domainState: this.options.domainState ?? new DomainStateStore(),
       eventSink: this.options.eventSink,
+      signal: this.options.signal,
       profile: IseAgentProfile,
       permissions: new PermissionManager({
         approve: (tool, input) => this.options.approve?.(tool.name, input) ?? 'deny',
