@@ -1,4 +1,4 @@
-import { getScene, updateScene } from '@/api/scene';
+import { buildSceneUpdate, getScene, updateScene } from '@/api/scene';
 import { message } from '@/components/ui/message';
 import {
   audioItemDefault,
@@ -104,10 +104,10 @@ export default function Scene() {
         return rest;
       });
 
-      const updatedScene = {
-        ...currentScene,
-        config: JSON.stringify(tracksToSave)
-      };
+      const updatedScene = buildSceneUpdate(
+        currentScene,
+        JSON.stringify(tracksToSave)
+      );
 
       await updateScene(currentScene.id, updatedScene);
       message.success('更新成功');

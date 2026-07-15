@@ -51,22 +51,17 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
 );
 Select.displayName = 'Select';
 
-const SelectTrigger = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->((_props, _ref) => null);
+const SelectTrigger: React.FC<React.HTMLAttributes<HTMLDivElement>> = () => null;
 SelectTrigger.displayName = 'SelectTrigger';
 
-const SelectValue = React.forwardRef<
-  HTMLSpanElement,
+const SelectValue: React.FC<
   React.HTMLAttributes<HTMLSpanElement> & { placeholder?: string }
->((_props, _ref) => null);
+> = () => null;
 SelectValue.displayName = 'SelectValue';
 
-const SelectContent = React.forwardRef<
-  HTMLDivElement,
+const SelectContent: React.FC<
   React.HTMLAttributes<HTMLDivElement>
->(({ children }, _ref) => <React.Fragment>{children}</React.Fragment>);
+> = ({ children }) => <React.Fragment>{children}</React.Fragment>;
 SelectContent.displayName = 'SelectContent';
 
 const SelectItem = React.forwardRef<

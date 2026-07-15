@@ -37,11 +37,8 @@ describe('Script Page - Q&A Analysis Flow', () => {
     );
   };
 
-  const getSendButton = () => {
-    const button = document.querySelector('.lucide-send')?.closest('button');
-    expect(button).not.toBeNull();
-    return button!;
-  };
+  const getSendButton = () =>
+    screen.getByRole('button', { name: '发送问题' });
 
   it('should show 4-stage analysis flow after submitting a question', async () => {
     renderScript();
