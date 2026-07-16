@@ -438,6 +438,129 @@ test('every primary SceneBeat binds one existing subtitle and its EventUnit', ()
   }
 })
 
+function planningFixtureWithParticipants(
+  participantsByEvent: Partial<Record<string, string[]>>,
+) {
+  const fixture = planningFixture()
+  for (const unit of fixture.eventPlan.eventUnits) {
+    const participants = participantsByEvent[unit.eventUnitId]
+    if (participants) unit.participants = [...participants]
+  }
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+  return fixture
+}
+
+test('binds scenario-local platform formation labels to their known fighter groups', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:deployment': ['印方苏-30MKI编队', '印方阵风编队', '巴方JF-17编队'],
+  })
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.actorRefs,
+    [
+      'group:india-su30-adampur',
+      'group:india-rafale-ambala',
+      'group:pakistan-jf17-minhas',
+      'group:pakistan-jf17-rafiki',
+    ],
+  )
+})
+
+test('binds only every fighter group on the explicitly named generic side', () => {
+  const cases = [
+    {
+      participant: '印方编队',
+      expected: ['group:india-su30-adampur', 'group:india-rafale-ambala'],
+    },
+    {
+      participant: '巴方编队',
+      expected: ['group:pakistan-jf17-minhas', 'group:pakistan-jf17-rafiki'],
+    },
+  ]
+  for (const { participant, expected } of cases) {
+    const fixture = planningFixtureWithParticipants({ 'event:deployment': [participant] })
+    const narrationPlan = buildNarrationPlan(fixture)
+    const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+    assert.deepEqual(
+      blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.actorRefs,
+      expected,
+      participant,
+    )
+  }
+})
+
+test('binds the controlled Pakistani interceptor-formation label to Pakistani fighters', () => {
+  const fixture = planningFixtureWithParticipants({ 'event:deployment': ['巴方拦截编队'] })
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.actorRefs,
+    ['group:pakistan-jf17-minhas', 'group:pakistan-jf17-rafiki'],
+  )
+})
+
+test('does not expand an Indian early-warning-aircraft label to Indian fighters', () => {
+  const fixture = planningFixtureWithParticipants({ 'event:deployment': ['印方预警机'] })
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.actorRefs,
+    [],
+  )
+})
+
+test('real participant forms bind every resolved actor and compile deterministic choreography', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:deployment': ['印方苏-30MKI编队', '印方阵风编队', '巴方编队'],
+    'event:launch': ['巴方JF-17编队', 'PL-15E导弹'],
+  })
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+  const assetRegistry = resolutionRegistry()
+  const resolvedScenePlan = resolveSceneBlueprint({ blueprint, assetRegistry })
+  const choreography = compileChoreography({
+    narrationPlan,
+    sceneBlueprint: blueprint,
+    resolvedScenePlan,
+    assetRegistry,
+  })
+  const repeatedBlueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+  const repeatedResolvedScenePlan = resolveSceneBlueprint({
+    blueprint: repeatedBlueprint,
+    assetRegistry,
+  })
+  const repeatedChoreography = compileChoreography({
+    narrationPlan,
+    sceneBlueprint: repeatedBlueprint,
+    resolvedScenePlan: repeatedResolvedScenePlan,
+    assetRegistry,
+  })
+
+  assert.equal(JSON.stringify(repeatedBlueprint), JSON.stringify(blueprint))
+  assert.equal(JSON.stringify(repeatedChoreography), JSON.stringify(choreography))
+  assert.deepEqual(choreography.actorInstances, resolvedScenePlan.resolvedActors)
+  for (const actor of resolvedScenePlan.resolvedActors) {
+    assert.ok(
+      blueprint.sceneBeats.some(beat => beat.actorRefs.includes(actor.actorGroupRef)),
+      actor.actorInstanceId,
+    )
+  }
+  const weaponGroup = blueprint.actorGroups.find(group => group.role === 'weapon-launch')
+  assert.ok(weaponGroup)
+  assert.equal(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.actorRefs.includes(weaponGroup.groupId),
+    false,
+  )
+  assert.equal(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:launch')?.actorRefs.includes(weaponGroup.groupId),
+    true,
+  )
+})
+
 test('splits JF-17 into Minhas and Rafiki groups only when both locations are grounded', () => {
   const fixture = planningFixture()
   const narrationPlan = buildNarrationPlan(fixture)

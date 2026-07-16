@@ -2,6 +2,7 @@ import type { EvidenceIR, EvidenceRecord } from '../contracts/evidence.ts'
 import type { EventPlan, EventUnit } from '../contracts/eventPlan.ts'
 import type { NarrationPlan } from '../contracts/narrationPlan.ts'
 import type { NarrativePlan, SceneRequirement } from '../contracts/narrativePlan.ts'
+import { indoPakTrajectoryScenario } from '../config/indoPakTrajectoryScenario.ts'
 import {
   sceneBlueprintSchema,
   type ActorGroup,
@@ -49,6 +50,10 @@ const currentFighters: FighterDefinition[] = [
 const jf17Aliases = ['JF-17', 'JF17']
 const minhasAliases = ['米纳斯', 'Minhas', 'Minas']
 const rafikiAliases = ['拉菲基', 'Rafiki']
+const sideFormationParticipantLabels: Readonly<Record<string, readonly string[]>> = {
+  india: ['印方编队'],
+  pakistan: ['巴方编队', '巴方拦截编队'],
+}
 
 function normalized(value: string): string {
   return value.normalize('NFKC').replace(/[\s‐‑‒–—―_-]+/g, '').toLocaleLowerCase('en-US')
@@ -187,10 +192,38 @@ function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroup[] 
   })
 }
 
+function participantSide(participant: string): 'india' | 'pakistan' | undefined {
+  const candidate = normalized(participant)
+  if (candidate.startsWith(normalized('印方'))) return 'india'
+  if (candidate.startsWith(normalized('巴方'))) return 'pakistan'
+  return undefined
+}
+
+function scenarioAliasesForFighter(group: ActorGroup): string[] {
+  const exactBundleId = group.groupId.replace(/^group:/, 'formation:')
+  const exactBundle = indoPakTrajectoryScenario.bundles.find(bundle => bundle.bundleId === exactBundleId)
+  if (exactBundle) return exactBundle.semanticEntityAliases
+  return indoPakTrajectoryScenario.bundles
+    .filter(bundle => bundle.bundleId.startsWith(`formation:${group.side}-`)
+      && bundle.semanticEntityAliases.some(alias => normalized(alias) === normalized(group.semanticEntityRef)))
+    .flatMap(bundle => bundle.semanticEntityAliases)
+}
+
+function participantMatchesFighter(participant: string, group: ActorGroup): boolean {
+  if (group.role !== 'fighter-formation') return false
+  const genericLabels = sideFormationParticipantLabels[group.side] ?? []
+  if (genericLabels.some(label => normalized(participant) === normalized(label))) return true
+  const side = participantSide(participant)
+  if (side && side !== group.side) return false
+  return includesAlias(participant, scenarioAliasesForFighter(group))
+}
+
 function actorRefsForUnit(unit: EventUnit, groups: ActorGroup[]): string[] {
   return groups.filter(group => {
     if (group.lifecycle === `event-scoped:${unit.eventUnitId}`) return true
-    return unit.participants.some(participant => normalized(participant) === normalized(group.semanticEntityRef))
+    return unit.participants.some(participant =>
+      normalized(participant) === normalized(group.semanticEntityRef)
+      || participantMatchesFighter(participant, group))
   }).map(group => group.groupId)
 }
 
