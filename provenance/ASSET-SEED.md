@@ -25,10 +25,30 @@ Date: 2026-07-15
 | image | `image:airport` | `机场.png` |
 | image | `image:aew-illustration` | `预警机插图.png` |
 | trajectory | `trajectory:ambala-rafale-1` | `AMBALA Rafale-1.json` |
+| trajectory | `trajectory:ambala-rafale-2` | `AMBALA Rafale-2.json` |
+| trajectory | `trajectory:ambala-rafale-3` | `AMBALA Rafale-3.json` |
+| trajectory | `trajectory:ambala-rafale-4` | `AMBALA Rafale-4.json` |
+| trajectory | `trajectory:adampur-vampire-1` | `ADAMPUR Vampire-1.json` |
+| trajectory | `trajectory:adampur-vampire-2` | `ADAMPUR Vampire-2.json` |
+| trajectory | `trajectory:adampur-vampire-3` | `ADAMPUR Vampire-3.json` |
+| trajectory | `trajectory:adampur-vampire-4` | `ADAMPUR Vampire-4.json` |
+| trajectory | `trajectory:ambala-su30mki-1` | `AMBALA Su-30MKI-1.json`; suffix curation is recorded in the source map |
+| trajectory | `trajectory:ambala-su30mki-2` | `AMBALA Su-30MKI-2.json` |
 | trajectory | `trajectory:minhas-j10ce-1` | `MINAS J-10CE-1.json`; the source spelling conflict is explicit |
+| trajectory | `trajectory:minhas-j10ce-2` | `MINAS J-10CE-2.json` |
+| trajectory | `trajectory:minhas-j10ce-3` | `MINAS J-10CE-3.json` |
+| trajectory | `trajectory:minhas-j10ce-4` | `MINAS J-10CE-4.json` |
+| trajectory | `trajectory:rafiki-j10ce-1` | `RAFIKI J-10CE-1.json` |
+| trajectory | `trajectory:rafiki-j10ce-2` | `RAFIKI J-10CE-2.json` |
+| trajectory | `trajectory:rafiki-j10ce-3` | `RAFIKI J-10CE-3.json` |
+| trajectory | `trajectory:rafiki-j10ce-4` | `RAFIKI J-10CE-4.json` |
 | trajectory | `trajectory:pakistan-missile-1` | `巴方导弹1.json` |
+| trajectory | `trajectory:pakistan-strike-missile-2` | `巴方打击导弹2.json` |
+| trajectory | `trajectory:india-missile-1` | `印方导弹1.json` |
 
-Every additional trajectory ID is `trajectory:<origin-or-side>-<platform>-<ordinal>` in lowercase kebab case. Source spelling never silently changes the stable ID; `nameMappings` records report, trajectory, model, and operator contexts explicitly, including the J-10/J-10CE and JF-17 naming cases.
+The catalog contains all 21 operator trajectories. Every trajectory ID is `trajectory:<origin-or-side>-<platform>-<ordinal>` in lowercase kebab case. Source spelling never silently changes the stable ID; `nameMappings` records report, trajectory, model, and operator contexts explicitly, including the J-10/J-10CE and JF-17 naming cases.
+
+The Su-30MKI-1 source has a single auditable curation record: policy `trajectory.shift-suffix/v1`, expected raw fingerprint `sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995`, `startIndex: 91`, and `deltaMs: 2000`. The same shared preparation helper applies this suffix shift during both manifest construction and seed upload.
 
 ## Manifest fields
 

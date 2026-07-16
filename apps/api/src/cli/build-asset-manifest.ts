@@ -7,17 +7,16 @@ import {
   assetNameMappingSchema,
   assetSeedManifestSchema,
   modelAssetMetadataSchema,
-  normalizeTrajectorySamples,
+  prepareTrajectorySource,
   prepareAssetForUpload,
+  trajectoryCurationSchema,
   type AssetManifestEntry,
   type AssetSeedManifest,
-  type RawTrajectorySample,
+  type TrajectoryCuration,
 } from '@ise/runtime-contracts';
 
 const execFileAsync = promisify(execFile);
 const sourceMapSchemaVersion = 'ise-asset-source-map/v1';
-const reversedOptionalTrajectoryId = 'trajectory:ambala-su30mki-1';
-
 type AssetKind = 'model' | 'trajectory' | 'video' | 'image';
 
 interface SourceAsset {
@@ -26,6 +25,7 @@ interface SourceAsset {
   displayName: string;
   aliases: string[];
   criticality: 'required' | 'optional';
+  trajectoryCuration?: TrajectoryCuration;
 }
 
 interface SourceMap {
@@ -58,8 +58,9 @@ function assertExactKeys(
   value: Record<string, unknown>,
   expectedKeys: readonly string[],
   label: string,
+  optionalKeys: readonly string[] = [],
 ) {
-  const expected = new Set(expectedKeys);
+  const expected = new Set([...expectedKeys, ...optionalKeys]);
   const unknown = Object.keys(value).filter((key) => !expected.has(key));
   const missing = expectedKeys.filter((key) => !(key in value));
   if (unknown.length > 0) {
@@ -127,6 +128,7 @@ function parseSourceAsset(value: unknown, index: number): SourceAsset {
     value,
     ['assetId', 'sourceRelativePath', 'displayName', 'aliases', 'criticality'],
     `source map asset ${index}`,
+    ['trajectoryCuration'],
   );
   assertNonBlankString(value.assetId, `source map asset ${index} assetId`);
   assetKind(value.assetId);
@@ -142,12 +144,21 @@ function parseSourceAsset(value: unknown, index: number): SourceAsset {
   if (value.criticality !== 'required' && value.criticality !== 'optional') {
     throw new Error(`source map asset ${index} has invalid criticality`);
   }
+  const kind = assetKind(value.assetId);
+  let trajectoryCuration: TrajectoryCuration | undefined;
+  if (value.trajectoryCuration !== undefined) {
+    if (kind !== 'trajectory') {
+      throw new Error(`source map asset ${index} trajectoryCuration requires a trajectory asset`);
+    }
+    trajectoryCuration = trajectoryCurationSchema.parse(value.trajectoryCuration);
+  }
   return {
     assetId: value.assetId,
     sourceRelativePath: value.sourceRelativePath,
     displayName: value.displayName,
     aliases,
     criticality: value.criticality,
+    trajectoryCuration,
   };
 }
 
@@ -346,7 +357,7 @@ function commonEntry(source: SourceAsset, bytes: Buffer, kind: AssetKind) {
 }
 
 function trajectoryBounds(
-  points: RawTrajectorySample[],
+  points: Array<{ longitude: number; latitude: number }>,
 ): [[number, number], [number, number]] {
   const longitudes = points.map((point) => point.longitude);
   const latitudes = points.map((point) => point.latitude);
@@ -406,39 +417,13 @@ async function buildEntry(
     return entry;
   }
 
-  if (source.assetId === reversedOptionalTrajectoryId) {
-    if (source.criticality !== 'optional') {
-      throw new Error(`${reversedOptionalTrajectoryId} must remain optional`);
-    }
-    const raw = JSON.parse(bytes.toString('utf8')) as RawTrajectorySample[];
-    try {
-      normalizeTrajectorySamples(raw);
-    } catch (error) {
-      if (error instanceof Error && /reverse source order/i.test(error.message)) {
-        return {
-          ...commonEntry(source, bytes, kind),
-          kind,
-          mediaType: 'application/vnd.ise.trajectory+json',
-          availability: 'invalid',
-          trajectory: {
-            format: 'ise-trajectory/v1',
-            timeUnit: 'ms',
-            coordinateOrder: 'lng-lat-alt',
-            startTimeMs: 0,
-            endTimeMs: 0,
-            monotonic: true,
-            bounds: trajectoryBounds(raw),
-          },
-        };
-      }
-      throw error;
-    }
-    throw new Error(`${reversedOptionalTrajectoryId} no longer contains reversed timestamps`);
-  }
-
-  const raw = JSON.parse(bytes.toString('utf8')) as RawTrajectorySample[];
-  const normalized = normalizeTrajectorySamples(raw);
-  const prepared = Buffer.from(JSON.stringify(normalized));
+  const preparedSource = await prepareTrajectorySource(
+    source.assetId,
+    bytes,
+    source.trajectoryCuration,
+  );
+  const normalized = preparedSource.normalized;
+  const prepared = Buffer.from(preparedSource.bytes);
   const entry: AssetManifestEntry = {
     ...commonEntry(source, prepared, kind),
     kind,
@@ -450,7 +435,8 @@ async function buildEntry(
       startTimeMs: normalized.points[0]!.timeMs,
       endTimeMs: normalized.points.at(-1)!.timeMs,
       monotonic: true,
-      bounds: trajectoryBounds(raw),
+      bounds: trajectoryBounds(normalized.points),
+      ...(source.trajectoryCuration ? { curation: source.trajectoryCuration } : {}),
     },
   };
   await prepareAssetForUpload(entry, bytes);

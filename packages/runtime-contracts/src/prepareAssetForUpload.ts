@@ -1,8 +1,6 @@
-import { z } from 'zod';
 import { assetManifestEntrySchema, type AssetManifestEntry } from './assets.js';
-import { normalizeTrajectorySamples, rawTrajectorySampleSchema } from './trajectory.js';
+import { prepareTrajectorySource } from './trajectoryCuration.js';
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 async function sha256(bytes: Uint8Array): Promise<string> {
@@ -45,15 +43,15 @@ function validateGeoJson(bytes: Uint8Array) {
   }
 }
 
-function prepareTrajectory(entry: Extract<AssetManifestEntry, { kind: 'trajectory' }>, bytes: Uint8Array) {
-  const raw = z.array(rawTrajectorySampleSchema).min(2).parse(JSON.parse(decoder.decode(bytes)));
-  const normalized = normalizeTrajectorySamples(raw);
+async function prepareTrajectory(entry: Extract<AssetManifestEntry, { kind: 'trajectory' }>, bytes: Uint8Array) {
+  const prepared = await prepareTrajectorySource(entry.assetId, bytes, entry.trajectory.curation);
+  const normalized = prepared.normalized;
   const first = normalized.points[0]!;
   const last = normalized.points.at(-1)!;
   if (entry.trajectory.startTimeMs !== first.timeMs || entry.trajectory.endTimeMs !== last.timeMs) {
     throw new Error('Trajectory metadata time range does not match normalized bytes');
   }
-  return encoder.encode(JSON.stringify(normalized));
+  return prepared.bytes;
 }
 
 export async function prepareAssetForUpload(
@@ -62,7 +60,7 @@ export async function prepareAssetForUpload(
 ): Promise<Uint8Array> {
   const entry = assetManifestEntrySchema.parse(inputEntry);
   let prepared = sourceBytes;
-  if (entry.kind === 'trajectory') prepared = prepareTrajectory(entry, sourceBytes);
+  if (entry.kind === 'trajectory') prepared = await prepareTrajectory(entry, sourceBytes);
   else if (entry.kind === 'model') validateGlb(sourceBytes);
   else if (entry.kind === 'video') validateMp4(sourceBytes);
   else if (entry.kind === 'image') validateImage(entry, sourceBytes);
