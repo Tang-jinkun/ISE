@@ -22,15 +22,11 @@ import {
   ArrowRight,
   Bot,
   ChevronDown,
-  Clapperboard,
   FileText,
   History,
-  Info,
   Layout,
-  ListTree,
   Save,
-  User,
-  X
+  User
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -43,6 +39,11 @@ import { NarrativePanel } from './components/NarrativePanel';
 import { ParamsPanel } from './components/ParamsPanel';
 import { ResourcePanel } from './components/ResourcePanel';
 import { SceneModal } from './components/SceneModal';
+import { SceneWorkspace } from './components/SceneWorkspace';
+import {
+  selectWorkspaceState,
+  type WorkspaceTab
+} from './workspaceStage';
 
 type ChatMessage = {
   id: string;
@@ -408,12 +409,18 @@ export default function Script() {
 
   const selectedNode = nodeIndex.get(selectedNodeId) ?? nodes[0];
   const artifactList = Object.values(artifacts);
-  const eventPlanArtifact = artifactList.find((artifact) =>
-    artifact.type.includes('event-plan')
+  const workspaceState = useMemo(
+    () =>
+      selectWorkspaceState({
+        artifacts: artifactList,
+        activeReview,
+        latestTurnStatus: turns.at(-1)?.status,
+        completedRuntimeArtifactId
+      }),
+    [activeReview, artifacts, completedRuntimeArtifactId, turns]
   );
-  const narrativePlanArtifact = artifactList.find((artifact) =>
-    artifact.type.includes('narrative-plan')
-  );
+  const eventPlanArtifact = workspaceState.eventPlan;
+  const narrativePlanArtifact = workspaceState.narration;
   const activeReviewArtifact = activeReview
     ? artifacts[activeReview.artifactId]
     : undefined;
@@ -469,26 +476,29 @@ export default function Script() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  const [activeTab, setActiveTab] = useState<
-    'narrative' | 'resources' | 'params'
-  >('narrative');
-  const [isPanelVisible, setIsPanelVisible] = useState(false);
-  const [isLoadingPanel, setIsLoadingPanel] = useState(false);
-  const [panelError, setPanelError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab | null>(null);
+  const [workspaceCollapsed, setWorkspaceCollapsed] = useState(false);
+  const [workspaceWidth, setWorkspaceWidth] = useState(42);
+  const hadWorkspaceRef = useRef(false);
 
-  const togglePanel = () => {
-    if (isPanelVisible) {
-      setIsPanelVisible(false);
-      return;
+  useEffect(() => {
+    if (!workspaceState.visible) {
+      setActiveTab(null);
+    } else if (
+      !activeTab ||
+      !workspaceState.availableTabs.includes(activeTab)
+    ) {
+      setActiveTab(workspaceState.defaultTab);
     }
-    setPanelError(null);
-    setIsLoadingPanel(false);
-    setIsPanelVisible(true);
-  };
+  }, [activeTab, workspaceState]);
 
-  const [density, setDensity] = useState<'compact' | 'comfortable'>(
-    'comfortable'
-  );
+  useEffect(() => {
+    if (workspaceState.visible && !hadWorkspaceRef.current) {
+      setWorkspaceCollapsed(false);
+    }
+    hadWorkspaceRef.current = workspaceState.visible;
+  }, [workspaceState.visible]);
+
   const copySelectedSummary = async () => {
     const text = `${selectedNode.title}\n${selectedNode.summary}`;
     try {
@@ -500,25 +510,6 @@ export default function Script() {
   };
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(50); // percentage
-
-  // 左右分栏最小安全宽度阈值 (像素)
-  const MIN_SIDEBAR_PX = 650; // 确保左侧文字、图标与按钮不挤压
-
-  // 计算初始安全宽度并监听窗口 resize
-  useEffect(() => {
-    const updateInitialWidth = () => {
-      const windowWidth = window.innerWidth;
-      // 计算左侧所需的最小百分比
-      const minWidthPercent = (MIN_SIDEBAR_PX / windowWidth) * 100;
-      // 初始分配：取 20% 与最小百分比的较大值，但不超过 35% (防止挤占右侧)
-      setSidebarWidth(Math.min(35, Math.max(20, minWidthPercent)));
-    };
-
-    updateInitialWidth();
-    window.addEventListener('resize', updateInitialWidth);
-    return () => window.removeEventListener('resize', updateInitialWidth);
-  }, []);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSceneModalOpen, setIsSceneModalOpen] = useState(false);
@@ -644,19 +635,12 @@ export default function Script() {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const startX = e.clientX;
-    const startWidth = sidebarWidth;
+    const startWidth = workspaceWidth;
     const windowWidth = window.innerWidth;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = ((moveEvent.clientX - startX) / windowWidth) * 100;
-      // 计算左侧最小百分比，确保内容不挤压
-      const minWidthPercent = (MIN_SIDEBAR_PX / windowWidth) * 100;
-      // 设置最大宽度限制为 45% (防止挤占右侧解析区)
-      const newWidth = Math.min(
-        45,
-        Math.max(minWidthPercent, startWidth + deltaX)
-      );
-      setSidebarWidth(newWidth);
+      const deltaX = ((startX - moveEvent.clientX) / windowWidth) * 100;
+      setWorkspaceWidth(Math.min(58, Math.max(34, startWidth + deltaX)));
     };
 
     const handleMouseUp = () => {
@@ -772,16 +756,8 @@ export default function Script() {
         )}
 
         {/* Desktop Sidebar */}
-        <div
-          style={{ width: `${sidebarWidth}%` }}
-          className="hidden md:flex flex-col shrink-0"
-        >
-          <div
-            className={cn(
-              'h-full flex flex-col rounded-2xl border border-border bg-card overflow-hidden',
-              density === 'compact' ? 'gap-2 p-2' : 'gap-4 p-4'
-            )}
-          >
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex h-full flex-col gap-3 overflow-hidden rounded-md border border-border bg-card p-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Bot className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
@@ -805,8 +781,45 @@ export default function Script() {
               {pendingMessages.map((item) => (
                 <UserMessageBubble key={item.id} content={item.content} time={item.time} />
               ))}
-              {activeReview && activeReviewArtifact && (
-                <fieldset disabled={reviewLoading} className="space-y-2">
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="flex-none pt-3">
+              <ChatComposer
+                value={input}
+                attachment={pendingAttachment}
+                disabled={sending}
+                error={operationError}
+                onValueChange={setInput}
+                onAttachmentChange={setPendingAttachment}
+                onSend={() => void send()}
+              />
+            </div>
+          </div>
+        </div>
+
+        {workspaceState.visible && !workspaceCollapsed && (
+          <div
+            role="separator"
+            aria-label="调整场景工作台宽度"
+            aria-orientation="vertical"
+            className="mx-1 hidden w-1 cursor-col-resize bg-transparent transition-colors hover:bg-cyan-500/40 md:block"
+            onMouseDown={handleMouseDown}
+          />
+        )}
+
+        <SceneWorkspace
+          state={workspaceState}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          widthPct={workspaceWidth}
+          collapsed={workspaceCollapsed}
+          onCollapsedChange={setWorkspaceCollapsed}
+          panels={{
+            'event-plan': eventPlanArtifact ? (
+              activeReview && activeReviewArtifact ? (
+                <fieldset disabled={reviewLoading} className="space-y-2 p-4">
                   <EventPlanReview
                     artifact={activeReviewArtifact}
                     review={activeReview}
@@ -825,214 +838,51 @@ export default function Script() {
                     </p>
                   )}
                 </fieldset>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Input Area */}
-            <div className="flex-none pt-3">
-              <ChatComposer
-                value={input}
-                attachment={pendingAttachment}
-                disabled={sending}
-                error={operationError}
-                onValueChange={setInput}
-                onAttachmentChange={setPendingAttachment}
-                onSend={() => void send()}
+              ) : (
+                <NarrativePanel
+                  selectedNode={selectedNode}
+                  nowText={nowText}
+                  onCopy={copySelectedSummary}
+                  eventPlan={eventPlanArtifact}
+                />
+              )
+            ) : undefined,
+            narration: narrativePlanArtifact ? (
+              <NarrativePanel
+                selectedNode={selectedNode}
+                nowText={nowText}
+                onCopy={copySelectedSummary}
+                eventPlan={eventPlanArtifact}
+                narrativePlan={narrativePlanArtifact}
               />
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {[
-                  {
-                    icon: ListTree,
-                    label: '生成大纲',
-                    color: 'text-blue-500 bg-blue-500/10'
-                  },
-                  {
-                    icon: Clapperboard,
-                    label: '细化场景',
-                    color: 'text-purple-500 bg-purple-500/10'
-                  }
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => void send(item.label)}
-                    disabled={sending}
-                    className="group flex items-center gap-2.5 rounded-xl border border-border bg-card/50 px-3 py-2.5 text-left text-xs transition-all hover:border-cyan-500/30 hover:bg-accent"
-                  >
-                    <div
-                      className={cn(
-                        'flex h-7 w-7 items-center justify-center rounded-lg transition-colors',
-                        item.color
-                      )}
-                    >
-                      <item.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-                      {item.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Resizer Handle */}
-        <div
-          className="hidden md:block w-1 hover:bg-cyan-500/40 cursor-col-resize transition-colors mx-1"
-          onMouseDown={handleMouseDown}
-        />
-
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* 右侧解析面板 */}
-          <div className="h-full flex flex-col rounded-2xl border border-border bg-card overflow-hidden">
-            <div className="flex-none px-4 py-3 border-b border-border flex items-center justify-between bg-card shadow-sm">
-              <button
-                onClick={togglePanel}
-                className={cn(
-                  'flex items-center gap-2 text-sm font-black transition-all duration-300 px-3 py-1.5 rounded-xl border',
-                  isPanelVisible
-                    ? 'border-red-500/20 bg-red-500/10 text-red-600 hover:bg-red-500/15'
-                    : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-700 hover:bg-cyan-500/15'
-                )}
-              >
-                {isPanelVisible ? (
-                  <>
-                    <X className="h-4 w-4" />
-                    收起解析
-                  </>
-                ) : (
-                  <>
-                    <Bot className="h-4 w-4" />
-                    解析结果
-                  </>
-                )}
-              </button>
-
-              {isPanelVisible && (
-                <div
-                  className="flex items-center gap-2"
-                  role="tablist"
-                  onKeyDown={(e) => {
-                    const tabs = ['narrative', 'resources', 'params'];
-                    const currentIndex = tabs.indexOf(activeTab);
-                    let nextIndex = -1;
-
-                    if (e.key === 'ArrowRight') {
-                      nextIndex = (currentIndex + 1) % tabs.length;
-                    } else if (e.key === 'ArrowLeft') {
-                      nextIndex =
-                        (currentIndex - 1 + tabs.length) % tabs.length;
-                    }
-
-                    if (nextIndex !== -1) {
-                      e.preventDefault();
-                      setActiveTab(tabs[nextIndex] as any);
-                      // Focus the new tab button
-                      const nextTabButton = (
-                        e.currentTarget as HTMLElement
-                      ).querySelector(`[data-tab-id="${tabs[nextIndex]}"]`);
-                      (nextTabButton as HTMLElement)?.focus();
-                    }
-                  }}
+            ) : undefined,
+            assets: workspaceState.runtime ? (
+              <ResourcePanel
+                sceneConfig={compiledConfig}
+                diagnostics={sessionState.diagnostics}
+              />
+            ) : undefined,
+            params: workspaceState.runtime ? (
+              <ParamsPanel
+                sceneConfig={compiledConfig}
+                onUpdate={updateCompiledDraft}
+              />
+            ) : undefined,
+            preview: workspaceState.runtime ? (
+              <div className="flex h-full items-center justify-center p-6">
+                <button
+                  type="button"
+                  onClick={() => setIsSceneModalOpen(true)}
+                  disabled={!completedSceneConfig}
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-3 text-sm text-cyan-700 transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:text-cyan-200"
                 >
-                  {['narrative', 'resources', 'params'].map((tab) => (
-                    <button
-                      key={tab}
-                      id={`tab-${tab}`}
-                      role="tab"
-                      aria-selected={activeTab === tab}
-                      aria-controls={`panel-${tab}`}
-                      data-tab-id={tab}
-                      onClick={() => setActiveTab(tab as any)}
-                      className={cn(
-                        'relative px-4 py-2 text-xs font-bold rounded-xl transition-all duration-200 ease-in-out',
-                        'focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2',
-                        activeTab === tab
-                          ? 'bg-cyan-500 text-white shadow-md'
-                          : 'text-muted-foreground hover:bg-muted/50'
-                      )}
-                    >
-                      {tab === 'narrative'
-                        ? '叙事规划'
-                        : tab === 'resources'
-                          ? '资源匹配'
-                          : '参数解算'}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 thin-scrollbar relative">
-              {isLoadingPanel && (
-                <div className="space-y-4 animate-pulse">
-                  <div className="h-8 bg-muted rounded-xl w-3/4" />
-                  <div className="h-32 bg-muted rounded-2xl w-full" />
-                  <div className="space-y-2">
-                    <div className="h-4 bg-muted rounded-lg w-full" />
-                    <div className="h-4 bg-muted rounded-lg w-5/6" />
-                    <div className="h-4 bg-muted rounded-lg w-4/6" />
-                  </div>
-                  <div className="h-40 bg-muted rounded-2xl w-full" />
-                </div>
-              )}
-
-              {panelError && !isLoadingPanel && (
-                <div className="flex flex-col items-center justify-center h-full space-y-4 text-center">
-                  <div className="p-4 rounded-full bg-red-500/10 text-red-500">
-                    <Info className="h-8 w-8" />
-                  </div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {panelError}
-                  </p>
-                  <button
-                    onClick={togglePanel}
-                    className="px-4 py-2 text-xs font-bold bg-cyan-500 text-white rounded-xl hover:bg-cyan-600 transition-colors"
-                  >
-                    重试加载
-                  </button>
-                </div>
-              )}
-
-              {isPanelVisible && !isLoadingPanel && !panelError && (
-                <div className="transition-opacity duration-200 ease-in-out">
-                  {activeTab === 'narrative' && (
-                    <NarrativePanel
-                      selectedNode={selectedNode}
-                      nowText={nowText}
-                      onCopy={copySelectedSummary}
-                      eventPlan={eventPlanArtifact}
-                      narrativePlan={narrativePlanArtifact}
-                    />
-                  )}
-                  {activeTab === 'resources' && (
-                    <ResourcePanel
-                      sceneConfig={compiledConfig}
-                      diagnostics={sessionState.diagnostics}
-                    />
-                  )}
-                  {activeTab === 'params' && (
-                    <ParamsPanel
-                      sceneConfig={compiledConfig}
-                      onUpdate={updateCompiledDraft}
-                    />
-                  )}
-                </div>
-              )}
-
-              {!isPanelVisible && !isLoadingPanel && !panelError && (
-                <div className="flex flex-col items-center justify-center h-full opacity-30 select-none grayscale">
-                  <Bot className="h-16 w-16 mb-4 text-cyan-500" />
-                  <p className="text-sm font-bold tracking-tight">
-                    点击“解析结果”开始数据分析
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+                  <ArrowRight className="h-4 w-4" />
+                  打开场景预览
+                </button>
+              </div>
+            ) : undefined
+          }}
+        />
       </div>
       <SceneModal
         isOpen={isSceneModalOpen}

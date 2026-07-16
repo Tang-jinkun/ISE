@@ -1,5 +1,12 @@
 import type { SceneProjectConfig } from '@ise/runtime-contracts';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -269,6 +276,38 @@ describe('NewScript real Agent flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '退回旧版' }));
 
     expect(mocks.navigate).toHaveBeenCalledWith('/script?projectId=script-1');
+  });
+
+  it('uses the full conversation surface before any artifact exists', () => {
+    renderNewScript();
+
+    expect(
+      screen.queryByRole('complementary', { name: '场景工作台' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('解析结果')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '生成大纲' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '细化场景' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens EventPlan review in the scene workspace when the artifact arrives', async () => {
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([eventPlanArtifact]);
+    emitAgentEvent({ id: '1', type: 'review.requested', data: review });
+
+    const workspace = screen.getByRole('complementary', {
+      name: '场景工作台'
+    });
+    expect(
+      within(workspace).getByRole('tab', { name: '事件计划' })
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(
+      within(workspace).getByRole('button', { name: '批准事件计划' })
+    ).toBeInTheDocument();
   });
 
   it('keeps a selected DOCX pending until send, then uploads, attaches, and clears it', async () => {

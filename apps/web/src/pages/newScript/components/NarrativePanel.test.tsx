@@ -1,118 +1,117 @@
 import type { AgentArtifactView } from '@/api/agent';
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { NarrativePanel } from './NarrativePanel';
 
-vi.mock('./DataImportButton', () => ({
-  DataImportButton: () => null
-}));
+const eventPlan: AgentArtifactView = {
+  artifactId: 'event-plan-1',
+  type: 'ise.event-plan-draft/v1',
+  version: 1,
+  createdAt: '2026-07-15T00:00:00.000Z',
+  createdBy: 'agent',
+  superseded: false,
+  data: {
+    eventUnits: [
+      {
+        eventUnitId: 'event-1',
+        title: '兵力展开',
+        worldStateChange: '常态警戒转为空中兵力展开',
+        participants: ['苏-30MKI', 'JF-17'],
+        locationRefs: ['阿达姆普尔', '米纳斯'],
+        evidenceRefs: ['evidence-1', 'evidence-2'],
+        inferenceRefs: [],
+        uncertainties: [],
+        narrativePurpose: '建立双方初始态势',
+        importance: 'high'
+      },
+      {
+        eventUnitId: 'event-2',
+        title: '空中对峙',
+        worldStateChange: '双方编队接近',
+        participants: ['苏-30MKI', 'JF-17'],
+        locationRefs: ['边境空域'],
+        evidenceRefs: ['evidence-3'],
+        inferenceRefs: [],
+        uncertainties: [],
+        narrativePurpose: '建立交战压力',
+        importance: 'medium'
+      }
+    ]
+  }
+};
 
-vi.mock('lucide-react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('lucide-react')>();
-  return {
-    ...actual,
-    Columns: () => <span data-testid="waterfall-layout-icon" />,
-    Grid: () => <span data-testid="grid-layout-icon" />,
-    Layers: () => <span data-testid="carousel-layout-icon" />
-  };
-});
+const narration: AgentArtifactView = {
+  artifactId: 'narration-1',
+  type: 'ise.narrative-plan/v1',
+  version: 1,
+  createdAt: '2026-07-15T00:00:01.000Z',
+  createdBy: 'agent',
+  superseded: false,
+  data: {
+    targetDurationMs: 180_000,
+    subtitles: [
+      {
+        subtitleId: 'subtitle-1',
+        eventUnitId: 'event-1',
+        text: '双方空中兵力从各自基地出动展开',
+        importance: 'high',
+        evidenceRefs: ['evidence-1']
+      }
+    ]
+  }
+};
 
 describe('NarrativePanel', () => {
-  const eventPlan: AgentArtifactView = {
-    artifactId: 'event-plan-1',
-    type: 'ise.event-plan-draft/v1',
-    version: 1,
-    createdAt: '2026-07-15T00:00:00.000Z',
-    createdBy: 'agent',
-    superseded: false,
-    data: {
-      eventUnits: [
-        {
-          eventUnitId: 'o1',
-          title: 'Opening stage',
-          worldStateChange: 'The scene opens',
-          participants: [],
-          locationRefs: [],
-          evidenceRefs: ['evidence-1'],
-          inferenceRefs: [],
-          uncertainties: [],
-          narrativePurpose: 'Opening',
-          importance: 'high'
-        }
-      ]
-    }
-  };
-
-  const renderPanel = () =>
+  it('shows real EventPlan units in source order without decorative layouts', () => {
     render(
       <NarrativePanel
-        selectedNode={{ id: 'n-root', title: 'Narrative', summary: '' }}
+        selectedNode={{ id: 'n-root', title: '印巴空中对抗', summary: '' }}
         nowText={() => ''}
         onCopy={vi.fn()}
         eventPlan={eventPlan}
       />
     );
 
-  const switchLayout = (container: HTMLElement, testId: string) => {
-    const button = container
-      .querySelector(`[data-testid="${testId}"]`)
-      ?.closest('button');
-    expect(button).not.toBeNull();
-    fireEvent.click(button!);
-  };
-
-  const expectNoCyanAccent = (container: HTMLElement) => {
-    expect(container.innerHTML).not.toContain('cyan');
-
-    const hasInlineCyan = Array.from(container.querySelectorAll('[style]')).some(
-      (element) => {
-        const style = element.getAttribute('style') ?? '';
-        return style.includes('#06b6d4') || style.includes('rgb(6, 182, 212)');
-      }
-    );
-
-    expect(hasInlineCyan).toBe(false);
-  };
-
-  it('uses semantic primary accents in the grid layout', () => {
-    const { container } = renderPanel();
-    switchLayout(container, 'grid-layout-icon');
-
-    const stageLabel = Array.from(container.querySelectorAll('div')).find(
-      (element) => element.textContent === 'Stage 1'
-    );
-    const card = stageLabel?.closest('.group');
-
-    expect(stageLabel).toHaveClass('text-primary');
-    expect(card).toHaveClass('border-primary', 'hover:border-primary/30');
-    expectNoCyanAccent(container);
+    const headings = screen.getAllByRole('heading', { level: 3 });
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      '兵力展开',
+      '空中对峙'
+    ]);
+    expect(screen.getByText('建立双方初始态势')).toBeInTheDocument();
+    expect(screen.getByText('2 条证据')).toBeInTheDocument();
+    expect(screen.queryByText('Stage 1')).not.toBeInTheDocument();
   });
 
-  it('keeps waterfall progress visible with a semantic primary accent', () => {
-    const { container } = renderPanel();
-    switchLayout(container, 'waterfall-layout-icon');
-
-    const progress = Array.from(container.querySelectorAll('[style]')).find(
-      (element) => element.getAttribute('style')?.includes('width: 20%')
+  it('shows the authoritative subtitle script when narration exists', () => {
+    render(
+      <NarrativePanel
+        selectedNode={{ id: 'n-root', title: '印巴空中对抗', summary: '' }}
+        nowText={() => ''}
+        onCopy={vi.fn()}
+        eventPlan={eventPlan}
+        narrativePlan={narration}
+      />
     );
-    const card = progress?.closest('.break-inside-avoid');
 
-    expect(progress).toHaveClass('bg-primary');
-    expect(card).toHaveClass('hover:border-primary/30');
-    expectNoCyanAccent(container);
+    expect(
+      screen.getByText('双方空中兵力从各自基地出动展开')
+    ).toBeInTheDocument();
+    expect(screen.getByText('高重要度')).toBeInTheDocument();
+    expect(screen.getByText('目标时长 180 秒')).toBeInTheDocument();
   });
 
-  it('uses semantic primary accents in the carousel layout', () => {
-    const { container } = renderPanel();
-    switchLayout(container, 'carousel-layout-icon');
-
-    const title = Array.from(container.querySelectorAll('.text-2xl')).find(
-      (element) => element.textContent === 'Opening stage'
+  it('keeps copy as a compact command', () => {
+    const onCopy = vi.fn();
+    render(
+      <NarrativePanel
+        selectedNode={{ id: 'n-root', title: '印巴空中对抗', summary: '' }}
+        nowText={() => ''}
+        onCopy={onCopy}
+        eventPlan={eventPlan}
+      />
     );
-    const card = title?.closest('.absolute');
 
-    expect(title).toHaveClass('text-primary');
-    expect(card).toHaveClass('border-primary');
-    expectNoCyanAccent(container);
+    fireEvent.click(screen.getByRole('button', { name: '复制产物摘要' }));
+    expect(onCopy).toHaveBeenCalledTimes(1);
   });
 });
