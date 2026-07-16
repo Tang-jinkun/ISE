@@ -148,8 +148,18 @@ try {
 
   $utf8 = [System.Text.UTF8Encoding]::new($false)
   $loader = @'
+import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-await import(pathToFileURL(process.argv[2]).href);
+
+if (process.env.ISE_LAUNCHER_FIXTURE_MODE === 'descendant-success') {
+  spawn(process.execPath, [process.argv[2]], {
+    env: { ...process.env, ISE_LAUNCHER_FIXTURE_MODE: 'success' },
+    stdio: 'ignore',
+  });
+  setInterval(() => {}, 1000);
+} else {
+  await import(pathToFileURL(process.argv[2]).href);
+}
 '@
   [System.IO.File]::WriteAllText((Join-Path $tsxDirectory 'cli.mjs'), $loader, $utf8)
 
@@ -177,6 +187,24 @@ if (mode === 'timeout') {
   [System.IO.File]::WriteAllText((Join-Path $agentDirectory 'server.ts'), $entrypoint, $utf8)
 
   $source = Get-Content -Raw -LiteralPath $launcher
+  Run-Test 'default working root resolves under Windows PowerShell' {
+    $stdoutPath = Join-Path $root 'default-root.stdout.txt'
+    $stderrPath = Join-Path $root 'default-root.stderr.txt'
+    $process = Start-Process `
+      -FilePath 'powershell.exe' `
+      -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launcher, '-DryRun') `
+      -Wait `
+      -PassThru `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $stdoutPath `
+      -RedirectStandardError $stderrPath
+    $output = @(Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue)
+    $errorOutput = @(Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue)
+    $expectedDatabase = Join-Path (Split-Path $PSScriptRoot -Parent) '.ise\agent.sqlite'
+    Assert-Equal $process.ExitCode 0 "Standalone launcher failed: $($errorOutput -join ' ')"
+    Assert-True ($output -contains "AGENT_DB_PATH=$expectedDatabase") 'Default working root did not resolve to the repository root'
+  }
+
   Run-Test 'dry run is prompt-free and side-effect-free' {
     Assert-True ($source -notmatch 'Read-Host|PromptForChoice') 'Default launcher must not prompt'
     foreach ($name in $modelNames) {
@@ -213,6 +241,23 @@ if (mode === 'timeout') {
     Assert-SecretFree $launch $sentinel
     Assert-Equal $owner ([int]$child.pid) 'Listening socket is not owned by the spawned child'
     Assert-True ($launch.Output -contains "AGENT_PROCESS_ID=$($child.pid)") 'Readiness output does not identify the spawned child'
+  }
+
+  Run-Test 'tsx descendant listener owns readiness' {
+    $port = Get-FreePort
+    $resultPath = Join-Path $root 'descendant-success.json'
+    $launch = Invoke-Launcher -Port $port -Mode 'descendant-success' -ResultPath $resultPath
+    $child = Read-FixtureResult $resultPath
+    $owner = Get-ListenerProcessId $port
+    if ($null -ne $child) {
+      $childProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $($child.pid)" -ErrorAction SilentlyContinue
+      if ($null -ne $childProcess) { [void]$fixturePids.Add([int]$childProcess.ParentProcessId) }
+    }
+
+    Assert-True $launch.Succeeded "Launcher rejected its listener descendant: $($launch.Error)"
+    Assert-True ($null -ne $child) 'Descendant fixture did not write its result'
+    Assert-Equal $owner ([int]$child.pid) 'Listening socket is not owned by the descendant child'
+    Assert-True ($launch.Output -contains "AGENT_PROCESS_ID=$($child.pid)") 'Readiness output does not identify the listening descendant'
   }
 
   Run-Test 'pre-existing listener rejects before child spawn' {

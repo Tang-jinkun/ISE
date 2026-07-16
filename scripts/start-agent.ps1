@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$WorkingRoot = (Split-Path $PSScriptRoot -Parent),
+  [string]$WorkingRoot = '',
   [string]$DatabasePath = '.ise\agent.sqlite',
   [ValidateRange(1, 65535)]
   [int]$Port = 4444,
@@ -13,7 +13,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$root = [System.IO.Path]::GetFullPath($WorkingRoot)
+$root = if ([string]::IsNullOrWhiteSpace($WorkingRoot)) {
+  [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+} else {
+  [System.IO.Path]::GetFullPath($WorkingRoot)
+}
 $database = if ([System.IO.Path]::IsPathRooted($DatabasePath)) {
   [System.IO.Path]::GetFullPath($DatabasePath)
 } else {
@@ -48,6 +52,23 @@ function Get-ListeningProcessId {
     Select-Object -First 1
   if ($null -eq $connection) { return $null }
   return [int]$connection.OwningProcess
+}
+
+function Test-ProcessDescendant {
+  param([int]$ProcessId, [int]$AncestorProcessId)
+
+  $currentProcessId = $ProcessId
+  for ($depth = 0; $depth -lt 8; $depth++) {
+    if ($currentProcessId -eq $AncestorProcessId) { return $true }
+
+    $process = Get-CimInstance Win32_Process `
+      -Filter "ProcessId = $currentProcessId" `
+      -ErrorAction SilentlyContinue
+    if ($null -eq $process -or [int]$process.ParentProcessId -le 0) { return $false }
+    $currentProcessId = [int]$process.ParentProcessId
+  }
+
+  return $false
 }
 
 function Get-NodeExecutable {
@@ -179,13 +200,13 @@ do {
 
   $listenerProcessId = Get-ListeningProcessId -Address $hostAddress -LocalPort $Port
   if ($null -ne $listenerProcessId) {
-    if ($listenerProcessId -ne $agentProcessId) {
+    if (-not (Test-ProcessDescendant -ProcessId $listenerProcessId -AncestorProcessId $agentProcessId)) {
       Close-AgentProcess -Process $agentProcess -Stop
       throw 'AGENT_PORT_IN_USE'
     }
 
     $agentProcess.Dispose()
-    Write-Output "AGENT_PROCESS_ID=$agentProcessId"
+    Write-Output "AGENT_PROCESS_ID=$listenerProcessId"
     Write-Output "AGENT_${Port}_LISTENING=ok"
     return
   }
