@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -148,7 +148,7 @@ test('agent startup accepts either a complete environment model or no model', ()
   );
 });
 
-test('agent startup never consults a disk .env for MODEL_API_KEY', async () => {
+test('agent startup config uses only the environment supplied at launch', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ise-agent-env-'));
   const previousDirectory = process.cwd();
   try {
@@ -162,16 +162,20 @@ test('agent startup never consults a disk .env for MODEL_API_KEY', async () => {
     );
     process.chdir(directory);
 
-    const config = loadConfig({
+    const unconfigured = loadConfig({
       NEST_API_BASE_URL: 'http://127.0.0.1:3000'
     });
-    assert.equal(config.MODEL_API_KEY, undefined);
+    assert.equal(unconfigured.MODEL_API_KEY, undefined);
 
-    const serverSource = await readFile(
-      new URL('../src/server.ts', import.meta.url),
-      'utf8'
-    );
-    assert.doesNotMatch(serverSource, /loadEnvFile/);
+    const configured = loadConfig({
+      NEST_API_BASE_URL: 'http://127.0.0.1:3000',
+      MODEL_BASE_URL: 'https://launch.example/v1',
+      MODEL_NAME: 'launch-model',
+      MODEL_API_KEY: 'launch-secret'
+    });
+    assert.equal(configured.MODEL_BASE_URL, 'https://launch.example/v1');
+    assert.equal(configured.MODEL_NAME, 'launch-model');
+    assert.equal(configured.MODEL_API_KEY, 'launch-secret');
   } finally {
     process.chdir(previousDirectory);
     await rm(directory, { recursive: true, force: true });

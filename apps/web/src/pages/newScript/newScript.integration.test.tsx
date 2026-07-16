@@ -186,6 +186,125 @@ const compiledArtifact = artifact(
   }
 );
 
+const sceneArtifactFingerprint = `sha256:${'d'.repeat(64)}`;
+
+const sceneBlueprintArtifact = artifact(
+  'blueprint-1',
+  'ise.scene-blueprint/v1',
+  {
+    schemaVersion: 'ise.scene-blueprint/v1',
+    blueprintId: 'blueprint:1',
+    sourceNarrationPlanId: 'narration:1',
+    sourceNarrationFingerprint: sceneArtifactFingerprint,
+    actorGroups: [
+      {
+        groupId: 'group:india-su30-adampur',
+        semanticEntityRef: '苏-30MKI',
+        side: 'india',
+        locationRef: 'location:adampur',
+        platformType: 'fighter',
+        role: 'fighter-formation',
+        quantityDecision: {
+          value: 2,
+          constraint: 'exact',
+          source: 'evidence',
+          evidenceRefs: ['evidence:su30'],
+          reason: 'Explicit quantity adjacent to entity'
+        },
+        formationPattern: 'finger-four',
+        leaderPolicy: 'stable-first-member',
+        behaviorProfile: 'fighter-formation/v1',
+        lifecycle: 'scene-persistent'
+      }
+    ],
+    sceneBeats: [
+      {
+        sceneBeatId: 'scene-beat:1',
+        subtitleId: 'subtitle:1',
+        eventUnitId: 'event:1',
+        purpose: '建立双方初始态势',
+        actorRefs: ['group:india-su30-adampur'],
+        behaviorIntents: ['formation_departure'],
+        spatialConstraints: ['depart-from:adampur'],
+        stateTransitions: ['grounded->airborne'],
+        cameraIntent: 'group-frame',
+        mediaIntents: [],
+        requiredFacts: ['evidence:su30'],
+        forbiddenClaims: [],
+        fidelity: 'evidence',
+        priority: 'high'
+      }
+    ],
+    diagnostics: []
+  }
+);
+
+const resolvedScenePlanArtifact = artifact(
+  'resolved-1',
+  'ise.resolved-scene-plan/v1',
+  {
+    schemaVersion: 'ise.resolved-scene-plan/v1',
+    resolvedScenePlanId: 'resolved-scene-plan:1',
+    sourceBlueprintId: 'blueprint:1',
+    sourceBlueprintFingerprint: sceneArtifactFingerprint,
+    trajectoryCatalogFingerprint: sceneArtifactFingerprint,
+    scenarioMappingFingerprint: sceneArtifactFingerprint,
+    resolvedActors: [
+      {
+        actorInstanceId: 'actor:india-su30-adampur:leader',
+        actorGroupRef: 'group:india-su30-adampur',
+        role: 'leader',
+        ordinal: 0
+      }
+    ],
+    resolvedLocations: ['location:adampur'],
+    resolvedAssets: [
+      'model:su30mki',
+      'trajectory:adampur-su30-1'
+    ],
+    resolvedFormationBundles: [
+      {
+        bundleId: 'formation:india-su30-adampur',
+        actorGroupRef: 'group:india-su30-adampur',
+        routeAssetRefs: ['trajectory:adampur-su30-1'],
+        recommendedActorCount: 1,
+        role: 'fighter-formation',
+        side: 'india',
+        semanticTags: ['su30mki'],
+        scenarioBindings: ['indo-pak/v1'],
+        mappingAuthority: 'scenario_config',
+        diagnostics: []
+      }
+    ],
+    actorRouteAssignments: [
+      {
+        actorInstanceRef: 'actor:india-su30-adampur:leader',
+        formationBundleRef: 'formation:india-su30-adampur',
+        trajectoryAssetRef: 'trajectory:adampur-su30-1',
+        segmentId: 'segment:india-su30:departure',
+        resamplePolicy: 'preserve-source-samples',
+        timeMapping: {
+          mode: 'fit-window',
+          startMs: 800,
+          durationMs: 12_000
+        },
+        spatialPathMode: 'preserve',
+        sourceKind: 'catalog',
+        matchReason: 'Exact scenario alias and location match',
+        lineage: [
+          'catalog:indo-pak/v1',
+          'formation:india-su30-adampur'
+        ]
+      }
+    ],
+    fallbackTrajectoryRecipes: [],
+    resolvedBehaviors: ['fighter-formation/v1'],
+    resolvedMedia: ['media:satellite-overlay'],
+    fallbackDecisions: [],
+    diagnostics: []
+  }
+);
+
 function emitAgentEvent(event: AgentEvent) {
   act(() => {
     useAgentSessionStore.getState().applyEvent('session-1', event);
@@ -416,6 +535,36 @@ describe('NewScript real Agent flow', () => {
         within(workspace).getByRole('tab', { name: '事件计划' })
       ).toHaveAttribute('aria-selected', 'true')
     );
+  });
+
+  it('renders actual resolved scene artifacts across all pre-runtime workspace tabs', async () => {
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([sceneBlueprintArtifact, resolvedScenePlanArtifact]);
+
+    const workspace = screen.getByRole('complementary', {
+      name: '场景工作台'
+    });
+    expect(
+      within(workspace).getByRole('tab', { name: '场景蓝图' })
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(
+      within(workspace).getByText('actor:india-su30-adampur:leader')
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(workspace).getByRole('tab', { name: '资源' }));
+    expect(within(workspace).getByText('model:su30mki')).toBeInTheDocument();
+    expect(
+      within(workspace).getByText('trajectory:adampur-su30-1')
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(workspace).getByRole('tab', { name: '参数' }));
+    expect(
+      within(workspace).getByText('fighter-formation/v1')
+    ).toBeInTheDocument();
+    expect(
+      within(workspace).getByText('actor:india-su30-adampur:leader')
+    ).toBeInTheDocument();
   });
 
   it('keeps a selected DOCX pending until send, then uploads, attaches, and clears it', async () => {
