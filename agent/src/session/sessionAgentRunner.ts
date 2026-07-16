@@ -378,9 +378,10 @@ export class SessionAgentRunner {
     if (!validSet) {
       throw new CompilationError([diagnostic('COMPILER_ARTIFACT_SET_INVALID', 'Compiler returned an invalid artifact set')])
     }
-    const compiledInput = returned.find(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)!
+    const ordered = expectedTypes.map(type => returned.find(artifact => artifact.type === type)!)
+    const compiledInput = ordered.find(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)!
     this.validatedCompiledData(run, compiledInput as CompiledRuntimeArtifactCandidate)
-    const persisted = artifacts.createMany(returned)
+    const persisted = artifacts.createMany(ordered)
     for (const artifact of persisted) {
       this.events.append(run.sessionId, run.id, 'artifact.created', {
         runId: run.id,

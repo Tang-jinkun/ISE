@@ -464,6 +464,22 @@ function invalidAdapterCompilerToolsFactory(options: CompilerToolOptions = {}): 
   })
 }
 
+function shuffledCompilerToolsFactory(options: CompilerToolOptions = {}): AgentTool[] {
+  const tools = createCompilerTools(options)
+  const compile = tools[0]!
+  return [{
+    ...compile,
+    async execute(input, context, onProgress) {
+      const result = await compile.execute(input, context, onProgress)
+      const artifacts = result.artifacts!
+      return {
+        ...result,
+        artifacts: [artifacts[4]!, artifacts[2]!, artifacts[0]!, artifacts[3]!, artifacts[1]!],
+      }
+    },
+  }, ...tools.slice(1)]
+}
+
 function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
   const store = new PersistentArtifactStore(sessionId, repositories.artifacts)
   const eventPlan = {
@@ -747,6 +763,47 @@ test('approved compilation selects exact EvidenceIR and atomically persists orde
   const persisted = f.repositories.artifacts.listByRun(f.session.id, run.id)
   for (const type of expectedTypes) assert.equal(persisted.filter(artifact => artifact.type === type).length, 1, type)
   assert.equal(persistenceBatches.some(batch => JSON.stringify(batch) === JSON.stringify(expectedTypes)), true)
+  const createdTypes = f.repositories.events.after(f.session.id, '0')
+    .filter(event => event.type === 'artifact.created' && expectedTypes.includes(event.data.artifactType as typeof expectedTypes[number]))
+    .map(event => event.data.artifactType)
+  assert.deepEqual(createdTypes, expectedTypes)
+  f.database.close()
+})
+
+test('session canonicalizes shuffled valid compiler artifacts before atomic persistence and publication', async (t) => {
+  const model = new ControllableModel()
+  const f = await terminalFixture(t, model, false, { compilerToolsFactory: shuffledCompilerToolsFactory })
+  const acceptedArtifactId = prepareAcceptedRun(f)
+  const run = f.repositories.transaction(() => f.runner.createAfterApproval({
+    sessionId: f.session.id, subject: 'user-1', acceptedArtifactId,
+  }))
+  persistNarrative(f, acceptedArtifactId, run.id)
+
+  const repository = f.repositories.artifacts
+  const replaceLedger = repository.replaceLedger.bind(repository)
+  const persistenceBatches: string[][] = []
+  repository.replaceLedger = (sessionId, ledger, createdByRun) => {
+    const existingIds = new Set(repository.listLedger(sessionId).map(artifact => artifact.id))
+    const introduced = ledger.filter(artifact => !existingIds.has(artifact.id)).map(artifact => artifact.type)
+    if (introduced.length > 0) persistenceBatches.push(introduced)
+    replaceLedger(sessionId, ledger, createdByRun)
+  }
+
+  f.runner.startQueued(run.id, 'Bearer user-1')
+  await model.started
+  model.succeed()
+  await waitForTerminal(f.repositories, f.session.id)
+
+  const expectedTypes = [
+    NARRATION_PLAN_ARTIFACT,
+    SCENE_BLUEPRINT_ARTIFACT,
+    RESOLVED_SCENE_PLAN_ARTIFACT,
+    CHOREOGRAPHY_PLAN_ARTIFACT,
+    COMPILED_RUNTIME_ARTIFACT,
+  ]
+  const finalBatch = persistenceBatches.find(batch =>
+    batch.length === expectedTypes.length && batch.every(type => expectedTypes.includes(type as typeof expectedTypes[number])))
+  assert.deepEqual(finalBatch, expectedTypes)
   const createdTypes = f.repositories.events.after(f.session.id, '0')
     .filter(event => event.type === 'artifact.created' && expectedTypes.includes(event.data.artifactType as typeof expectedTypes[number]))
     .map(event => event.data.artifactType)

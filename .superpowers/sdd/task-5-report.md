@@ -77,3 +77,15 @@ Commit message: `feat: compile multi-actor choreography`
 
 - One pre-existing symbolic-link test remains skipped because Windows did not grant symbolic-link creation permission. This is unrelated to Task 5.
 - The real compiler is intentionally bound to `indoPakTrajectoryScenario` for this scenario slice; broader scenario selection remains outside Task 5.
+
+## Follow-Up Review Fix
+
+Commit message: `fix: order scene artifact persistence`
+
+- Review finding: exact-set validation accepted a valid shuffled five-artifact result, then used tool-return order for atomic persistence and `artifact.created` publication.
+- RED: an injected compiler wrapper returned `[CompiledRuntime, ResolvedScenePlan, NarrationPlan, ChoreographyPlan, SceneBlueprint]`. The session regression observed that same non-canonical persistence order instead of the required dependency order.
+- GREEN: after retaining the existing exactly-one-type validation, the session maps the validated set through `expectedTypes` and uses that canonical array for compiled validation, one `createMany`, and event publication.
+- Focused session verification: 15 tests, 15 passed, 0 failed.
+- Full Agent verification: 191 tests, 190 passed, 0 failed, 1 unrelated Windows symlink skip.
+- Agent typecheck: exit 0.
+- `git diff --check`: exit 0; line-ending conversion notices only.
