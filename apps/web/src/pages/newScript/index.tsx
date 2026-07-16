@@ -29,7 +29,6 @@ import {
   Layout,
   ListTree,
   Save,
-  Send,
   User,
   X
 } from 'lucide-react';
@@ -38,7 +37,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { selectArtifactExports } from './artifactExports';
 import { ArtifactExportControls } from './components/ArtifactExportControls';
 import { AgentTurn } from './components/AgentTurn';
-import { DataImportButton } from './components/DataImportButton';
+import { ChatComposer } from './components/ChatComposer';
 import { EventPlanReview } from './components/EventPlanReview';
 import { NarrativePanel } from './components/NarrativePanel';
 import { ParamsPanel } from './components/ParamsPanel';
@@ -84,12 +83,6 @@ const buildGenerationObjective = (
 
 const errorText = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback;
-
-const formatFileSize = (size: number) => {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-};
 
 const reviewBody = ({
   artifactId,
@@ -557,14 +550,16 @@ export default function Script() {
   const send = async (overrideContent?: string) => {
     const text =
       typeof overrideContent === 'string' ? overrideContent : input.trim();
-    if (!text || sending) return;
+    const attachment = pendingAttachment;
+    if ((!text && !attachment) || sending) return;
+    const objective = text || '请解析附件并生成可审核、可播放的场景。';
 
     setSending(true);
     setOperationError(null);
 
     try {
-      const uploaded = pendingAttachment
-        ? await uploadFile(pendingAttachment, { fileType: 'application' })
+      const uploaded = attachment
+        ? await uploadFile(attachment, { fileType: 'application' })
         : null;
       const needsSession = !agentSessionId;
       const sessionId = needsSession
@@ -579,10 +574,12 @@ export default function Script() {
         setAgentSessionId(sessionId);
       }
       const queued = await sendAgentMessage(sessionId, {
-        content: hasSentInitialMessage ? text : buildGenerationObjective(text)
+        content: hasSentInitialMessage
+          ? objective
+          : buildGenerationObjective(objective)
       });
       setHasSentInitialMessage(true);
-      appendUserMessage(text, queued.runId);
+      appendUserMessage(text || `附件：${attachment!.name}`, queued.runId);
       setInput('');
       setPendingAttachment(null);
     } catch (error) {
@@ -790,10 +787,6 @@ export default function Script() {
                 <Bot className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
                 智能问答
               </div>
-              <DataImportButton
-                onImport={setPendingAttachment}
-                isLoading={sending}
-              />
             </div>
 
             {/* Chat Messages Area */}
@@ -812,11 +805,6 @@ export default function Script() {
               {pendingMessages.map((item) => (
                 <UserMessageBubble key={item.id} content={item.content} time={item.time} />
               ))}
-              {operationError && (
-                <p role="alert" className="text-xs text-destructive">
-                  {operationError}
-                </p>
-              )}
               {activeReview && activeReviewArtifact && (
                 <fieldset disabled={reviewLoading} className="space-y-2">
                   <EventPlanReview
@@ -843,60 +831,15 @@ export default function Script() {
 
             {/* Input Area */}
             <div className="flex-none pt-3">
-              {pendingAttachment && (
-                <div className="mb-2 flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-2">
-                  <FileText className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-300" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-foreground">
-                      {pendingAttachment.name}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {formatFileSize(pendingAttachment.size)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="移除附件"
-                    title="移除附件"
-                    disabled={sending}
-                    onClick={() => setPendingAttachment(null)}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-              <div className="flex items-end gap-2">
-                <div className="flex-1 relative">
-                  <textarea
-                    value={input}
-                    disabled={sending}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                    placeholder="输入你的问题..."
-                    className="min-h-[40px] max-h-32 w-full resize-none rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-cyan-500/40"
-                  />
-                </div>
-                <button
-                  type="button"
-                  aria-label="发送消息"
-                  onClick={() => void send()}
-                  disabled={sending || !input.trim()}
-                  className={cn(
-                    'inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-colors',
-                    sending || !input.trim()
-                      ? 'border-border bg-muted text-muted-foreground'
-                      : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-700 dark:text-cyan-200 hover:bg-cyan-500/15'
-                  )}
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
+              <ChatComposer
+                value={input}
+                attachment={pendingAttachment}
+                disabled={sending}
+                error={operationError}
+                onValueChange={setInput}
+                onAttachmentChange={setPendingAttachment}
+                onSend={() => void send()}
+              />
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {[
                   {

@@ -177,7 +177,7 @@ function renderNewScript() {
 }
 
 function setObjective(objective: string) {
-  fireEvent.change(screen.getByPlaceholderText('输入你的问题...'), {
+  fireEvent.change(screen.getByPlaceholderText('描述你想生成的场景...'), {
     target: { value: objective }
   });
 }
@@ -336,7 +336,7 @@ describe('NewScript real Agent flow', () => {
     expect(mocks.useAgentSession).toHaveBeenCalledWith('session-1');
     expect(mocks.useAgentSession).not.toHaveBeenCalledWith('');
     expect(screen.queryByText('report.docx')).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('输入你的问题...')).toHaveValue('');
+    expect(screen.getByPlaceholderText('描述你想生成的场景...')).toHaveValue('');
   });
 
   it('starts a new Agent session from text without requiring a DOCX', async () => {
@@ -367,6 +367,28 @@ describe('NewScript real Agent flow', () => {
     expect(mocks.attachAgentFile).not.toHaveBeenCalled();
     expect(mocks.sendAgentMessage).toHaveBeenCalledWith('session-1', {
       content: expect.stringMatching(/直接根据文字生成港口态势场景[\s\S]*180\s*秒/)
+    });
+  });
+
+  it('starts a new Agent session from a DOCX without requiring prompt text', async () => {
+    renderNewScript();
+    const file = selectReport();
+
+    const sendButton = screen.getByRole('button', { name: '发送消息' });
+    expect(sendButton).toBeEnabled();
+    fireEvent.click(sendButton);
+
+    await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.uploadFile).toHaveBeenCalledWith(file, {
+      fileType: 'application'
+    });
+    expect(mocks.attachAgentFile).toHaveBeenCalledWith('session-1', {
+      fileId: 'file-1'
+    });
+    expect(mocks.sendAgentMessage).toHaveBeenCalledWith('session-1', {
+      content: expect.stringMatching(
+        /请解析附件并生成可审核、可播放的场景。[\s\S]*180\s*秒/
+      )
     });
   });
 
@@ -422,7 +444,7 @@ describe('NewScript real Agent flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('智能体暂时不可用');
-    expect(screen.getByPlaceholderText('输入你的问题...')).toHaveValue(
+    expect(screen.getByPlaceholderText('描述你想生成的场景...')).toHaveValue(
       '生成失败后可以重试'
     );
     expect(screen.getByText('report.docx')).toBeInTheDocument();
