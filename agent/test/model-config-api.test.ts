@@ -57,7 +57,7 @@ async function fixture(
     modelConfigs,
     modelFetch
   });
-  return { app, database, modelConfigs };
+  return { app, database, repositories, modelConfigs };
 }
 
 const bearer = (subject: string) => ({ authorization: `Bearer ${subject}` });
@@ -226,6 +226,75 @@ test('model config API restores the same redacted response after database reopen
   assert.equal(restored.body.includes(remoteBody.apiKey), false);
   await reopened.app.close();
   reopened.database.close();
+});
+
+test('model config API replaces an unavailable credential with an explicit key', async () => {
+  const baseProtector: CredentialProtector = {
+    protect: value => `protected:${Buffer.from(value).toString('base64')}`,
+    unprotect: value => Buffer.from(value.slice('protected:'.length), 'base64').toString()
+  };
+  const f = await fixture(undefined, {
+    protector: {
+      protect: value => baseProtector.protect(value),
+      unprotect: value => {
+        if (value === 'foreign-ciphertext') throw new Error('sensitive-api-decrypt-diagnostic');
+        return baseProtector.unprotect(value);
+      }
+    }
+  });
+  f.repositories.modelConfigs.save({
+    subject: 'user-1',
+    provider: remoteBody.provider,
+    baseUrl: remoteBody.baseUrl,
+    model: remoteBody.model,
+    encryptedApiKey: 'foreign-ciphertext',
+    cleared: false
+  });
+
+  const unavailable = await f.app.inject({
+    method: 'GET',
+    url: '/model-config',
+    headers: bearer('user-1')
+  });
+  assert.equal(unavailable.statusCode, 500);
+  assert.deepEqual(unavailable.json(), {
+    error: {
+      code: 'MODEL_CREDENTIAL_UNAVAILABLE',
+      message: 'Model credential is unavailable'
+    }
+  });
+
+  const replacementKey = 'replacement-api-key';
+  const saved = await f.app.inject({
+    method: 'PUT',
+    url: '/model-config',
+    headers: bearer('user-1'),
+    payload: { ...remoteBody, apiKey: replacementKey }
+  });
+  assert.equal(saved.statusCode, 200);
+  assert.deepEqual(saved.json(), {
+    configured: true,
+    provider: remoteBody.provider,
+    baseUrl: remoteBody.baseUrl,
+    model: remoteBody.model,
+    hasApiKey: true
+  });
+  assert.equal(saved.body.includes(replacementKey), false);
+  assert.equal(
+    f.repositories.modelConfigs.get('user-1')?.encryptedApiKey,
+    baseProtector.protect(replacementKey)
+  );
+
+  const restored = await f.app.inject({
+    method: 'GET',
+    url: '/model-config',
+    headers: bearer('user-1')
+  });
+  assert.equal(restored.statusCode, 200);
+  assert.deepEqual(restored.json(), saved.json());
+  assert.equal(restored.body.includes(replacementKey), false);
+  await f.app.close();
+  f.database.close();
 });
 
 test('production server wires persisted model configs through the Windows protector', async () => {

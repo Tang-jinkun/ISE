@@ -44,7 +44,6 @@ function assertStableError(
 
 test('model config ciphertext and tombstones survive database reopen', async (t) => {
   const path = await databasePath(t)
-  const plaintext = 'unit-test-plaintext-model-credential'
   const ciphertext = 'ciphertext-only'
   const first = await AgentDatabase.open(path, 'sql.js')
   const firstRepo = new AgentRepositories(first).modelConfigs
@@ -64,7 +63,6 @@ test('model config ciphertext and tombstones survive database reopen', async (t)
   first.close()
 
   const bytes = await readFile(path)
-  assert.equal(bytes.includes(Buffer.from(plaintext)), false)
   assert.equal(bytes.includes(Buffer.from(ciphertext)), true)
 
   const reopened = await AgentDatabase.open(path, 'sql.js')
@@ -227,6 +225,109 @@ test('decrypt failures are stable, redacted, and fail closed', async () => {
 
   assertStableError(() => store.get('user-1'), 'MODEL_CREDENTIAL_UNAVAILABLE', diagnostic)
   assertStableError(() => store.require('user-1'), 'MODEL_CREDENTIAL_UNAVAILABLE', diagnostic)
+  assert.equal(decryptions, 1)
+  database.close()
+})
+
+test('an explicit key replaces undecryptable ciphertext and recovers the cached subject', async () => {
+  const diagnostic = 'sensitive-recovery-decrypt-diagnostic'
+  const database = await AgentDatabase.open(':memory:', 'sql.js')
+  const repository = new AgentRepositories(database).modelConfigs
+  repository.save({
+    subject: 'user-1',
+    provider: remoteConfig.provider,
+    baseUrl: remoteConfig.baseUrl,
+    model: remoteConfig.model,
+    encryptedApiKey: 'foreign-ciphertext',
+    cleared: false,
+  })
+  const baseProtector = deterministicProtector()
+  let decryptions = 0
+  const store = new ModelConfigStore(undefined, {
+    repository,
+    protector: {
+      protect: value => baseProtector.protect(value),
+      unprotect: value => {
+        decryptions += 1
+        if (value === 'foreign-ciphertext') throw new Error(diagnostic)
+        return baseProtector.unprotect(value)
+      },
+    },
+  })
+
+  assertStableError(() => store.get('user-1'), 'MODEL_CREDENTIAL_UNAVAILABLE', diagnostic)
+  assertStableError(() => store.set('user-1', {
+    provider: remoteConfig.provider,
+    baseUrl: remoteConfig.baseUrl,
+    model: 'deepseek-reasoner',
+  }), 'MODEL_CREDENTIAL_UNAVAILABLE', diagnostic)
+
+  const replacementKey = 'replacement-key'
+  const view = store.set('user-1', {
+    ...remoteConfig,
+    apiKey: `  ${replacementKey}  `,
+  })
+  assert.deepEqual(view, {
+    configured: true,
+    provider: remoteConfig.provider,
+    baseUrl: remoteConfig.baseUrl,
+    model: remoteConfig.model,
+    hasApiKey: true,
+  })
+  assert.equal(repository.get('user-1')?.encryptedApiKey, baseProtector.protect(replacementKey))
+  assert.equal(store.require('user-1').apiKey, replacementKey)
+  assert.equal(JSON.stringify(store.get('user-1')).includes(replacementKey), false)
+  assert.equal(decryptions, 1)
+  database.close()
+})
+
+test('a failed explicit-key replacement retains undecryptable ciphertext and cached failure', async (t) => {
+  const path = await databasePath(t)
+  const decryptDiagnostic = 'sensitive-retained-decrypt-diagnostic'
+  const flushDiagnostic = 'sensitive-replacement-flush-diagnostic'
+  let failNextFlush = false
+  const database = await AgentDatabase.open(path, 'sql.js', {
+    beforeRename: () => {
+      if (!failNextFlush) return
+      failNextFlush = false
+      throw new Error(flushDiagnostic)
+    },
+  })
+  const repository = new AgentRepositories(database).modelConfigs
+  repository.save({
+    subject: 'user-1',
+    provider: remoteConfig.provider,
+    baseUrl: remoteConfig.baseUrl,
+    model: remoteConfig.model,
+    encryptedApiKey: 'foreign-ciphertext',
+    cleared: false,
+  })
+  const previous = repository.get('user-1')
+  let decryptions = 0
+  const store = new ModelConfigStore(undefined, {
+    repository,
+    protector: {
+      protect: value => deterministicProtector().protect(value),
+      unprotect: () => {
+        decryptions += 1
+        throw new Error(decryptDiagnostic)
+      },
+    },
+  })
+  assertStableError(() => store.get('user-1'), 'MODEL_CREDENTIAL_UNAVAILABLE', decryptDiagnostic)
+  failNextFlush = true
+
+  assertStableError(() => store.set('user-1', {
+    ...remoteConfig,
+    apiKey: 'replacement-key',
+  }), 'MODEL_CREDENTIAL_STORAGE_UNAVAILABLE', flushDiagnostic)
+  assert.deepEqual(repository.get('user-1'), previous)
+  assertStableError(() => store.get('user-1'), 'MODEL_CREDENTIAL_UNAVAILABLE', decryptDiagnostic)
+  assertStableError(() => store.set('user-1', {
+    provider: remoteConfig.provider,
+    baseUrl: remoteConfig.baseUrl,
+    model: 'deepseek-reasoner',
+  }), 'MODEL_CREDENTIAL_UNAVAILABLE', decryptDiagnostic)
   assert.equal(decryptions, 1)
   database.close()
 })

@@ -171,7 +171,11 @@ export class ModelConfigStore {
   }
 
   set(subject: string, raw: ModelConfigInput): PublicModelConfig {
-    const value = normalizeConfig(raw, this.#stored(subject));
+    const hasExplicitKey = typeof raw.apiKey === 'string' && raw.apiKey.trim().length > 0;
+    const value = normalizeConfig(
+      raw,
+      hasExplicitKey ? undefined : this.#stored(subject)
+    );
     let encryptedApiKey: string | null = null;
     if (this.#persistence) {
       try {
@@ -199,6 +203,7 @@ export class ModelConfigStore {
     }
     this.#values.set(subject, value);
     if (this.#persistence) this.#ciphertexts.set(subject, encryptedApiKey);
+    this.#loadFailures.delete(subject);
     return publicView(value);
   }
 
