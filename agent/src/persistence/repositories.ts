@@ -5,6 +5,7 @@ import type { PublicAgentEventType, SessionStatus } from '../api/contracts.ts'
 import { agentError } from '../api/errors.ts'
 import { canonicalJson } from '../services/fingerprint.ts'
 import type { AgentDatabase } from './database.ts'
+import { ModelConfigRepository } from './modelConfigRepository.ts'
 import type { ReviewStatusRow, RunStatusRow } from './schema.ts'
 
 function now(): string { return new Date().toISOString() }
@@ -392,6 +393,7 @@ export class AgentRepositories {
   readonly events: EventRepository
   readonly artifacts: ArtifactRepositorySqlite
   readonly reviews: ReviewRepository
+  readonly modelConfigs: ModelConfigRepository
   readonly #afterCommitFrames: (() => void)[][] = []
 
   constructor(readonly database: AgentDatabase) {
@@ -402,6 +404,7 @@ export class AgentRepositories {
     this.events = new EventRepository(database)
     this.artifacts = new ArtifactRepositorySqlite(database)
     this.reviews = new ReviewRepository(database)
+    this.modelConfigs = new ModelConfigRepository(database)
   }
 
   transaction<T>(work: () => T): T {

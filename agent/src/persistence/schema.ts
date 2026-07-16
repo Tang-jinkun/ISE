@@ -45,6 +45,21 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS one_pending_review_per_artifact
   ON reviews(artifact_id) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS model_configs (
+  subject TEXT PRIMARY KEY,
+  provider TEXT,
+  base_url TEXT,
+  model TEXT,
+  encrypted_api_key TEXT,
+  cleared INTEGER NOT NULL CHECK(cleared IN (0,1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK(
+    (cleared = 1 AND provider IS NULL AND base_url IS NULL AND model IS NULL AND encrypted_api_key IS NULL)
+    OR
+    (cleared = 0 AND provider IS NOT NULL AND base_url IS NOT NULL AND model IS NOT NULL)
+  )
+);
 `
 
 export type SessionStatusRow =
