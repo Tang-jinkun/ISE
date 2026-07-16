@@ -4,15 +4,21 @@ import {
   AgentProtocolError,
   approveAgentReview,
   attachAgentFile,
+  clearModelConfig,
   createAgentSession,
+  discoverModels,
+  getModelConfig,
   interruptAgentSession,
   listAgentArtifacts,
   listAgentTurns,
   rejectAgentReview,
   reviseEventPlan,
+  saveModelConfig,
   sendAgentMessage,
   streamAgentEvents,
+  testModelConfig,
   type AgentEventUnit,
+  type ModelConfigInput,
   type ReviewTupleBody
 } from './agent';
 import { tokenStorage } from './http';
@@ -203,6 +209,80 @@ describe('Agent REST client', () => {
       expect.stringMatching(/\/sessions\/session-1\/turns$/),
       expect.objectContaining({ method: 'GET' })
     );
+  });
+
+  it('uses authenticated model configuration endpoints without changing the wire shape', async () => {
+    const input: ModelConfigInput = {
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+      apiKey: 'test-secret'
+    };
+    const publicConfig = {
+      configured: true,
+      provider: 'deepseek' as const,
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+      hasApiKey: true
+    };
+
+    mockJsonResponse(200, publicConfig);
+    await expect(getModelConfig()).resolves.toEqual(publicConfig);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/model-config$/),
+      expect.objectContaining({ method: 'GET' })
+    );
+
+    mockJsonResponse(200, publicConfig);
+    await expect(saveModelConfig(input)).resolves.toEqual(publicConfig);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/model-config$/),
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify(input) })
+    );
+
+    mockJsonResponse(200, { models: ['deepseek-chat'] });
+    await expect(discoverModels(input)).resolves.toEqual({
+      models: ['deepseek-chat']
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/model-config\/models$/),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(input) })
+    );
+
+    mockJsonResponse(200, {
+      ok: true,
+      model: 'deepseek-chat',
+      modelAvailable: true
+    });
+    await expect(testModelConfig(input)).resolves.toEqual({
+      ok: true,
+      model: 'deepseek-chat',
+      modelAvailable: true
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/model-config\/test$/),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(input) })
+    );
+
+    const empty = {
+      configured: false,
+      provider: null,
+      baseUrl: null,
+      model: null,
+      hasApiKey: false
+    };
+    mockJsonResponse(200, empty);
+    await expect(clearModelConfig()).resolves.toEqual(empty);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/model-config$/),
+      expect.objectContaining({ method: 'DELETE' })
+    );
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.headers).toEqual(
+        expect.objectContaining({ Authorization: 'Bearer jwt' })
+      );
+    }
   });
 
   it('sends the exact review tuple to approve', async () => {

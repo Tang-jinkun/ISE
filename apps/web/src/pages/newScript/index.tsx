@@ -3,43 +3,40 @@ import {
   approveAgentReview,
   attachAgentFile,
   createAgentSession,
+  getModelConfig,
   rejectAgentReview,
   reviseEventPlan,
   sendAgentMessage,
+  type PublicModelConfig,
   type ReviewTuple,
   type RevisionRequest
 } from '@/api/agent';
 import { uploadFile } from '@/api/file';
 import { updateScript } from '@/api/script';
 import { EditorProvider } from '@/components/resource-editors';
-import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { message } from '@/components/ui/message';
 import { useAgentSession } from '@/hooks/useAgentSession';
 import { cn } from '@/lib/utils';
 import { useAgentSessionStore } from '@/stores/agentSessionStore';
 import {
-  ArrowLeft,
   ArrowRight,
   Bot,
-  ChevronDown,
-  FileText,
-  History,
-  Layout,
-  Save,
   User
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { selectArtifactExports } from './artifactExports';
-import { ArtifactExportControls } from './components/ArtifactExportControls';
 import { AgentTurn } from './components/AgentTurn';
 import { ChatComposer } from './components/ChatComposer';
 import { EventPlanReview } from './components/EventPlanReview';
+import { ModelConfigDialog } from './components/ModelConfigDialog';
 import { NarrativePanel } from './components/NarrativePanel';
+import { NewScriptHeader } from './components/NewScriptHeader';
 import { ParamsPanel } from './components/ParamsPanel';
 import { ResourcePanel } from './components/ResourcePanel';
 import { SceneModal } from './components/SceneModal';
 import { SceneWorkspace } from './components/SceneWorkspace';
+import { modelProvider } from './modelProviders';
 import {
   selectWorkspaceState,
   type WorkspaceTab
@@ -75,6 +72,14 @@ function messageTime(value: string): string {
 }
 
 const DEFAULT_TARGET_DURATION_MS = 180_000;
+
+const EMPTY_MODEL_CONFIG: PublicModelConfig = {
+  configured: false,
+  provider: null,
+  baseUrl: null,
+  model: null,
+  hasApiKey: false
+};
 
 const buildGenerationObjective = (
   objective: string,
@@ -269,6 +274,24 @@ export default function Script() {
   };
 
   const [editableTitle, setEditableTitle] = useState('');
+  const [modelConfig, setModelConfig] = useState<PublicModelConfig>(
+    EMPTY_MODEL_CONFIG
+  );
+  const [modelConfigOpen, setModelConfigOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getModelConfig()
+      .then((config) => {
+        if (active) setModelConfig(config);
+      })
+      .catch(() => {
+        if (active) setModelConfig(EMPTY_MODEL_CONFIG);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [normandyData, setNormandyData] = useState<NormandyData>({
     query: '',
@@ -509,8 +532,6 @@ export default function Script() {
     }
   };
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSceneModalOpen, setIsSceneModalOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -657,105 +678,37 @@ export default function Script() {
       {agentSessionId ? (
         <AgentSessionBridge sessionId={agentSessionId} />
       ) : null}
-      <div className="flex-none px-4 sm:px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-foreground transition-colors hover:bg-accent"
-            >
-              <Layout className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-foreground transition-colors hover:bg-accent"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-cyan-600 dark:text-cyan-300" />
-                <input
-                  type="text"
-                  value={editableTitle}
-                  onChange={(e) => setEditableTitle(e.target.value)}
-                  placeholder="赤壁之战脚本项目"
-                  className="bg-transparent border-none text-lg font-semibold text-foreground placeholder:text-muted-foreground outline-none focus:ring-0 focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {projectId && (
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(`/script?projectId=${encodeURIComponent(projectId)}`)
-                }
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <History className="h-3.5 w-3.5" />
-                退回旧版
-              </button>
-            )}
-            <ThemeToggle />
-            <ArtifactExportControls exports={artifactExports} />
-            <button
-              type="button"
-              onClick={() => {
-                void handleSave();
-              }}
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground transition-colors hover:bg-accent"
-            >
-              <Save className="h-3.5 w-3.5" />
-              保存
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsSceneModalOpen(true);
-              }}
-              disabled={!completedSceneConfig}
-              className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-700 dark:text-cyan-200 transition-colors hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-              转换为场景
-            </button>
-          </div>
-        </div>
-      </div>
+      <NewScriptHeader
+        title={editableTitle}
+        onTitleChange={setEditableTitle}
+        onBack={() => navigate(-1)}
+        onOpenLegacy={() =>
+          navigate(
+            projectId
+              ? `/script?projectId=${encodeURIComponent(projectId)}`
+              : '/script'
+          )
+        }
+        onConfigureModel={() => setModelConfigOpen(true)}
+        modelLabel={
+          modelConfig.configured && modelConfig.provider && modelConfig.model
+            ? `${modelProvider(modelConfig.provider).label} · ${modelConfig.model}`
+            : '配置模型'
+        }
+        exports={artifactExports}
+        saving={saving}
+        onSave={() => void handleSave()}
+        previewEnabled={Boolean(completedSceneConfig)}
+        onPreview={() => setIsSceneModalOpen(true)}
+      />
+      <ModelConfigDialog
+        open={modelConfigOpen}
+        onOpenChange={setModelConfigOpen}
+        config={modelConfig}
+        onConfigChange={setModelConfig}
+      />
 
       <div className="flex-1 min-h-0 flex gap-0 px-4 py-4 overflow-hidden relative">
-        {/* Mobile Sidebar Overlay */}
-        {sidebarOpen && (
-          <div
-            className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm md:hidden"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <div
-              className="w-[280px] h-full bg-card border-r border-border p-4 animate-in slide-in-from-left duration-300"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-6">
-                <div className="font-bold">信息架构</div>
-                <button onClick={() => setSidebarOpen(false)}>
-                  <ChevronDown className="h-4 w-4 rotate-90" />
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div className="p-3 bg-accent rounded-xl">快速导航</div>
-                <div className="p-3 bg-accent rounded-xl">过滤面板</div>
-                <div className="p-3 bg-accent rounded-xl">折叠树</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Desktop Sidebar */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-full flex-col gap-3 overflow-hidden rounded-md border border-border bg-card p-3">
             <div className="flex items-center justify-between mb-2">

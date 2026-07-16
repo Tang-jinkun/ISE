@@ -13,6 +13,7 @@ import type {
   AgentArtifactView,
   AgentEvent,
   AgentEventUnit,
+  PublicModelConfig,
   ReviewTuple
 } from '@/api/agent';
 import { useAgentSessionStore } from '@/stores/agentSessionStore';
@@ -21,11 +22,14 @@ import NewScript from './index';
 const mocks = vi.hoisted(() => ({
   approveAgentReview: vi.fn(),
   attachAgentFile: vi.fn(),
+  clearModelConfig: vi.fn(),
   createAgentSession: vi.fn(),
   createScene: vi.fn(),
+  getModelConfig: vi.fn(),
   navigate: vi.fn(),
   rejectAgentReview: vi.fn(),
   reviseEventPlan: vi.fn(),
+  saveModelConfig: vi.fn(),
   sendAgentMessage: vi.fn(),
   updateScript: vi.fn(),
   uploadFile: vi.fn(),
@@ -38,9 +42,12 @@ vi.mock('@/api/agent', async (importOriginal) => {
     ...actual,
     approveAgentReview: mocks.approveAgentReview,
     attachAgentFile: mocks.attachAgentFile,
+    clearModelConfig: mocks.clearModelConfig,
     createAgentSession: mocks.createAgentSession,
+    getModelConfig: mocks.getModelConfig,
     rejectAgentReview: mocks.rejectAgentReview,
     reviseEventPlan: mocks.reviseEventPlan,
+    saveModelConfig: mocks.saveModelConfig,
     sendAgentMessage: mocks.sendAgentMessage
   };
 });
@@ -98,6 +105,22 @@ const compiledConfig: SceneProjectConfig = {
     }
   ],
   diagnostics: []
+};
+
+const configuredModel: PublicModelConfig = {
+  configured: true,
+  provider: 'deepseek',
+  baseUrl: 'https://api.deepseek.com/v1',
+  model: 'deepseek-chat',
+  hasApiKey: true
+};
+
+const emptyModel: PublicModelConfig = {
+  configured: false,
+  provider: null,
+  baseUrl: null,
+  model: null,
+  hasApiKey: false
 };
 
 const review: ReviewTuple = {
@@ -224,6 +247,9 @@ describe('NewScript real Agent flow', () => {
       sessionId: 'session-1',
       status: 'idle'
     });
+    mocks.getModelConfig.mockResolvedValue(configuredModel);
+    mocks.saveModelConfig.mockResolvedValue(configuredModel);
+    mocks.clearModelConfig.mockResolvedValue(emptyModel);
     mocks.attachAgentFile.mockResolvedValue({
       attachmentId: 'attachment-1',
       fileId: 'file-1',
@@ -273,9 +299,45 @@ describe('NewScript real Agent flow', () => {
   it('keeps the project id when returning to the legacy workspace', () => {
     renderNewScript();
 
-    fireEvent.click(screen.getByRole('button', { name: '退回旧版' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回旧版' }));
 
     expect(mocks.navigate).toHaveBeenCalledWith('/script?projectId=script-1');
+  });
+
+  it('loads, edits, and clears the redacted model status from the header', async () => {
+    renderNewScript();
+
+    const modelButton = await screen.findByRole('button', {
+      name: 'DeepSeek · deepseek-chat'
+    });
+    expect(mocks.getModelConfig).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(modelButton);
+    expect(
+      screen.getByRole('dialog', { name: '模型配置' })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('API Key')).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('API Key'), {
+      target: { value: 'transient-secret' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+
+    await waitFor(() => expect(mocks.saveModelConfig).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('transient-secret')).not.toBeInTheDocument();
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'DeepSeek · deepseek-chat' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: '清除配置' }));
+
+    await waitFor(() => expect(mocks.clearModelConfig).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(
+      screen.getByRole('button', { name: '配置模型' })
+    ).toBeInTheDocument();
   });
 
   it('uses the full conversation surface before any artifact exists', () => {
@@ -584,11 +646,11 @@ describe('NewScript real Agent flow', () => {
         runtimeArtifactId: 'compiled-1'
       }
     });
-    fireEvent.change(screen.getByPlaceholderText('赤壁之战脚本项目'), {
+    fireEvent.change(screen.getByPlaceholderText('未命名脚本项目'), {
       target: { value: '印巴复盘' }
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '转换为场景' }));
+    fireEvent.click(screen.getByRole('button', { name: '预览' }));
     fireEvent.click(screen.getByRole('button', { name: '确认创建场景' }));
 
     await waitFor(() =>
@@ -610,7 +672,7 @@ describe('NewScript real Agent flow', () => {
     await uploadReport();
     hydrateArtifacts([compiledArtifact]);
 
-    expect(screen.getByRole('button', { name: '转换为场景' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '预览' })).toBeDisabled();
     expect(mocks.createScene).not.toHaveBeenCalled();
   });
 
@@ -636,7 +698,7 @@ describe('NewScript real Agent flow', () => {
     });
 
     expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
-    expect(screen.getByRole('button', { name: '转换为场景' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '预览' })).toBeDisabled();
     expect(mocks.createScene).not.toHaveBeenCalled();
   });
 
@@ -707,7 +769,7 @@ describe('NewScript real Agent flow', () => {
       data: { runtimeArtifactId: 'compiled-1' }
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '转换为场景' }));
+    fireEvent.click(screen.getByRole('button', { name: '预览' }));
     fireEvent.click(screen.getByRole('button', { name: '确认创建场景' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('场景创建失败');

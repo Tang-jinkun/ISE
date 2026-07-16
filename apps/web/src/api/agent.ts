@@ -32,6 +32,34 @@ export type QueuedRunResponse = {
   status: 'queued';
 };
 
+export type ModelProviderId =
+  | 'deepseek'
+  | 'openai'
+  | 'qwen'
+  | 'kimi'
+  | 'zhipu'
+  | 'openrouter'
+  | 'siliconflow'
+  | 'ollama'
+  | 'lm-studio'
+  | 'vllm'
+  | 'custom';
+
+export type ModelConfigInput = {
+  provider: ModelProviderId;
+  baseUrl: string;
+  model: string;
+  apiKey?: string | null;
+};
+
+export type PublicModelConfig = {
+  configured: boolean;
+  provider: ModelProviderId | null;
+  baseUrl: string | null;
+  model: string | null;
+  hasApiKey: boolean;
+};
+
 export type AgentArtifactView = {
   artifactId: string;
   type: string;
@@ -153,7 +181,7 @@ export class AgentProtocolError extends Error {
 }
 
 type AgentRequestOptions = {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   json?: unknown;
   signal?: AbortSignal;
 };
@@ -336,6 +364,36 @@ export const interruptAgentSession = (
   agentRequest<{ runId: string; status: 'cancelled' }>(
     `/sessions/${pathSegment(sessionId)}/interrupt`,
     { method: 'POST', json: {} }
+  );
+
+export const getModelConfig = (): Promise<PublicModelConfig> =>
+  agentRequest<PublicModelConfig>('/model-config');
+
+export const saveModelConfig = (
+  body: ModelConfigInput
+): Promise<PublicModelConfig> =>
+  agentRequest<PublicModelConfig>('/model-config', {
+    method: 'PUT',
+    json: body
+  });
+
+export const clearModelConfig = (): Promise<PublicModelConfig> =>
+  agentRequest<PublicModelConfig>('/model-config', { method: 'DELETE' });
+
+export const discoverModels = (
+  body: ModelConfigInput
+): Promise<{ models: string[] }> =>
+  agentRequest<{ models: string[] }>('/model-config/models', {
+    method: 'POST',
+    json: body
+  });
+
+export const testModelConfig = (
+  body: ModelConfigInput
+): Promise<{ ok: true; model: string; modelAvailable: boolean }> =>
+  agentRequest<{ ok: true; model: string; modelAvailable: boolean }>(
+    '/model-config/test',
+    { method: 'POST', json: body }
   );
 
 function parseSseFrame(frame: string): AgentEvent | undefined {
