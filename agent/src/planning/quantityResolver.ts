@@ -43,17 +43,78 @@ function entityOccursInClaim(record: EvidenceRecord, entityName: string): boolea
   return normalized(record.claim).includes(normalized(entityName))
 }
 
-function exactQuantity(record: EvidenceRecord, entityName: string): number | undefined {
+type EntityKind = 'aircraft' | 'weapon' | 'node' | 'generic'
+type QuantityUnit = '架' | '枚' | '个'
+
+function entityKind(value: string): EntityKind {
+  const candidate = normalized(value)
+  if (/导弹|missile|weapon|rocket|bomb|pl\d/u.test(candidate)) return 'weapon'
+  if (/战斗机|飞机|预警机|fighter|aircraft|aew|rafale|阵风|jf\d|j\d|su\d|苏\d|mig\d/u.test(candidate)) return 'aircraft'
+  if (/雷达|节点|指挥|radar|node|command/u.test(candidate)) return 'node'
+  return 'generic'
+}
+
+function requestedEntityKind(input: Pick<ResolveQuantityInput, 'entityName' | 'platformType' | 'role'>): EntityKind {
+  return entityKind(`${input.entityName}:${input.platformType}:${input.role}`)
+}
+
+function isCompatibleUnit(unit: QuantityUnit, kind: EntityKind): boolean {
+  if (unit === '架') return kind === 'aircraft'
+  if (unit === '枚') return kind === 'weapon'
+  return kind === 'node' || kind === 'generic'
+}
+
+function occurrenceDistances(claim: string, entity: string, phraseStart: number, phraseEnd: number): number[] {
+  const distances: number[] = []
+  let entityStart = claim.indexOf(entity)
+  while (entityStart >= 0) {
+    const entityEnd = entityStart + entity.length
+    if (phraseEnd <= entityStart) distances.push(entityStart - phraseEnd)
+    else if (entityEnd <= phraseStart) distances.push(phraseStart - entityEnd)
+    else distances.push(0)
+    entityStart = claim.indexOf(entity, entityStart + 1)
+  }
+  return distances
+}
+
+function belongsToRequestedEntity(
+  record: EvidenceRecord,
+  claim: string,
+  entityName: string,
+  unit: QuantityUnit,
+  phraseStart: number,
+  phraseEnd: number,
+): boolean {
+  const requestedEntity = normalized(entityName)
+  const requestedDistance = Math.min(...occurrenceDistances(claim, requestedEntity, phraseStart, phraseEnd))
+  const compatibleDistances = record.entities.flatMap(entity => {
+    if (!isCompatibleUnit(unit, entityKind(entity))) return []
+    return occurrenceDistances(claim, normalized(entity), phraseStart, phraseEnd)
+  })
+  const nearestCompatibleDistance = Math.min(requestedDistance, ...compatibleDistances)
+  return requestedDistance === nearestCompatibleDistance
+}
+
+function exactQuantity(record: EvidenceRecord, input: ResolveQuantityInput): number | undefined {
   const claim = normalized(record.claim)
-  const entity = normalized(entityName)
-  const entityStart = claim.indexOf(entity)
-  if (entityStart < 0) return undefined
-  const entityEnd = entityStart + entity.length
-  const matches = [...claim.matchAll(/(\d+|[一二三四五六七八九十])[架枚个]/gu)]
+  const kind = requestedEntityKind(input)
+  const matches = [...claim.matchAll(/(?<![0-9一二三四五六七八九十点.,，．])(\d+|[一二三四五六七八九十])([架枚个])/gu)]
+    .filter(match => isCompatibleUnit(match[2] as QuantityUnit, kind))
+    .filter(match => belongsToRequestedEntity(
+      record,
+      claim,
+      input.entityName,
+      match[2] as QuantityUnit,
+      match.index ?? 0,
+      (match.index ?? 0) + match[0].length,
+    ))
   const match = matches.sort((left, right) => {
     const distance = (candidate: RegExpMatchArray): number => {
       const start = candidate.index ?? 0
       const end = start + candidate[0].length
+      const entity = normalized(input.entityName)
+      const entityStart = claim.indexOf(entity)
+      const entityEnd = entityStart + entity.length
       if (end <= entityStart) return entityStart - end
       if (entityEnd <= start) return start - entityEnd
       return 0
@@ -85,7 +146,7 @@ export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
   validateUserValue(input.userValue)
   const exactMatches = input.evidence.records.flatMap(record => {
     if (!isFactual(record) || !entityOccursInClaim(record, input.entityName)) return []
-    const value = exactQuantity(record, input.entityName)
+    const value = exactQuantity(record, input)
     return value === undefined ? [] : [{ value, evidenceId: record.evidenceId }]
   })
 

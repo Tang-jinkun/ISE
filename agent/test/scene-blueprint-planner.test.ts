@@ -80,6 +80,61 @@ test('associates an exact quantity with the requested entity in a multi-quantity
   assert.equal(decision.source, 'evidence')
 })
 
+test('does not apply an aircraft quantity to an unquantified missile in the same claim', () => {
+  assert.deepEqual(resolveQuantity({
+    entityName: 'PL-15E导弹',
+    platformType: 'weapon',
+    role: 'launch',
+    evidence: evidence([{
+      evidenceId: 'ev-aircraft-only-count', sourceRef: 'docx:p8',
+      claim: '2架JF-17战斗机发射PL-15E导弹。', kind: 'explicit_fact',
+      entities: ['JF-17', 'PL-15E导弹'], confidence: 1, ambiguities: [],
+    }]),
+  }), {
+    value: 1,
+    constraint: 'unknown',
+    source: 'default',
+    evidenceRefs: [],
+    defaultPolicyId: 'single-launch/v1',
+    reason: 'No explicit quantity; applied single-launch/v1',
+  })
+})
+
+test('does not apply the nearest other fighter quantity to an unquantified fighter', () => {
+  const decision = resolveQuantity({
+    entityName: '阵风',
+    platformType: 'fighter',
+    role: 'formation',
+    evidence: evidence([{
+      evidenceId: 'ev-other-fighter-count', sourceRef: 'docx:p5',
+      claim: '2架苏-30MKI战斗机与阵风编队共同升空。', kind: 'explicit_fact',
+      entities: ['苏-30MKI', '阵风'], confidence: 1, ambiguities: [],
+    }]),
+  })
+  assert.equal(decision.value, 4)
+  assert.equal(decision.source, 'default')
+})
+
+test('does not partially parse unsupported compound Chinese numerals', () => {
+  assert.deepEqual(resolveQuantity({
+    entityName: 'JF-17',
+    platformType: 'fighter',
+    role: 'formation',
+    evidence: evidence([{
+      evidenceId: 'ev-unsupported-chinese-count', sourceRef: 'docx:p5',
+      claim: '十一架JF-17战斗机升空。', kind: 'explicit_fact',
+      entities: ['JF-17'], confidence: 1, ambiguities: [],
+    }]),
+  }), {
+    value: 4,
+    constraint: 'unknown',
+    source: 'default',
+    evidenceRefs: [],
+    defaultPolicyId: 'fighter-formation/v1',
+    reason: 'No explicit quantity; applied fighter-formation/v1',
+  })
+})
+
 test('uses the auditable fighter formation default without factual evidence refs', () => {
   assert.deepEqual(resolveQuantity({
     entityName: 'JF-17',
