@@ -4,6 +4,9 @@ param(
   [string]$DatabasePath = '.ise\agent.sqlite',
   [ValidateRange(1, 65535)]
   [int]$Port = 4444,
+  [string]$NodePath,
+  [ValidateRange(1, 300)]
+  [int]$StartupTimeoutSeconds = 30,
   [switch]$DryRun
 )
 
@@ -33,20 +36,92 @@ if ($DryRun) {
   return
 }
 
+function Get-ListeningProcessId {
+  param([string]$Address, [int]$LocalPort)
+
+  $connection = Get-NetTCPConnection `
+    -State Listen `
+    -LocalPort $LocalPort `
+    -ErrorAction SilentlyContinue | Where-Object {
+      $_.LocalAddress -in @($Address, '0.0.0.0', '::')
+    } |
+    Select-Object -First 1
+  if ($null -eq $connection) { return $null }
+  return [int]$connection.OwningProcess
+}
+
+function Get-NodeExecutable {
+  param([string]$RepositoryRoot, [string]$ExplicitPath)
+
+  if ($ExplicitPath) {
+    $explicitNode = [System.IO.Path]::GetFullPath($ExplicitPath)
+    if (-not (Test-Path -LiteralPath $explicitNode -PathType Leaf)) { throw 'AGENT_NODE_NOT_FOUND' }
+    return $explicitNode
+  }
+
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  foreach ($runtimeDirectory in '.runtime', '.tools') {
+    $runtimeRoot = Join-Path $RepositoryRoot $runtimeDirectory
+    if (-not (Test-Path -LiteralPath $runtimeRoot -PathType Container)) { continue }
+
+    Get-ChildItem -LiteralPath $runtimeRoot -Directory -Filter 'node-v24*-win-x64' -ErrorAction SilentlyContinue |
+      Sort-Object Name -Descending |
+      ForEach-Object { [void]$candidates.Add((Join-Path $_.FullName 'node.exe')) }
+  }
+  [void]$candidates.Add((Join-Path $HOME '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'))
+
+  $pathNode = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($null -ne $pathNode) { [void]$candidates.Add($pathNode.Source) }
+
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+      return [System.IO.Path]::GetFullPath($candidate)
+    }
+  }
+  throw 'AGENT_NODE_NOT_FOUND'
+}
+
+function Assert-SupportedNode {
+  param([string]$Executable)
+
+  try {
+    $versionText = (@(& $Executable '--version' 2>$null) -join '').Trim()
+    $exitCode = $LASTEXITCODE
+  } catch {
+    throw 'AGENT_NODE_VERSION_UNSUPPORTED'
+  }
+  if ($exitCode -ne 0 -or $versionText -notmatch '^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$') {
+    throw 'AGENT_NODE_VERSION_UNSUPPORTED'
+  }
+
+  $version = [version]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+  if ($version -lt [version]'20.19.0') { throw 'AGENT_NODE_VERSION_UNSUPPORTED' }
+}
+
+function Close-AgentProcess {
+  param([System.Diagnostics.Process]$Process, [switch]$Stop)
+
+  try {
+    if ($Stop -and -not $Process.HasExited) { $Process.Kill() }
+    $Process.WaitForExit()
+  } catch {
+    throw 'AGENT_PROCESS_CLEANUP_FAILED'
+  } finally {
+    $Process.Dispose()
+  }
+}
+
+if ($null -ne (Get-ListeningProcessId -Address $hostAddress -LocalPort $Port)) {
+  throw 'AGENT_PORT_IN_USE'
+}
+
 $server = Join-Path $root 'agent\src\server.ts'
 $tsx = Join-Path $root 'node_modules\tsx\dist\cli.mjs'
 if (-not (Test-Path -LiteralPath $server -PathType Leaf)) { throw 'AGENT_SERVER_NOT_FOUND' }
 if (-not (Test-Path -LiteralPath $tsx -PathType Leaf)) { throw 'AGENT_TSX_NOT_FOUND' }
 
-$nodeCandidates = @(
-  (Join-Path $root '.runtime\node-v24.14.0-win-x64\node.exe'),
-  (Join-Path $root '.tools\node-v24.14.0-win-x64\node.exe'),
-  (Join-Path $HOME '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe')
-)
-$node = $nodeCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-if (-not $node) {
-  $node = (Get-Command node -CommandType Application -ErrorAction Stop).Source
-}
+$node = Get-NodeExecutable -RepositoryRoot $root -ExplicitPath $NodePath
+Assert-SupportedNode -Executable $node
 
 $databaseDirectory = Split-Path $database -Parent
 if (-not (Test-Path -LiteralPath $databaseDirectory -PathType Container)) {
@@ -78,32 +153,45 @@ try {
   Remove-Item Env:MODEL_NAME -ErrorAction SilentlyContinue
   Remove-Item Env:MODEL_API_KEY -ErrorAction SilentlyContinue
 
-  $agentProcess = Start-Process `
-    -FilePath $node `
-    -ArgumentList @(('"{0}"' -f $tsx), ('"{0}"' -f $server)) `
-    -WorkingDirectory $root `
-    -WindowStyle Hidden `
-    -PassThru
+  try {
+    $agentProcess = Start-Process `
+      -FilePath $node `
+      -ArgumentList @(('"{0}"' -f $tsx), ('"{0}"' -f $server)) `
+      -WorkingDirectory $root `
+      -WindowStyle Hidden `
+      -PassThru
+  } catch {
+    throw 'AGENT_START_FAILED'
+  }
 } finally {
   foreach ($name in $environmentNames) {
     [System.Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], 'Process')
   }
 }
 
-$deadline = [DateTime]::UtcNow.AddSeconds(30)
+$agentProcessId = $agentProcess.Id
+$deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
 do {
-  if ($agentProcess.HasExited) { throw 'AGENT_START_FAILED' }
+  if ($agentProcess.HasExited) {
+    Close-AgentProcess -Process $agentProcess
+    throw 'AGENT_START_FAILED'
+  }
 
-  $client = [System.Net.Sockets.TcpClient]::new()
-  try {
-    $client.Connect($hostAddress, $Port)
+  $listenerProcessId = Get-ListeningProcessId -Address $hostAddress -LocalPort $Port
+  if ($null -ne $listenerProcessId) {
+    if ($listenerProcessId -ne $agentProcessId) {
+      Close-AgentProcess -Process $agentProcess -Stop
+      throw 'AGENT_PORT_IN_USE'
+    }
+
+    $agentProcess.Dispose()
+    Write-Output "AGENT_PROCESS_ID=$agentProcessId"
     Write-Output "AGENT_${Port}_LISTENING=ok"
     return
-  } catch [System.Net.Sockets.SocketException] {
-    Start-Sleep -Milliseconds 200
-  } finally {
-    $client.Dispose()
   }
+
+  Start-Sleep -Milliseconds 200
 } while ([DateTime]::UtcNow -lt $deadline)
 
+Close-AgentProcess -Process $agentProcess -Stop
 throw 'AGENT_LISTEN_TIMEOUT'
