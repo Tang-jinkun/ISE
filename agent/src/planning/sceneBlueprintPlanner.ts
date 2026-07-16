@@ -100,6 +100,7 @@ function fighterGroup(
     role: 'fighter-formation',
     quantityDecision: resolveQuantity({
       entityName: definition.entityName,
+      entityAliases: definition.aliases,
       platformType: 'fighter',
       role: 'formation',
       evidence: quantityEvidence,

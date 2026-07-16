@@ -135,6 +135,26 @@ test('does not partially parse unsupported compound Chinese numerals', () => {
   })
 })
 
+test('does not partially parse a supported token after an unsupported Chinese numeral', () => {
+  assert.deepEqual(resolveQuantity({
+    entityName: 'JF-17',
+    platformType: 'fighter',
+    role: 'formation',
+    evidence: evidence([{
+      evidenceId: 'ev-unsupported-shorthand-count', sourceRef: 'docx:p5',
+      claim: '廿一架JF-17战斗机升空。', kind: 'explicit_fact',
+      entities: ['JF-17'], confidence: 1, ambiguities: [],
+    }]),
+  }), {
+    value: 4,
+    constraint: 'unknown',
+    source: 'default',
+    evidenceRefs: [],
+    defaultPolicyId: 'fighter-formation/v1',
+    reason: 'No explicit quantity; applied fighter-formation/v1',
+  })
+})
+
 test('uses the auditable fighter formation default without factual evidence refs', () => {
   assert.deepEqual(resolveQuantity({
     entityName: 'JF-17',
@@ -329,6 +349,58 @@ function planningFixture(): {
     ]),
   }
 }
+
+function blueprintWithEnglishAliasQuantities() {
+  const fixture = planningFixture()
+  fixture.evidence = {
+    ...fixture.evidence,
+    records: fixture.evidence.records.map(record => {
+      if (record.evidenceId === 'ev-su30') return {
+        ...record,
+        claim: '2架Su-30MKI fighters depart from Adampur.',
+        entities: ['Su-30MKI', 'Adampur'],
+        locationExpression: 'Adampur',
+      }
+      if (record.evidenceId === 'ev-rafale') return {
+        ...record,
+        claim: '3架Rafale fighters depart from Ambala.',
+        entities: ['Rafale', 'Ambala'],
+        locationExpression: 'Ambala',
+      }
+      return record
+    }),
+  }
+  const narrationPlan = buildNarrationPlan(fixture)
+  return buildSceneBlueprint({ ...fixture, narrationPlan })
+}
+
+test('uses exact Su-30MKI quantity from English alias evidence with canonical actor identity', () => {
+  const group = blueprintWithEnglishAliasQuantities().actorGroups
+    .find(candidate => candidate.groupId === 'group:india-su30-adampur')
+
+  assert.equal(group?.semanticEntityRef, '苏-30MKI')
+  assert.deepEqual(group?.quantityDecision, {
+    value: 2,
+    constraint: 'exact',
+    source: 'evidence',
+    evidenceRefs: ['ev-su30'],
+    reason: 'Explicit quantity adjacent to entity',
+  })
+})
+
+test('uses exact Rafale quantity from English alias evidence with canonical actor identity', () => {
+  const group = blueprintWithEnglishAliasQuantities().actorGroups
+    .find(candidate => candidate.groupId === 'group:india-rafale-ambala')
+
+  assert.equal(group?.semanticEntityRef, '阵风')
+  assert.deepEqual(group?.quantityDecision, {
+    value: 3,
+    constraint: 'exact',
+    source: 'evidence',
+    evidenceRefs: ['ev-rafale'],
+    reason: 'Explicit quantity adjacent to entity',
+  })
+})
 
 test('buildNarrationPlan preserves grounded subtitles and binds the accepted EventPlan fingerprint', () => {
   const { eventPlan, narrativePlan } = planningFixture()

@@ -12,6 +12,7 @@ export const defaultQuantityPolicies = {
 
 export interface ResolveQuantityInput {
   entityName: string
+  entityAliases?: readonly string[]
   platformType: string
   role: string
   evidence: EvidenceIR
@@ -39,8 +40,13 @@ function isFactual(record: EvidenceRecord): boolean {
   return record.kind === 'explicit_fact' || record.kind === 'deterministic_derivation'
 }
 
-function entityOccursInClaim(record: EvidenceRecord, entityName: string): boolean {
-  return normalized(record.claim).includes(normalized(entityName))
+function requestedEntities(input: Pick<ResolveQuantityInput, 'entityName' | 'entityAliases'>): string[] {
+  return [...new Set([input.entityName, ...(input.entityAliases ?? [])].map(normalized))]
+}
+
+function entityOccursInClaim(record: EvidenceRecord, input: ResolveQuantityInput): boolean {
+  const claim = normalized(record.claim)
+  return requestedEntities(input).some(entity => claim.includes(entity))
 }
 
 type EntityKind = 'aircraft' | 'weapon' | 'node' | 'generic'
@@ -80,13 +86,12 @@ function occurrenceDistances(claim: string, entity: string, phraseStart: number,
 function belongsToRequestedEntity(
   record: EvidenceRecord,
   claim: string,
-  entityName: string,
+  entities: readonly string[],
   unit: QuantityUnit,
   phraseStart: number,
   phraseEnd: number,
 ): boolean {
-  const requestedEntity = normalized(entityName)
-  const requestedDistance = Math.min(...occurrenceDistances(claim, requestedEntity, phraseStart, phraseEnd))
+  const requestedDistance = Math.min(...entities.flatMap(entity => occurrenceDistances(claim, entity, phraseStart, phraseEnd)))
   const compatibleDistances = record.entities.flatMap(entity => {
     if (!isCompatibleUnit(unit, entityKind(entity))) return []
     return occurrenceDistances(claim, normalized(entity), phraseStart, phraseEnd)
@@ -98,12 +103,13 @@ function belongsToRequestedEntity(
 function exactQuantity(record: EvidenceRecord, input: ResolveQuantityInput): number | undefined {
   const claim = normalized(record.claim)
   const kind = requestedEntityKind(input)
-  const matches = [...claim.matchAll(/(?<![0-9一二三四五六七八九十点.,，．])(\d+|[一二三四五六七八九十])([架枚个])/gu)]
+  const entities = requestedEntities(input)
+  const matches = [...claim.matchAll(/(?<![0-9〇零一二两兩三四五六七八九十百千万萬亿億兆廿卄廾卅卌皕壹贰貳弐叁參肆伍陆陸柒捌玖拾佰仟点.,，．])(\d+|[一二三四五六七八九十])([架枚个])/gu)]
     .filter(match => isCompatibleUnit(match[2] as QuantityUnit, kind))
     .filter(match => belongsToRequestedEntity(
       record,
       claim,
-      input.entityName,
+      entities,
       match[2] as QuantityUnit,
       match.index ?? 0,
       (match.index ?? 0) + match[0].length,
@@ -112,12 +118,7 @@ function exactQuantity(record: EvidenceRecord, input: ResolveQuantityInput): num
     const distance = (candidate: RegExpMatchArray): number => {
       const start = candidate.index ?? 0
       const end = start + candidate[0].length
-      const entity = normalized(input.entityName)
-      const entityStart = claim.indexOf(entity)
-      const entityEnd = entityStart + entity.length
-      if (end <= entityStart) return entityStart - end
-      if (entityEnd <= start) return start - entityEnd
-      return 0
+      return Math.min(...entities.flatMap(entity => occurrenceDistances(claim, entity, start, end)))
     }
     return distance(left) - distance(right)
   })[0]
@@ -145,7 +146,7 @@ function validateUserValue(userValue: number | undefined): void {
 export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
   validateUserValue(input.userValue)
   const exactMatches = input.evidence.records.flatMap(record => {
-    if (!isFactual(record) || !entityOccursInClaim(record, input.entityName)) return []
+    if (!isFactual(record) || !entityOccursInClaim(record, input)) return []
     const value = exactQuantity(record, input)
     return value === undefined ? [] : [{ value, evidenceId: record.evidenceId }]
   })
