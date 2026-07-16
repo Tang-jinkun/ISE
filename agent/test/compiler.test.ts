@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { ArtifactStore, DomainStateStore, type AgentContext } from '@ise/agent-core'
 import type { EventPlan } from '../src/contracts/eventPlan.ts'
 import type { NarrativePlan, TemplateName } from '../src/contracts/narrativePlan.ts'
 import {
@@ -9,9 +10,20 @@ import {
 import type { AssetRegistryEntry, AssetRegistrySnapshot } from '../src/contracts/assetRegistry.ts'
 import { compileScene, type CompilerInput } from '../src/compiler/sceneCompiler.ts'
 import { subtitleDurationMs } from '../src/compiler/scheduler.ts'
-import { canonicalJson } from '../src/services/fingerprint.ts'
+import { canonicalJson, fingerprint } from '../src/services/fingerprint.ts'
 import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
 import { templateNameSchema } from '../src/contracts/narrativePlan.ts'
+import { createCompilerTools } from '../src/tools/compilerTools.ts'
+import {
+  ASSET_REGISTRY_ARTIFACT,
+  COMPILED_RUNTIME_ARTIFACT,
+  EVIDENCE_IR_ARTIFACT,
+  EVENT_PLAN_ACCEPTED_ARTIFACT,
+  NARRATION_PLAN_ARTIFACT,
+  NARRATIVE_PLAN_ARTIFACT,
+  RESOLVED_SCENE_PLAN_ARTIFACT,
+  SCENE_BLUEPRINT_ARTIFACT,
+} from '../src/contracts/artifactTypes.ts'
 
 const hash = `sha256:${'1'.repeat(64)}`
 
@@ -381,4 +393,94 @@ test('status explanation emits an image command when a semantic image alias matc
 
   const command = compileScene(compilerInput).commands.find(item => item.type === 'image.show')
   assert.equal(command && 'assetId' in command.params ? command.params.assetId : undefined, 'image:summary')
+})
+
+function compilerToolFixture() {
+  const source = input()
+  const acceptedFingerprint = fingerprint(source.eventPlan)
+  source.narrativePlan.sourceEventPlan.fingerprint = acceptedFingerprint
+  const artifacts = new ArtifactStore()
+  artifacts.createMany([
+    {
+      id: source.eventPlanArtifactId,
+      type: EVENT_PLAN_ACCEPTED_ARTIFACT,
+      createdBy: 'user',
+      data: source.eventPlan,
+      metadata: { fingerprint: acceptedFingerprint },
+    },
+    {
+      id: 'evidence-1',
+      type: EVIDENCE_IR_ARTIFACT,
+      createdBy: 'tool',
+      data: {
+        schemaVersion: 'evidence-ir/v1',
+        documentId: source.eventPlan.documentId,
+        records: [{
+          evidenceId: 'ev-1',
+          sourceRef: 'docx:p1',
+          claim: 'JF-17 state changed near the border.',
+          kind: 'explicit_fact',
+          entities: ['JF-17'],
+          confidence: 1,
+          ambiguities: [],
+        }],
+      },
+    },
+    {
+      id: 'narrative-artifact-1',
+      type: NARRATIVE_PLAN_ARTIFACT,
+      createdBy: 'agent',
+      data: source.narrativePlan,
+    },
+    {
+      id: 'registry-artifact-1',
+      type: ASSET_REGISTRY_ARTIFACT,
+      createdBy: 'tool',
+      data: source.assetRegistry,
+    },
+  ])
+  const context: AgentContext = {
+    workspace: process.cwd(),
+    artifacts,
+    domainState: new DomainStateStore(),
+    goal: {
+      objective: 'compile fixture', status: 'active', turnCount: 0, maxTurns: 1,
+      evidence: [], remainingIssues: [], startedAt: new Date(0).toISOString(),
+    },
+  }
+  const compile = createCompilerTools()[0]!
+  const compileInput = {
+    eventPlanArtifactId: source.eventPlanArtifactId,
+    evidenceArtifactId: 'evidence-1',
+    narrativePlanArtifactId: 'narrative-artifact-1',
+    assetRegistryArtifactId: 'registry-artifact-1',
+    capabilityManifestVersion: 'ise-capabilities/v1',
+    assetRegistryVersion: source.assetRegistry.registryVersion,
+  }
+  return { compile, compileInput, context }
+}
+
+test('compiler tool requires the exact EvidenceIR artifact ID', async () => {
+  const { compile, compileInput, context } = compilerToolFixture()
+  const { evidenceArtifactId: _omitted, ...withoutEvidence } = compileInput
+
+  await assert.rejects(() => compile.execute(withoutEvidence, context))
+})
+
+test('compiler tool returns resolved planning artifacts in dependency order with compiled lineage IDs', async () => {
+  const { compile, compileInput, context } = compilerToolFixture()
+  const result = await compile.execute(compileInput, context)
+
+  assert.deepEqual(result.artifacts?.map(artifact => artifact.type), [
+    NARRATION_PLAN_ARTIFACT,
+    SCENE_BLUEPRINT_ARTIFACT,
+    RESOLVED_SCENE_PLAN_ARTIFACT,
+    COMPILED_RUNTIME_ARTIFACT,
+  ])
+  const [narration, blueprint, resolved, compiled] = result.artifacts!
+  assert.ok(compiled)
+  assert.equal(compiled.metadata?.narrationPlanArtifactId, narration!.id)
+  assert.equal(compiled.metadata?.sceneBlueprintArtifactId, blueprint!.id)
+  assert.equal(compiled.metadata?.resolvedScenePlanArtifactId, resolved!.id)
+  assert.equal('choreographyPlanArtifactId' in (compiled.metadata ?? {}), false)
 })

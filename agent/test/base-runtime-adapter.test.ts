@@ -6,6 +6,7 @@ import { BaseRuntimeAdapter } from '../src/adapters/baseRuntimeAdapter.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
+  EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
   type CompiledRuntimeArtifactData,
@@ -72,6 +73,15 @@ function compilerContext(options: { movement?: boolean; missingTrajectory?: bool
     id: 'accepted-1', type: EVENT_PLAN_ACCEPTED_ARTIFACT, version: 1, createdBy: 'user', data: eventPlan,
     metadata: { planId: 'plan-1', documentId: 'doc-1', version: 1, fingerprint: eventFingerprint, confirmationId: 'review:r:user', acceptedDraftArtifactId: 'draft-1' },
   })
+  artifacts.create({
+    id: 'evidence-1', type: EVIDENCE_IR_ARTIFACT, createdBy: 'tool', data: {
+      schemaVersion: 'evidence-ir/v1', documentId: eventPlan.documentId,
+      records: [{
+        evidenceId: 'ev-1', sourceRef: 'docx:p1', claim: 'JF-17 status', kind: 'explicit_fact',
+        entities: ['JF-17'], confidence: 1, ambiguities: [],
+      }],
+    },
+  })
   const preferredTemplate = options.movement ? 'deployment' as const : 'status_explanation' as const
   artifacts.create({
     id: 'narrative-artifact-1', type: NARRATIVE_PLAN_ARTIFACT, createdBy: 'agent', data: {
@@ -113,7 +123,7 @@ function compilerContext(options: { movement?: boolean; missingTrajectory?: bool
 }
 
 const compileInput = {
-  eventPlanArtifactId: 'accepted-1', narrativePlanArtifactId: 'narrative-artifact-1',
+  eventPlanArtifactId: 'accepted-1', evidenceArtifactId: 'evidence-1', narrativePlanArtifactId: 'narrative-artifact-1',
   assetRegistryArtifactId: 'registry-artifact-1', capabilityManifestVersion: capabilityManifest.version,
   assetRegistryVersion: hash,
 }
@@ -172,8 +182,10 @@ test('compile_replay_runtime validates the complete artifact before returning it
 test('validate_replay_runtime reparses both stored values without repairing', async () => {
   const context = compilerContext()
   const compiled = await createCompilerTools()[0]!.execute(compileInput, context)
-  context.artifacts.create(compiled.artifacts![0]!)
-  const result = await createCompilerTools()[1]!.execute({ artifactId: compiled.artifacts![0]!.id }, context)
+  const artifact = compiled.artifacts?.find(item => item.type === COMPILED_RUNTIME_ARTIFACT)
+  assert.ok(artifact)
+  context.artifacts.create(artifact)
+  const result = await createCompilerTools()[1]!.execute({ artifactId: artifact.id }, context)
   assert.equal(JSON.parse(result.content).valid, true)
   assert.equal(result.artifacts, undefined)
 })
@@ -189,7 +201,9 @@ test('validate_replay_runtime rejects malformed and inconsistent compiled artifa
   ] as const) {
     const context = compilerContext()
     const compiled = await createCompilerTools()[0]!.execute(compileInput, context)
-    const artifact = structuredClone(compiled.artifacts![0]!)
+    const compiledArtifact = compiled.artifacts?.find(item => item.type === COMPILED_RUNTIME_ARTIFACT)
+    assert.ok(compiledArtifact)
+    const artifact = structuredClone(compiledArtifact)
     const data = artifact.data as CompiledRuntimeArtifactData
     if (variant === 'runtime-schema') artifact.data = { ...data, runtimePlan: {} }
     else if (variant === 'scene-schema') artifact.data = { ...data, sceneProjectConfig: {} }

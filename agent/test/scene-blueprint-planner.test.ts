@@ -3,10 +3,15 @@ import test from 'node:test'
 import type { EvidenceIR } from '../src/contracts/evidence.ts'
 import type { EventPlan } from '../src/contracts/eventPlan.ts'
 import type { NarrativePlan } from '../src/contracts/narrativePlan.ts'
+import type { AssetRegistryEntry, AssetRegistrySnapshot } from '../src/contracts/assetRegistry.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
+import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
 import { buildNarrationPlan } from '../src/planning/narrationPlanner.ts'
 import { resolveQuantity } from '../src/planning/quantityResolver.ts'
 import { buildSceneBlueprint } from '../src/planning/sceneBlueprintPlanner.ts'
+import { resolveSceneBlueprint } from '../src/planning/resolveSceneBlueprint.ts'
+import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
+import { buildTrajectoryCatalog } from '../src/services/trajectoryCatalog.ts'
 
 function evidence(records: EvidenceIR['records']): EvidenceIR {
   return { schemaVersion: 'evidence-ir/v1', documentId: 'doc-indo-pak', records }
@@ -478,4 +483,92 @@ test('planning is byte-identical for the same inputs and defaults never rewrite 
   const launchGroup = firstBlueprint.actorGroups.find(group => group.groupId === 'group:weapon-event-launch')
   assert.equal(launchGroup?.quantityDecision.defaultPolicyId, 'single-launch/v1')
   assert.deepEqual(launchGroup?.quantityDecision.evidenceRefs, [])
+})
+
+const routeIds = [
+  ...Array.from({ length: 4 }, (_, index) => `trajectory:adampur-vampire-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `trajectory:ambala-rafale-${index + 1}`),
+  ...Array.from({ length: 2 }, (_, index) => `trajectory:ambala-su30mki-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `trajectory:minhas-j10ce-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `trajectory:rafiki-j10ce-${index + 1}`),
+  'trajectory:india-missile-1',
+  'trajectory:pakistan-missile-1',
+  'trajectory:pakistan-strike-missile-2',
+] as const
+
+const registryHash = `sha256:${'7'.repeat(64)}`
+
+function resolutionRegistry(): AssetRegistrySnapshot {
+  const assets: AssetRegistryEntry[] = routeIds.map((assetId, index) => ({
+    assetId,
+    kind: 'trajectory',
+    displayName: assetId,
+    aliases: [],
+    fingerprint: `sha256:${(index + 1).toString(16).padStart(64, '0')}`,
+    size: 10,
+    availability: 'available',
+    criticality: 'required',
+    fallbackAssetIds: [],
+    allowFallback: false,
+    mediaType: 'application/vnd.ise.trajectory+json',
+    trajectory: {
+      format: 'ise-trajectory/v1',
+      timeUnit: 'ms',
+      coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 0,
+      endTimeMs: 180_000,
+      monotonic: true,
+    },
+  }))
+  return { schemaVersion: 'asset-registry/v1', registryVersion: registryHash, assets, diagnostics: [] }
+}
+
+function resolvedFixture() {
+  const fixture = planningFixture()
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+  const assetRegistry = resolutionRegistry()
+  return { blueprint, assetRegistry, resolved: resolveSceneBlueprint({ blueprint, assetRegistry }) }
+}
+
+test('resolveSceneBlueprint expands exact quantities into stable leaders and wingmen deterministically', () => {
+  const first = resolvedFixture()
+  const second = resolveSceneBlueprint({ blueprint: first.blueprint, assetRegistry: first.assetRegistry })
+
+  assert.equal(JSON.stringify(first.resolved), JSON.stringify(second))
+  assert.equal(first.resolved.resolvedActors.length, 15)
+  assert.deepEqual(first.resolved.resolvedActors.slice(0, 2).map(actor => actor.actorInstanceId), [
+    'actor:india-rafale-ambala:leader',
+    'actor:india-rafale-ambala:wingman-1',
+  ])
+  assert.equal(first.resolved.resolvedActors.filter(actor => actor.role === 'leader').length, 5)
+  assert.equal(first.resolved.actorRouteAssignments.length, first.resolved.resolvedActors.length)
+})
+
+test('resolveSceneBlueprint assigns unique registered routes with exact source fingerprints and no fallback', () => {
+  const { blueprint, assetRegistry, resolved } = resolvedFixture()
+  const assignedRoutes = resolved.actorRouteAssignments.map(assignment => assignment.trajectoryAssetRef)
+
+  assert.equal(new Set(assignedRoutes).size, assignedRoutes.length)
+  assert.equal(resolved.actorRouteAssignments.every(assignment => assignment.sourceKind === 'catalog'), true)
+  assert.deepEqual(resolved.fallbackTrajectoryRecipes, [])
+  assert.equal(resolved.sourceBlueprintId, blueprint.blueprintId)
+  assert.equal(resolved.sourceBlueprintFingerprint, fingerprint(blueprint))
+  assert.equal(resolved.trajectoryCatalogFingerprint, buildTrajectoryCatalog(assetRegistry).fingerprint)
+  assert.equal(resolved.scenarioMappingFingerprint, fingerprint(indoPakTrajectoryScenario))
+  assert.equal(resolved.diagnostics.some(item => item.message.includes('Vampire')), true)
+  assert.equal(resolved.diagnostics.some(item => item.message.includes('J-10CE')), true)
+})
+
+test('resolveSceneBlueprint propagates route capacity exhaustion instead of synthesizing routes', () => {
+  const fixture = resolvedFixture()
+  const actorGroups = fixture.blueprint.actorGroups.map(group => group.groupId === 'group:india-rafale-ambala'
+    ? { ...group, quantityDecision: { ...group.quantityDecision, value: 5 } }
+    : group)
+
+  assert.throws(
+    () => resolveSceneBlueprint({ blueprint: { ...fixture.blueprint, actorGroups }, assetRegistry: fixture.assetRegistry }),
+    (error: unknown) => error instanceof CompilationError
+      && error.diagnostics.some(item => item.code === 'TRAJECTORY_BUNDLE_CAPACITY_EXCEEDED'),
+  )
 })

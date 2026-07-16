@@ -21,6 +21,16 @@ import { parseBattleReport } from '../src/services/documentParser.ts'
 import { fingerprint, sha256 } from '../src/services/fingerprint.ts'
 
 const hash = `sha256:${'2'.repeat(64)}`
+const flowTrajectoryIds = [
+  ...Array.from({ length: 4 }, (_, index) => `adampur-vampire-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `ambala-rafale-${index + 1}`),
+  ...Array.from({ length: 2 }, (_, index) => `ambala-su30mki-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `minhas-j10ce-${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `rafiki-j10ce-${index + 1}`),
+  'india-missile-1',
+  'pakistan-missile-1',
+  'pakistan-strike-missile-2',
+]
 
 class FlowModel implements ModelAdapter {
   #step = 0
@@ -94,13 +104,38 @@ class FlowNest implements NestGateway {
     return { ...this.file, bytes: Buffer.from(this.file.bytes) }
   }
   async listAssetMetadata() {
-    return [{
-      assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [], fingerprint: hash,
-      sourceRelativePath: 'assets/jf17.glb', objectName: 'models/jf17.glb', size: 10,
-      availability: this.modelAvailability, criticality: 'required', fallbackAssetIds: [], allowFallback: false,
-      mediaType: 'model/gltf-binary',
-      model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
-    }]
+    return [
+      {
+        assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [], fingerprint: hash,
+        sourceRelativePath: 'assets/jf17.glb', objectName: 'models/jf17.glb', size: 10,
+        availability: this.modelAvailability, criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'model/gltf-binary',
+        model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+      },
+      ...flowTrajectoryIds.map(routeId => ({
+        assetId: `trajectory:${routeId}`,
+        kind: 'trajectory',
+        displayName: routeId,
+        aliases: [],
+        fingerprint: hash,
+        sourceRelativePath: `assets/${routeId}.json`,
+        objectName: `trajectories/${routeId}.json`,
+        size: 10,
+        availability: 'available',
+        criticality: 'required',
+        fallbackAssetIds: [],
+        allowFallback: false,
+        mediaType: 'application/vnd.ise.trajectory+json',
+        trajectory: {
+          format: 'ise-trajectory/v1',
+          timeUnit: 'ms',
+          coordinateOrder: 'lng-lat-alt',
+          startTimeMs: 0,
+          endTimeMs: 180_000,
+          monotonic: true,
+        },
+      })),
+    ]
   }
 }
 

@@ -17,7 +17,10 @@ import {
   DOCUMENT_IR_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
+  NARRATION_PLAN_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
+  RESOLVED_SCENE_PLAN_ARTIFACT,
+  SCENE_BLUEPRINT_ARTIFACT,
   type CompiledRuntimeArtifactData,
 } from '../src/contracts/artifactTypes.ts'
 import { canonicalRuntimePlanSchema } from '../src/contracts/runtimePlan.ts'
@@ -207,6 +210,25 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
     data: plan,
     metadata: { planId: plan.planId, documentId: plan.documentId, version: 1, fingerprint: fingerprint(plan) },
   })
+  new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
+    id: `terminal-evidence-${f.session.id}`,
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: `evidence:${plan.documentId}`,
+    data: {
+      schemaVersion: 'evidence-ir/v1',
+      documentId: plan.documentId,
+      records: [{
+        evidenceId: 'terminal-evidence',
+        sourceRef: 'docx:p1',
+        claim: 'Terminal state',
+        kind: 'explicit_fact',
+        entities: ['Unit'],
+        confidence: 1,
+        ambiguities: [],
+      }],
+    },
+  })
   f.repositories.sessions.transition(f.session.id, ['idle'], 'awaiting_review')
   return accepted.id
 }
@@ -372,7 +394,7 @@ function corruptingCompilerToolsFactory(options: CompilerToolOptions = {}): Agen
     ...compile,
     async execute(input, context, onProgress) {
       const result = await compile.execute(input, context, onProgress)
-      const artifact = result.artifacts?.[0]
+      const artifact = result.artifacts?.find(candidate => candidate.type === COMPILED_RUNTIME_ARTIFACT)
       assert.ok(artifact)
       const data = artifact.data as CompiledRuntimeArtifactData
       data.sceneProjectConfig.runtimePlanArtifactId = 'malformed-after-tool-validation'
@@ -619,6 +641,69 @@ test('invalid current-run compiled artifacts fail structurally and preserve the 
   }
 })
 
+test('approved compilation selects exact EvidenceIR and atomically persists ordered resolved artifacts', async (t) => {
+  const model = new ControllableModel()
+  let observedInput: Record<string, unknown> = {}
+  const recordingCompilerToolsFactory: typeof createCompilerTools = (options = {}) => {
+    const tools = createCompilerTools(options)
+    const compile = tools[0]!
+    return [{
+      ...compile,
+      async execute(input, context, onProgress) {
+        observedInput = input as Record<string, unknown>
+        return compile.execute(input, context, onProgress)
+      },
+    }, ...tools.slice(1)]
+  }
+  const f = await terminalFixture(t, model, false, { compilerToolsFactory: recordingCompilerToolsFactory })
+  const acceptedArtifactId = prepareAcceptedRun(f)
+  const matchingEvidence = f.repositories.artifacts.listLedger(f.session.id)
+    .find(artifact => artifact.type === EVIDENCE_IR_ARTIFACT
+      && (artifact.data as { documentId?: string }).documentId === 'terminal-document')!
+  new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
+    id: 'unrelated-evidence',
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:unrelated-document',
+    data: { schemaVersion: 'evidence-ir/v1', documentId: 'unrelated-document', records: [] },
+  })
+  const run = f.repositories.transaction(() => f.runner.createAfterApproval({
+    sessionId: f.session.id, subject: 'user-1', acceptedArtifactId,
+  }))
+  persistNarrative(f, acceptedArtifactId, run.id)
+
+  const repository = f.repositories.artifacts
+  const replaceLedger = repository.replaceLedger.bind(repository)
+  const persistenceBatches: string[][] = []
+  repository.replaceLedger = (sessionId, ledger, createdByRun) => {
+    const existingIds = new Set(repository.listLedger(sessionId).map(artifact => artifact.id))
+    const introduced = ledger.filter(artifact => !existingIds.has(artifact.id)).map(artifact => artifact.type)
+    if (introduced.length > 0) persistenceBatches.push(introduced)
+    replaceLedger(sessionId, ledger, createdByRun)
+  }
+
+  f.runner.startQueued(run.id, 'Bearer user-1')
+  await model.started
+  model.succeed()
+  await waitForTerminal(f.repositories, f.session.id)
+
+  const expectedTypes = [
+    NARRATION_PLAN_ARTIFACT,
+    SCENE_BLUEPRINT_ARTIFACT,
+    RESOLVED_SCENE_PLAN_ARTIFACT,
+    COMPILED_RUNTIME_ARTIFACT,
+  ]
+  assert.equal(observedInput.evidenceArtifactId, matchingEvidence.id)
+  const persisted = f.repositories.artifacts.listByRun(f.session.id, run.id)
+  for (const type of expectedTypes) assert.equal(persisted.filter(artifact => artifact.type === type).length, 1, type)
+  assert.equal(persistenceBatches.some(batch => JSON.stringify(batch) === JSON.stringify(expectedTypes)), true)
+  const createdTypes = f.repositories.events.after(f.session.id, '0')
+    .filter(event => event.type === 'artifact.created' && expectedTypes.includes(event.data.artifactType as typeof expectedTypes[number]))
+    .map(event => event.data.artifactType)
+  assert.deepEqual(createdTypes, expectedTypes)
+  f.database.close()
+})
+
 test('malformed compiler output fails before compiled persistence or publication', async (t) => {
   for (const current of [
     { name: 'invalid adapter output', factory: invalidAdapterCompilerToolsFactory },
@@ -668,6 +753,8 @@ test('model-invoked malformed compiler output retains its stable failure code', 
   const registry = persistAssetRegistry(f)
   model.input = {
     eventPlanArtifactId: acceptedArtifactId,
+    evidenceArtifactId: f.repositories.artifacts.listLedger(f.session.id)
+      .find(artifact => artifact.type === EVIDENCE_IR_ARTIFACT)?.id,
     narrativePlanArtifactId,
     assetRegistryArtifactId: registry.artifactId,
     capabilityManifestVersion: capabilityManifest.version,
