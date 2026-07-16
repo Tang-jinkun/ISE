@@ -30,15 +30,33 @@ foreach ($marker in @(
   if (-not $flowText.Contains($marker)) { throw "Missing final artifact contract marker: $marker" }
 }
 
+$e2ePath = Join-Path $PSScriptRoot '../../apps/web/e2e/generated-replay.spec.ts'
+$e2eText = [System.IO.File]::ReadAllText($e2ePath)
+if (-not $e2eText.Contains("getByTestId('runtime-replay').click()")) {
+  throw 'Persisted desktop acceptance must exercise runtime replay.'
+}
+foreach ($marker in @('function cameraAcceptanceTimes', 'async function seekPreviewRuntime')) {
+  if (-not $e2eText.Contains($marker)) {
+    throw "Persisted desktop acceptance is missing dynamic Preview camera marker: $marker"
+  }
+}
+foreach ($hardcodedTime in @('.toBeGreaterThan(2_000)', '.toBeGreaterThan(15_750)')) {
+  if ($e2eText.Contains($hardcodedTime)) {
+    throw "Persisted desktop acceptance retains hardcoded Preview time: $hardcodedTime"
+  }
+}
+
 foreach ($name in @(
   'Fail-Flow',
   'Get-PropertyValue',
   'Require-String',
+  'Require-EnvelopeData',
   'ConvertTo-JsonText',
   'Copy-EventUnits',
   'Get-SessionArtifacts',
   'Assert-NoSecretMaterial',
   'Write-Utf8File',
+  'Get-FlowAccessToken',
   'Select-CorrelatedArtifacts',
   'Assert-FinalDomainInvariants',
   'Export-FinalArtifacts'
@@ -52,7 +70,39 @@ foreach ($name in @(
 }
 
 function Invoke-JsonRequest {
+  param($Method, $BaseUrl, $Path, $Body)
+  if ($Path -eq '/auth/register') {
+    $script:RegistrationRequestCount += 1
+    $script:RegistrationBody = $Body
+    return [pscustomobject]@{
+      code = 200
+      data = [pscustomobject]@{ access_token = 'fallback-test-token' }
+    }
+  }
   return [pscustomobject]@{ artifacts = @() }
+}
+
+$priorAccessToken = $env:ISE_E2E_ACCESS_TOKEN
+try {
+  $script:RegistrationRequestCount = 0
+  $script:RegistrationBody = $null
+  $env:ISE_E2E_ACCESS_TOKEN = 'preset-test-token'
+  $presetToken = Get-FlowAccessToken 'http://127.0.0.1:3333'
+  if ($presetToken -ne 'preset-test-token' -or $script:RegistrationRequestCount -ne 0) {
+    throw 'Expected the preset process access token to bypass registration.'
+  }
+  if ($null -ne $script:RegistrationBody) { throw 'Preset token path must not create registration credentials.' }
+
+  $env:ISE_E2E_ACCESS_TOKEN = $null
+  $fallbackToken = Get-FlowAccessToken 'http://127.0.0.1:3333'
+  if ($fallbackToken -ne 'fallback-test-token' -or $script:RegistrationRequestCount -ne 1 -or
+      $script:RegistrationBody.email -notmatch '^ise-real-[0-9a-f]{32}@example\.invalid$' -or
+      $script:RegistrationBody.username -notmatch '^ise-real-[0-9a-f]{12}$' -or
+      [string]::IsNullOrWhiteSpace([string]$script:RegistrationBody.password)) {
+    throw 'Expected absent process token to retain the random registration fallback.'
+  }
+} finally {
+  $env:ISE_E2E_ACCESS_TOKEN = $priorAccessToken
 }
 
 $dictionaryValues = @(Get-PropertyValue ([ordered]@{ values = @('one', 'two') }) 'values')
@@ -241,6 +291,7 @@ try {
 }
 
 [Console]::Out.WriteLine('EMPTY_ARTIFACT_LEDGER=ok')
+[Console]::Out.WriteLine('ACCESS_TOKEN_SELECTION=ok')
 [Console]::Out.WriteLine('ORDERED_DICTIONARY_PROPERTY=ok')
 [Console]::Out.WriteLine('EVENT_UNIT_COPY=ok')
 [Console]::Out.WriteLine('CORRELATED_ARTIFACT_SELECTION=ok')

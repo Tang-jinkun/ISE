@@ -828,6 +828,28 @@ function Export-FinalArtifacts {
   Write-Utf8File (Join-Path $OutputDir 'scene-id.txt') ($SceneId + [Environment]::NewLine)
 }
 
+function Get-FlowAccessToken {
+  param([string]$BaseUrl)
+  $presetToken = [Environment]::GetEnvironmentVariable('ISE_E2E_ACCESS_TOKEN', 'Process')
+  if (-not [string]::IsNullOrWhiteSpace($presetToken)) {
+    return [string]$presetToken
+  }
+
+  $nonce = [Guid]::NewGuid().ToString('N')
+  $registration = [ordered]@{
+    email = "ise-real-$nonce@example.invalid"
+    username = "ise-real-$($nonce.Substring(0, 12))"
+    password = "Ise!$nonce"
+  }
+  $registered = Invoke-JsonRequest POST $BaseUrl '/auth/register' $registration $null 'user registration'
+  $authData = Require-EnvelopeData $registered 'REAL_DEMO_REGISTER_RESPONSE_INVALID'
+  $accessToken = Require-String (Get-PropertyValue $authData 'access_token') 'REAL_DEMO_REGISTER_RESPONSE_INVALID' 'access token'
+  $registration = $null
+  $registered = $null
+  $authData = $null
+  return $accessToken
+}
+
 function Invoke-RealFlow {
   param([string]$RepoRoot, [System.IO.FileInfo]$SourceFile)
   Add-Type -AssemblyName System.Net.Http
@@ -836,18 +858,7 @@ function Invoke-RealFlow {
   $script:HttpClient = New-Object System.Net.Http.HttpClient($handler)
   $script:HttpClient.Timeout = [TimeSpan]::FromMinutes(5)
 
-  $nonce = [Guid]::NewGuid().ToString('N')
-  $registration = [ordered]@{
-    email = "ise-real-$nonce@example.invalid"
-    username = "ise-real-$($nonce.Substring(0, 12))"
-    password = "Ise!$nonce"
-  }
-  $registered = Invoke-JsonRequest POST $ApiBaseUrl '/auth/register' $registration $null 'user registration'
-  $authData = Require-EnvelopeData $registered 'REAL_DEMO_REGISTER_RESPONSE_INVALID'
-  $accessToken = Require-String (Get-PropertyValue $authData 'access_token') 'REAL_DEMO_REGISTER_RESPONSE_INVALID' 'access token'
-  $registration = $null
-  $registered = $null
-  $authData = $null
+  $accessToken = Get-FlowAccessToken $ApiBaseUrl
 
   $uploaded = Invoke-DocxUpload $ApiBaseUrl $SourceFile $accessToken
   $fileData = Require-EnvelopeData $uploaded 'REAL_DEMO_UPLOAD_RESPONSE_INVALID'

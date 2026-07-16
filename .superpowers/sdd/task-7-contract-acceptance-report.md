@@ -25,11 +25,21 @@ Status: COMPLETE FOR PRE-SERVICE ACCEPTANCE PREPARATION
 4. `powershell -ExecutionPolicy Bypass -File .\.superpowers\sdd\run-real-docx-flow.ps1 -DryRun`
    - Exit 1 before the dictionary fix: `REAL_DEMO_FINAL_DOMAIN_INVALID: The generated scene must contain multiple actor groups and one route assignment per resolved actor.`
    - The single `IDictionary` access branch fixed the root cause; no invariant was weakened.
+5. Independent-review token regression, using the helper command:
+   - Exit 1: `Missing function under test: Get-FlowAccessToken`.
+   - The GREEN behavior reuses a nonblank process `ISE_E2E_ACCESS_TOKEN` with zero registration requests and retains one randomized `/auth/register` request when the process token is absent.
+6. Independent-review persisted replay regression, using the helper command:
+   - Exit 1: `Persisted desktop acceptance must exercise runtime replay.`
+   - The GREEN E2E observes replay below 500ms, then requires playback to advance again and pauses it.
+7. Independent-review Preview camera regression, using the helper command:
+   - Exit 1: `Persisted desktop acceptance is missing dynamic Preview camera marker: function cameraAcceptanceTimes`.
+   - The GREEN E2E rejects the old `2_000` and `15_750` thresholds, derives two bounded samples from visible camera tracks, and seeks the Preview timeline playhead directly.
 
 ## GREEN evidence
 
-- PowerShell helper test: exit 0, 6 markers printed.
+- PowerShell helper test: exit 0, 7 markers printed.
   - `EMPTY_ARTIFACT_LEDGER=ok`
+  - `ACCESS_TOKEN_SELECTION=ok`
   - `ORDERED_DICTIONARY_PROPERTY=ok`
   - `EVENT_UNIT_COPY=ok`
   - `CORRELATED_ARTIFACT_SELECTION=ok`
@@ -51,7 +61,8 @@ Status: COMPLETE FOR PRE-SERVICE ACCEPTANCE PREPARATION
 - Requires multiple groups and actors, one unique catalog route per actor, no fallback recipe or synthesized trajectory diagnostic, exact runtime actor/route correspondence, image and video commands, and an 800ms subtitle-to-visual lead.
 - Secret/source-path scans run before persistence and again over all seven exports plus `scene-id.txt`.
 - Exports exactly seven BOM-free UTF-8 JSON names plus `scene-id.txt`.
-- Persisted desktop acceptance reads the loaded SceneProjectConfig, derives image/video and overlapping two-aircraft follow-path sample times, asserts unique persisted entity/routes, finite snapshots, two moving same-ID aircraft, orientation change, real media decode/play, canvas movement, controls, camera movement, and Preview framing.
+- Reuses `ISE_E2E_ACCESS_TOKEN` when supplied so the flow and persisted E2E share one user, while preserving secret-safe random registration as the fallback.
+- Persisted desktop acceptance reads the loaded SceneProjectConfig, derives image/video, overlapping two-aircraft follow-path, and two visible camera-transition sample times, asserts unique persisted entity/routes, finite snapshots, two moving same-ID aircraft, orientation change, real media decode/play, replay reset/progression, canvas movement, controls, camera movement through direct Preview seeking, and Preview framing.
 
 ## Concerns
 

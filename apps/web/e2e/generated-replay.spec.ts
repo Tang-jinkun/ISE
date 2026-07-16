@@ -150,6 +150,7 @@ async function runtimeModelSnapshots(page: Page) {
 
 type ModelTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'model' }>;
 type ModelTrackItem = ModelTrack['items'][number];
+type CameraTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'camera' }>;
 type FollowPathItem = ModelTrackItem & {
   params: Extract<ModelTrackItem['params'], { action: 'model.follow_path' }>;
 };
@@ -162,6 +163,36 @@ function sampleInside(startMs: number, durationMs: number, preferredOffsetMs: nu
   if (durationMs <= 1) throw new Error('Persisted media intervals must exceed 1ms.');
   const offsetMs = Math.min(preferredOffsetMs, durationMs - 1);
   return { timeMs: startMs + offsetMs, offsetMs };
+}
+
+function cameraAcceptanceTimes(config: SceneProjectConfig): [number, number] {
+  const cameraItems = config.tracks
+    .filter((track): track is CameraTrack => track.type === 'camera' && track.visible)
+    .flatMap((track) => track.items);
+  const upperBoundMs = Math.max(0, config.totalDurationMs - 1);
+  const sampleTime = (item: CameraTrack['items'][number]) =>
+    Math.min(
+      upperBoundMs,
+      Math.max(0, Math.round(item.startMs + item.durationMs * 0.8)),
+    );
+  let best: { times: [number, number]; separationMs: number } | undefined;
+  for (let left = 0; left < cameraItems.length; left += 1) {
+    for (let right = left + 1; right < cameraItems.length; right += 1) {
+      const first = cameraItems[left]!;
+      const second = cameraItems[right]!;
+      if (JSON.stringify(first.params) === JSON.stringify(second.params)) continue;
+      const firstTimeMs = sampleTime(first);
+      const secondTimeMs = sampleTime(second);
+      const separationMs = Math.abs(secondTimeMs - firstTimeMs);
+      if (separationMs > 0 && (!best || separationMs > best.separationMs)) {
+        best = { times: [firstTimeMs, secondTimeMs], separationMs };
+      }
+    }
+  }
+  if (!best) {
+    throw new Error('Persisted scene requires two distinct visible camera transitions.');
+  }
+  return best.times;
 }
 
 function persistedAcceptanceSamples(config: SceneProjectConfig) {
@@ -202,6 +233,7 @@ function persistedAcceptanceSamples(config: SceneProjectConfig) {
   return {
     image,
     video,
+    cameraTimes: cameraAcceptanceTimes(config),
     follows,
     activeAircraftIds: overlap.items.map((item) => item.params.entityId),
     modelEarlyMs: Math.floor(overlap.startMs + overlapDurationMs * 0.2),
@@ -262,6 +294,48 @@ async function previewRuntimeTime(page: Page) {
       .getByTestId('scene-runtime-overlay')
       .getAttribute('data-runtime-time-ms'),
   );
+}
+
+async function seekPreviewRuntime(page: Page, timeMs: number) {
+  const currentTimeMs = await previewRuntimeTime(page);
+  const playhead = page.locator('div:has(> svg > path[d="M0 0H12V6L6 12L0 6V0Z"])');
+  await expect(playhead).toBeVisible();
+  const bounds = await playhead.boundingBox();
+  if (!bounds) throw new Error('Preview timeline playhead is not measurable.');
+  const startX = bounds.x + bounds.width / 2;
+  const startY = bounds.y + bounds.height / 2;
+  await playhead.dispatchEvent('mousedown', {
+    button: 0,
+    buttons: 1,
+    clientX: startX,
+    clientY: startY,
+  });
+  await page.evaluate(
+    ({ clientX, clientY }) => {
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        buttons: 1,
+        clientX,
+        clientY,
+      }));
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true,
+        button: 0,
+        clientX,
+        clientY,
+      }));
+    },
+    {
+      clientX: startX + ((timeMs - currentTimeMs) / 1_000) * 10,
+      clientY: startY,
+    },
+  );
+  await expect
+    .poll(async () => Math.abs((await previewRuntimeTime(page)) - timeMs))
+    .toBeLessThanOrEqual(1);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
 }
 
 async function previewMapCamera(page: Page): Promise<MapCameraSnapshot> {
@@ -624,6 +698,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   await expect
     .poll(async () => changedPixelRatio(firstCanvas, await canvasPixels(page)))
     .toBeGreaterThan(0.001);
+
   const screenshotPath = testInfo.outputPath('persisted-runtime-dynamic-canvas.png');
   await page.screenshot({ path: screenshotPath });
   const canvasScreenshotPath = testInfo.outputPath('persisted-runtime-canvas.png');
@@ -647,6 +722,21 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   });
   await expectNonBlankCanvas(page);
 
+  expect(samples.modelLateMs).toBeGreaterThan(500);
+  let replayMinimumMs = Number.POSITIVE_INFINITY;
+  await page.getByTestId('runtime-replay').click();
+  await expect
+    .poll(async () => {
+      const timeMs = Number(await page.getByTestId('runtime-time').textContent());
+      replayMinimumMs = Math.min(replayMinimumMs, timeMs);
+      return replayMinimumMs;
+    })
+    .toBeLessThan(500);
+  await expect
+    .poll(async () => Number(await page.getByTestId('runtime-time').textContent()))
+    .toBeGreaterThan(Math.max(500, replayMinimumMs + 300));
+  await page.getByTestId('runtime-pause').click();
+
   await page.goto(`/preview?projectId=${encodeURIComponent(persistedSceneId)}`);
   await expect(page.getByTestId('scene-runtime-ready')).toHaveAttribute(
     'data-status',
@@ -664,12 +754,11 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     .toBeGreaterThan(0.95);
   await expectNonBlankCanvas(page);
   const initialCamera = await previewMapCamera(page);
-  await page.getByTestId('scene-runtime-play').click();
-  await expect
-    .poll(() => previewRuntimeTime(page))
-    .toBeGreaterThan(2_000);
+  expect(samples.cameraTimes.every(
+    (timeMs) => timeMs >= 0 && timeMs < sceneConfig.totalDurationMs,
+  )).toBe(true);
+  await seekPreviewRuntime(page, samples.cameraTimes[0]);
   const firstEventCamera = await previewMapCamera(page);
-  await page.getByTestId('scene-runtime-pause').click();
 
   await expect.poll(() => projectedPreviewModel(page)).not.toBeNull();
   const projectedModel = await projectedPreviewModel(page);
@@ -692,11 +781,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   expect(modelPixelIsolation.changedPixelRatio).toBeGreaterThan(0.002);
   expect(modelPixelIsolation.maximumChannelDelta).toBeGreaterThan(8);
 
-  await page.getByTestId('scene-runtime-play').click();
-  await expect
-    .poll(() => previewRuntimeTime(page), { timeout: 20_000 })
-    .toBeGreaterThan(15_750);
-  await page.getByTestId('scene-runtime-pause').click();
+  await seekPreviewRuntime(page, samples.cameraTimes[1]);
   const secondEventCamera = await previewMapCamera(page);
   const cameraEvents = [initialCamera, firstEventCamera, secondEventCamera];
   expect(maximumCenterSpread(cameraEvents)).toBeGreaterThan(0.01);
