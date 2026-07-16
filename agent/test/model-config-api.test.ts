@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import type { ModelAdapter } from '@ise/agent-core';
 import type { AuthorizedFile, NestGateway } from '../src/adapters/nestGateway.ts';
@@ -6,6 +9,7 @@ import { createHttpApp } from '../src/api/httpApp.ts';
 import { AgentDatabase } from '../src/persistence/database.ts';
 import { AgentRepositories } from '../src/persistence/repositories.ts';
 import { ModelConfigStore } from '../src/model/modelConfig.ts';
+import type { CredentialProtector } from '../src/model/credentialProtector.ts';
 
 class IdentityNest implements NestGateway {
   async verifyBearer(authorization: string): Promise<{ subject: string }> {
@@ -34,10 +38,18 @@ const remoteBody = {
   apiKey: 'test-secret'
 };
 
-async function fixture(modelFetch?: typeof fetch) {
-  const database = await AgentDatabase.open(':memory:', 'sql.js');
+async function fixture(
+  modelFetch?: typeof fetch,
+  options: { databasePath?: string; protector?: CredentialProtector } = {}
+) {
+  const database = await AgentDatabase.open(options.databasePath ?? ':memory:', 'sql.js');
   const repositories = new AgentRepositories(database);
-  const modelConfigs = new ModelConfigStore();
+  const modelConfigs = options.protector
+    ? new ModelConfigStore(undefined, {
+        repository: repositories.modelConfigs,
+        protector: options.protector
+      })
+    : new ModelConfigStore();
   const app = await createHttpApp({
     repositories,
     nest: new IdentityNest(),
@@ -181,4 +193,43 @@ test('clearing model config resets only the authenticated subject', async () => 
 
   await f.app.close();
   f.database.close();
+});
+
+test('model config API restores the same redacted response after database reopen', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'ise-model-config-api-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const databasePath = join(directory, 'agent.sqlite');
+  const protector: CredentialProtector = {
+    protect: value => `protected:${Buffer.from(value).toString('base64')}`,
+    unprotect: value => Buffer.from(value.slice('protected:'.length), 'base64').toString()
+  };
+
+  const first = await fixture(undefined, { databasePath, protector });
+  const saved = await first.app.inject({
+    method: 'PUT',
+    url: '/model-config',
+    headers: bearer('user-1'),
+    payload: remoteBody
+  });
+  assert.equal(saved.statusCode, 200);
+  await first.app.close();
+  first.database.close();
+
+  const reopened = await fixture(undefined, { databasePath, protector });
+  const restored = await reopened.app.inject({
+    method: 'GET',
+    url: '/model-config',
+    headers: bearer('user-1')
+  });
+  assert.equal(restored.statusCode, 200);
+  assert.deepEqual(restored.json(), saved.json());
+  assert.equal(restored.body.includes(remoteBody.apiKey), false);
+  await reopened.app.close();
+  reopened.database.close();
+});
+
+test('production server wires persisted model configs through the Windows protector', async () => {
+  const source = await readFile(new URL('../src/server.ts', import.meta.url), 'utf8');
+  assert.match(source, /new WindowsDpapiCredentialProtector\(\)/);
+  assert.match(source, /repository:\s*repositories\.modelConfigs/);
 });

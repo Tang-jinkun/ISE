@@ -5,6 +5,7 @@ import { loadConfig } from './config.ts'
 import { AgentDatabase } from './persistence/database.ts'
 import { AgentRepositories } from './persistence/repositories.ts'
 import { ModelConfigStore } from './model/modelConfig.ts'
+import { WindowsDpapiCredentialProtector } from './model/credentialProtector.ts'
 
 const config = loadConfig(process.env)
 const database = await AgentDatabase.open(config.AGENT_DB_PATH, config.AGENT_SQLITE_DRIVER)
@@ -18,7 +19,10 @@ const defaultModel = config.MODEL_BASE_URL && config.MODEL_NAME && config.MODEL_
       apiKey: config.MODEL_API_KEY,
     }
   : undefined
-const modelConfigs = new ModelConfigStore(defaultModel)
+const modelConfigs = new ModelConfigStore(defaultModel, {
+  repository: repositories.modelConfigs,
+  protector: new WindowsDpapiCredentialProtector(),
+})
 const app = await createHttpApp({
   repositories,
   nest: new FetchNestGateway({ baseUrl: config.NEST_API_BASE_URL }),

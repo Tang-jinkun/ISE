@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { agentError } from '../api/errors.ts';
+import type { CredentialProtector } from './credentialProtector.ts';
+import type { ModelConfigRepository } from '../persistence/modelConfigRepository.ts';
 
 export const modelProviderIdSchema = z.enum([
   'deepseek',
@@ -47,6 +49,11 @@ export type PublicModelConfig = {
   baseUrl: string | null;
   model: string | null;
   hasApiKey: boolean;
+};
+
+export type ModelConfigPersistenceOptions = {
+  repository: ModelConfigRepository;
+  protector: CredentialProtector;
 };
 
 const unconfiguredView: PublicModelConfig = {
@@ -136,12 +143,19 @@ function normalizeConfig(
 
 export class ModelConfigStore {
   readonly #values = new Map<string, StoredModelConfig | null>();
+  readonly #ciphertexts = new Map<string, string | null>();
+  readonly #loadFailures = new Map<string, Error>();
   readonly #defaultConfig?: StoredModelConfig;
+  readonly #persistence?: ModelConfigPersistenceOptions;
 
-  constructor(defaultConfig?: ModelConfigInput) {
+  constructor(
+    defaultConfig?: ModelConfigInput,
+    persistence?: ModelConfigPersistenceOptions
+  ) {
     this.#defaultConfig = defaultConfig
       ? normalizeConfig(defaultConfig)
       : undefined;
+    this.#persistence = persistence;
   }
 
   get(subject: string): PublicModelConfig {
@@ -158,7 +172,33 @@ export class ModelConfigStore {
 
   set(subject: string, raw: ModelConfigInput): PublicModelConfig {
     const value = normalizeConfig(raw, this.#stored(subject));
+    let encryptedApiKey: string | null = null;
+    if (this.#persistence) {
+      try {
+        const preservedCiphertext = raw.apiKey === undefined
+          ? this.#ciphertexts.get(subject)
+          : undefined;
+        encryptedApiKey = value.apiKey
+          ? preservedCiphertext ?? this.#persistence.protector.protect(value.apiKey)
+          : null;
+        this.#persistence.repository.save({
+          subject,
+          provider: value.provider,
+          baseUrl: value.baseUrl,
+          model: value.model,
+          encryptedApiKey,
+          cleared: false
+        });
+      } catch {
+        throw agentError(
+          500,
+          'MODEL_CREDENTIAL_STORAGE_UNAVAILABLE',
+          'Model credential storage is unavailable'
+        );
+      }
+    }
     this.#values.set(subject, value);
+    if (this.#persistence) this.#ciphertexts.set(subject, encryptedApiKey);
     return publicView(value);
   }
 
@@ -167,12 +207,65 @@ export class ModelConfigStore {
   }
 
   clear(subject: string): void {
+    if (this.#persistence) {
+      try {
+        this.#persistence.repository.clear(subject);
+      } catch {
+        throw agentError(
+          500,
+          'MODEL_CREDENTIAL_STORAGE_UNAVAILABLE',
+          'Model credential storage is unavailable'
+        );
+      }
+    }
     this.#values.set(subject, null);
+    this.#ciphertexts.set(subject, null);
+    this.#loadFailures.delete(subject);
   }
 
   #stored(subject: string): StoredModelConfig | undefined {
     if (this.#values.has(subject)) {
       return this.#values.get(subject) ?? undefined;
+    }
+    const previousFailure = this.#loadFailures.get(subject);
+    if (previousFailure) throw previousFailure;
+    if (this.#persistence) {
+      try {
+        const record = this.#persistence.repository.get(subject);
+        if (!record) {
+          this.#values.set(subject, this.#defaultConfig ?? null);
+          this.#ciphertexts.set(subject, null);
+          return this.#defaultConfig;
+        }
+        if (record.cleared) {
+          this.#values.set(subject, null);
+          this.#ciphertexts.set(subject, null);
+          return undefined;
+        }
+        if (!record.provider || !record.baseUrl || !record.model) {
+          throw new Error('INVALID_PERSISTED_MODEL_CONFIG');
+        }
+        const apiKey = record.encryptedApiKey
+          ? this.#persistence.protector.unprotect(record.encryptedApiKey)
+          : undefined;
+        const value = normalizeConfig({
+          provider: modelProviderIdSchema.parse(record.provider),
+          baseUrl: record.baseUrl,
+          model: record.model,
+          ...(apiKey ? { apiKey } : {})
+        });
+        this.#values.set(subject, value);
+        this.#ciphertexts.set(subject, record.encryptedApiKey);
+        return value;
+      } catch {
+        const failure = agentError(
+          500,
+          'MODEL_CREDENTIAL_UNAVAILABLE',
+          'Model credential is unavailable'
+        );
+        this.#loadFailures.set(subject, failure);
+        throw failure;
+      }
     }
     return this.#defaultConfig;
   }

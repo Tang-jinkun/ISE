@@ -53,6 +53,39 @@ test('model config preserves an existing key when an update omits it', () => {
   assert.equal(store.require('user-1').model, 'deepseek-reasoner');
 });
 
+test('model config requires a new key when provider or base URL changes', () => {
+  const store = new ModelConfigStore();
+  store.set('user-1', remoteConfig);
+
+  for (const update of [
+    {
+      provider: 'openai' as const,
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'gpt-5'
+    },
+    {
+      provider: 'deepseek' as const,
+      baseUrl: 'https://alternate.deepseek.com/v1',
+      model: 'deepseek-chat'
+    }
+  ]) {
+    assert.throws(
+      () => store.set('user-1', update),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'MODEL_API_KEY_REQUIRED'
+    );
+  }
+
+  assert.deepEqual(store.require('user-1'), {
+    provider: 'deepseek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    apiKey: 'test-secret'
+  });
+});
+
 test('clearing a subject disables an environment default only for that subject', () => {
   const store = new ModelConfigStore(remoteConfig);
   assert.equal(store.get('user-1').configured, true);
