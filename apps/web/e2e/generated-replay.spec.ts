@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
+import { sceneProjectConfigSchema, type SceneProjectConfig } from '@ise/runtime-contracts';
 import type mapboxgl from 'mapbox-gl';
 import { writeFile } from 'node:fs/promises';
 import { RUNTIME_MAIN_CONFIG } from '../src/runtime/testing/runtimeFixtures';
@@ -111,6 +112,8 @@ async function seekRuntimeHarness(page: Page, timeMs: number) {
 interface RuntimeModelSnapshot {
   entityId: string;
   modelAssetId?: string;
+  trajectoryAssetId?: string;
+  defaultTrajectoryAssetId?: string;
   visible: boolean;
   longitude?: number;
   latitude?: number;
@@ -143,6 +146,85 @@ async function runtimeModelSnapshots(page: Page) {
     const value = overlay.getAttribute('data-runtime-models');
     return value ? (JSON.parse(value) as RuntimeModelSnapshot[]) : [];
   });
+}
+
+type ModelTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'model' }>;
+type ModelTrackItem = ModelTrack['items'][number];
+type FollowPathItem = ModelTrackItem & {
+  params: Extract<ModelTrackItem['params'], { action: 'model.follow_path' }>;
+};
+
+function isFollowPathItem(item: ModelTrackItem): item is FollowPathItem {
+  return item.params.action === 'model.follow_path';
+}
+
+function sampleInside(startMs: number, durationMs: number, preferredOffsetMs: number) {
+  if (durationMs <= 1) throw new Error('Persisted media intervals must exceed 1ms.');
+  const offsetMs = Math.min(preferredOffsetMs, durationMs - 1);
+  return { timeMs: startMs + offsetMs, offsetMs };
+}
+
+function persistedAcceptanceSamples(config: SceneProjectConfig) {
+  const imageItem = config.tracks.find((track) => track.type === 'image')?.items[0];
+  const videoItem = config.tracks.find((track) => track.type === 'video')?.items[0];
+  if (!imageItem || !videoItem) {
+    throw new Error('Persisted scene requires active image and video intervals.');
+  }
+  const image = sampleInside(imageItem.startMs, imageItem.durationMs, 500);
+  const video = sampleInside(videoItem.startMs, videoItem.durationMs, 1_000);
+
+  const aircraftIds = new Set(
+    config.entities.filter((entity) => entity.kind === 'aircraft').map((entity) => entity.entityId),
+  );
+  const follows = config.tracks
+    .filter((track): track is ModelTrack => track.type === 'model')
+    .flatMap((track) => track.items.filter(isFollowPathItem));
+  const aircraftFollows = follows.filter((item) => aircraftIds.has(item.params.entityId));
+  let overlap: { items: [FollowPathItem, FollowPathItem]; startMs: number; endMs: number } | undefined;
+  for (let left = 0; left < aircraftFollows.length; left += 1) {
+    for (let right = left + 1; right < aircraftFollows.length; right += 1) {
+      const first = aircraftFollows[left]!;
+      const second = aircraftFollows[right]!;
+      const startMs = Math.max(first.startMs, second.startMs);
+      const endMs = Math.min(
+        first.startMs + first.durationMs,
+        second.startMs + second.durationMs,
+      );
+      if (endMs - startMs > 2 && (!overlap || endMs - startMs > overlap.endMs - overlap.startMs)) {
+        overlap = { items: [first, second], startMs, endMs };
+      }
+    }
+  }
+  if (!overlap) {
+    throw new Error('Persisted scene requires two aircraft with overlapping follow_path intervals.');
+  }
+  const overlapDurationMs = overlap.endMs - overlap.startMs;
+  return {
+    image,
+    video,
+    follows,
+    activeAircraftIds: overlap.items.map((item) => item.params.entityId),
+    modelEarlyMs: Math.floor(overlap.startMs + overlapDurationMs * 0.2),
+    modelLateMs: Math.floor(overlap.startMs + overlapDurationMs * 0.8),
+  };
+}
+
+async function persistedSceneConfig(response: Response) {
+  const body = (await response.json()) as { data?: { config?: unknown } };
+  return sceneProjectConfigSchema.parse(body.data?.config);
+}
+
+function expectFiniteModelSnapshot(snapshot: RuntimeModelSnapshot) {
+  const values = [
+    ...snapshot.position,
+    ...snapshot.quaternion,
+    snapshot.longitude,
+    snapshot.latitude,
+    snapshot.altitudeM,
+    snapshot.headingDeg,
+    snapshot.pitchDeg,
+  ];
+  expect(values.every((value) => typeof value === 'number' && Number.isFinite(value))).toBe(true);
 }
 
 async function canvasPixels(page: Page) {
@@ -407,10 +489,33 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   }
 
   await authenticate(page);
+  const sceneConfigResponse = page.waitForResponse((response) =>
+    response.request().method() === 'GET' &&
+    response.url().includes(`/SceneBack/scene/${encodeURIComponent(persistedSceneId)}`),
+  );
   await openRuntimeHarness(
     page,
     `/runtime-harness?sceneId=${encodeURIComponent(persistedSceneId)}`,
   );
+  const sceneConfig = await persistedSceneConfig(await sceneConfigResponse);
+  const samples = persistedAcceptanceSamples(sceneConfig);
+  const entityIds = sceneConfig.entities.map((entity) => entity.entityId);
+  const defaultRoutes = sceneConfig.entities.map((entity) => entity.defaultTrajectoryAssetId);
+  const followEntityIds = samples.follows.map((item) => item.params.entityId);
+  const followRoutes = samples.follows.map((item) => item.params.trajectoryAssetId);
+  expect(sceneConfig.entities.filter((entity) => entity.kind === 'aircraft').length).toBeGreaterThan(1);
+  expect(new Set(entityIds).size).toBe(entityIds.length);
+  expect(defaultRoutes.every((route): route is string => route !== undefined)).toBe(true);
+  expect(new Set(defaultRoutes).size).toBe(defaultRoutes.length);
+  expect(followEntityIds).toHaveLength(entityIds.length);
+  expect(new Set(followEntityIds).size).toBe(followEntityIds.length);
+  expect(new Set(followRoutes).size).toBe(followRoutes.length);
+  for (const item of samples.follows) {
+    expect(
+      sceneConfig.entities.find((entity) => entity.entityId === item.params.entityId)
+        ?.defaultTrajectoryAssetId,
+    ).toBe(item.params.trajectoryAssetId);
+  }
   await playRuntimeHarness(page);
 
   const maximumTimeMs = Number(
@@ -424,7 +529,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     Math.min(8000, Math.max(1, Math.floor(maximumTimeMs / 2))),
   );
 
-  await seekRuntimeHarness(page, 82_500);
+  await seekRuntimeHarness(page, samples.image.timeMs);
   const image = page.locator('img[data-runtime-kind="image"]');
   await expect(image).toBeVisible();
   await expect(page.locator('[data-runtime-kind="image-fallback"]')).toHaveCount(0);
@@ -440,7 +545,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   expect(await image.evaluate((element) => element.naturalWidth)).toBeGreaterThan(0);
   expect(await image.evaluate((element) => element.naturalHeight)).toBeGreaterThan(0);
 
-  await seekRuntimeHarness(page, 33_000);
+  await seekRuntimeHarness(page, samples.video.timeMs);
   const video = page.locator('video[data-runtime-kind="video"]');
   await expect(video).toBeVisible();
   await expect
@@ -454,7 +559,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     )
     .toBe(true);
   const initialVideoTime = await video.evaluate((element) => element.currentTime);
-  expect(initialVideoTime).toBeCloseTo(1, 1);
+  expect(initialVideoTime).toBeCloseTo(samples.video.offsetMs / 1_000, 1);
   await page.getByTestId('runtime-play').click();
   await expect.poll(() => video.evaluate((element) => element.paused)).toBe(false);
   await expect
@@ -467,27 +572,54 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   if (decodedFrames !== undefined) expect(decodedFrames).toBeGreaterThan(0);
   await page.getByTestId('runtime-pause').click();
 
-  await seekRuntimeHarness(page, 1_000);
-  await expect.poll(async () => (await runtimeModelSnapshots(page)).some((item) => item.visible)).toBe(true);
-  const firstModels = await runtimeModelSnapshots(page);
-  const firstModel = firstModels.find((item) => item.visible);
-  if (!firstModel) throw new Error('No visible GLB follow_path entity at 1000ms.');
-  expect(firstModel.modelAssetId).toMatch(/^model:/);
+  await seekRuntimeHarness(page, samples.modelEarlyMs);
+  await expect
+    .poll(async () => {
+      const activeIds = new Set(samples.activeAircraftIds);
+      return (await runtimeModelSnapshots(page)).filter(
+        (item) => item.visible && activeIds.has(item.entityId),
+      ).length;
+    })
+    .toBeGreaterThan(1);
+  const firstModels = (await runtimeModelSnapshots(page)).filter((item) => item.visible);
+  const visibleEntityIds = firstModels.map((item) => item.entityId);
+  expect(new Set(visibleEntityIds).size).toBe(visibleEntityIds.length);
+  expect(firstModels.filter((item) => samples.activeAircraftIds.includes(item.entityId)).length)
+    .toBeGreaterThan(1);
+  for (const model of firstModels) {
+    expect(model.modelAssetId).toMatch(/^model:/);
+    expectFiniteModelSnapshot(model);
+  }
+  const exposedRoutes = firstModels.flatMap((item) =>
+    item.trajectoryAssetId ?? item.defaultTrajectoryAssetId
+      ? [item.trajectoryAssetId ?? item.defaultTrajectoryAssetId!]
+      : [],
+  );
+  if (exposedRoutes.length > 0) {
+    expect(exposedRoutes).toHaveLength(firstModels.length);
+    expect(new Set(exposedRoutes).size).toBe(exposedRoutes.length);
+  }
   const firstCanvas = await canvasPixels(page);
 
-  await seekRuntimeHarness(page, 5_500);
-  const secondModel = (await runtimeModelSnapshots(page)).find(
-    (item) => item.entityId === firstModel.entityId && item.visible,
+  await seekRuntimeHarness(page, samples.modelLateMs);
+  const secondModels = (await runtimeModelSnapshots(page)).filter((item) => item.visible);
+  for (const model of secondModels) expectFiniteModelSnapshot(model);
+  const modelPairs = samples.activeAircraftIds.flatMap((entityId) => {
+    const first = firstModels.find((item) => item.entityId === entityId);
+    const second = secondModels.find((item) => item.entityId === entityId);
+    return first && second ? [{ first, second }] : [];
+  });
+  expect(modelPairs).toHaveLength(samples.activeAircraftIds.length);
+  const movedModels = modelPairs.filter(({ first, second }) =>
+    second.position.some((value, index) => value !== first.position[index]),
   );
-  if (!secondModel) {
-    throw new Error(`GLB entity ${firstModel.entityId} is not visible at 5500ms.`);
-  }
-  expect(secondModel.position).not.toEqual(firstModel.position);
-  expect(secondModel.quaternion).not.toEqual(firstModel.quaternion);
-  expect([secondModel.headingDeg, secondModel.pitchDeg]).not.toEqual([
-    firstModel.headingDeg,
-    firstModel.pitchDeg,
-  ]);
+  expect(movedModels.length).toBeGreaterThanOrEqual(2);
+  expect(
+    modelPairs.some(({ first, second }) =>
+      second.quaternion.some((value, index) => value !== first.quaternion[index]) &&
+      (second.headingDeg !== first.headingDeg || second.pitchDeg !== first.pitchDeg),
+    ),
+  ).toBe(true);
 
   await expect
     .poll(async () => changedPixelRatio(firstCanvas, await canvasPixels(page)))
