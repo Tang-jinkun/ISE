@@ -2,6 +2,9 @@ import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 import path from 'path';
 
+const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://127.0.0.1:3333';
+const agentProxyTarget = process.env.AGENT_PROXY_TARGET || 'http://127.0.0.1:4444';
+
 // Docs: https://rsbuild.rs/config/
 export default defineConfig({
   plugins: [pluginReact()],
@@ -14,14 +17,14 @@ export default defineConfig({
     port: 9999,
     proxy: {
       '/SceneBack': {
-        target: 'http://127.0.0.1:3333',
+        target: apiProxyTarget,
         changeOrigin: true,
         pathRewrite: {
           '^/SceneBack': ''
         }
       },
       '/SceneAgent': {
-        target: 'http://127.0.0.1:4444',
+        target: agentProxyTarget,
         changeOrigin: true,
         pathRewrite: {
           '^/SceneAgent': ''

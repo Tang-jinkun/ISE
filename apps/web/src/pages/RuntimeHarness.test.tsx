@@ -6,6 +6,28 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RuntimeHarness } from './RuntimeHarness';
 
+const mapboxMock = vi.hoisted(() => {
+  const instance = {
+    on: vi.fn(),
+    off: vi.fn(),
+    remove: vi.fn(),
+    resize: vi.fn(),
+  };
+  instance.on.mockImplementation((event: string, listener: () => void) => {
+    if (event === 'load') listener();
+    return instance;
+  });
+  const Map = vi.fn(function MapMock() {
+    return instance;
+  });
+  return { instance, Map };
+});
+
+vi.stubGlobal('ResizeObserver', class {
+  observe() {}
+  disconnect() {}
+});
+
 vi.mock('@/api/scene', () => ({
   getScene: vi.fn(),
 }));
@@ -28,7 +50,7 @@ vi.mock('@/hooks/useSceneRuntime', () => ({
 vi.mock('mapbox-gl', () => ({
   default: {
     accessToken: '',
-    Map: vi.fn(),
+    Map: mapboxMock.Map,
   },
 }));
 
@@ -75,6 +97,7 @@ describe('RuntimeHarness source selection', () => {
   beforeEach(() => {
     vi.mocked(getScene).mockReset();
     vi.mocked(useSceneRuntime).mockClear();
+    mapboxMock.Map.mockClear();
   });
 
   it('loads sceneId before a fixture and passes its valid config to the runtime', async () => {
@@ -114,10 +137,15 @@ describe('RuntimeHarness source selection', () => {
 
     expect(getScene).not.toHaveBeenCalled();
     expectRuntimeConfig(RUNTIME_MAIN_CONFIG);
+    expect(mapboxMock.Map).toHaveBeenCalledWith(
+      expect.objectContaining({
+        style: expect.objectContaining({ version: 8 }),
+      }),
+    );
   });
 
   it('exposes a runtime load error without adding visible diagnostic UI', () => {
-    vi.mocked(useSceneRuntime).mockReturnValueOnce({
+    vi.mocked(useSceneRuntime).mockReturnValue({
       runtime: null,
       status: 'error',
       error: new Error('Model asset failed to load'),

@@ -11,6 +11,18 @@ import {
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+
+const FALLBACK_MAP_STYLE: mapboxgl.StyleSpecification = {
+  version: 8,
+  sources: {},
+  layers: [
+    {
+      id: 'fallback-background',
+      type: 'background',
+      paint: { 'background-color': '#0b1724' },
+    },
+  ],
+};
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -147,11 +159,11 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
   const [timeMs, setTimeMs] = useState(0);
 
   useEffect(() => {
-    if (!mapboxToken || !mapRootRef.current) return;
-    mapboxgl.accessToken = mapboxToken;
+    if (!mapRootRef.current) return;
+    if (mapboxToken) mapboxgl.accessToken = mapboxToken;
     const nextMap = new mapboxgl.Map({
       container: mapRootRef.current,
-      style: 'mapbox://styles/mapbox/satellite-v9',
+      style: mapboxToken ? 'mapbox://styles/mapbox/satellite-v9' : FALLBACK_MAP_STYLE,
       center: [76.8165, 30.412],
       zoom: 9,
       attributionControl: false,
@@ -179,7 +191,7 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
     config,
     timeMs,
   });
-  const status = mapboxToken ? runtime.status : 'error';
+  const status = runtime.status;
   const runtimeErrorMessage = runtime.error
     ? runtime.error instanceof Error
       ? runtime.error.message

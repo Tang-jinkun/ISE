@@ -5,7 +5,6 @@ import { writeFile } from 'node:fs/promises';
 import { RUNTIME_MAIN_CONFIG } from '../src/runtime/testing/runtimeFixtures';
 
 const accessToken = process.env.ISE_E2E_ACCESS_TOKEN;
-const mapboxToken = process.env.PUBLIC_MAPBOX_TOKEN;
 const persistedSceneId = process.env.ISE_E2E_SCENE_ID;
 
 async function authenticate(page: Page) {
@@ -14,12 +13,6 @@ async function authenticate(page: Page) {
       'ISE_E2E_ACCESS_TOKEN is required for asset-catalog access to the real seeded assets.',
     );
   }
-  if (!mapboxToken) {
-    throw new Error(
-      'PUBLIC_MAPBOX_TOKEN is required for generated replay canvas assertions.',
-    );
-  }
-
   await page.addInitScript((token) => {
     window.localStorage.setItem('access_token', token);
   }, accessToken);

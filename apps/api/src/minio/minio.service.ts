@@ -8,15 +8,26 @@ import { ParamMinioFile } from './dto/param_minio.dto';
 @Injectable()
 export class MinioService {
   private readonly minioClient: Minio.Client;
+  private readonly publicMinioClient: Minio.Client;
   private readonly bucketName: string;
 
   constructor() {
+    const accessKey = process.env.MINIO_ACCESS_KEY || '';
+    const secretKey = process.env.MINIO_SECRET_KEY || '';
     this.minioClient = new Minio.Client({
       endPoint: process.env.MINIO_ENDPOINT || '127.0.0.1',
       port: Number(process.env.MINIO_PORT || 9000),
       useSSL: false,
-      accessKey: process.env.MINIO_ACCESS_KEY || '',
-      secretKey: process.env.MINIO_SECRET_KEY || '',
+      accessKey,
+      secretKey,
+    });
+    this.publicMinioClient = new Minio.Client({
+      endPoint:
+        process.env.MINIO_PUBLIC_ENDPOINT || process.env.MINIO_ENDPOINT || '127.0.0.1',
+      port: Number(process.env.MINIO_PUBLIC_PORT || process.env.MINIO_PORT || 9000),
+      useSSL: false,
+      accessKey,
+      secretKey,
     });
     this.bucketName = process.env.MINIO_BUCKET || 'default';
   }
@@ -49,7 +60,11 @@ export class MinioService {
 
   async presignRead(objectName: string, expiresSeconds: number): Promise<string> {
     await this.ensureBucketExists();
-    return this.minioClient.presignedGetObject(this.bucketName, objectName, expiresSeconds);
+    return this.publicMinioClient.presignedGetObject(
+      this.bucketName,
+      objectName,
+      expiresSeconds,
+    );
   }
 
   async openRead(objectName: string): Promise<Readable> {
