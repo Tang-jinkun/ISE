@@ -261,6 +261,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         entity,
         modelAssetId: entity.modelAssetId,
         trajectoryAssetId: assetId(trajectory, 'trajectory'),
+        trajectoryBounds: trajectory?.kind === 'trajectory' ? trajectory.trajectory.bounds : undefined,
         imageAssetId: assetId(image, 'image'),
         videoAssetId: assetId(video, 'video'),
         geojsonAssetId: assetId(geojson, 'geojson'),

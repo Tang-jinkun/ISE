@@ -26,7 +26,11 @@ function assets(trajectoryAvailability: 'available' | 'missing' = 'available'): 
       assetId: 'trajectory:jf17-1', kind: 'trajectory', displayName: 'JF-17 route', aliases: [], fingerprint: hash,
       size: 10, availability: trajectoryAvailability, criticality: 'required', fallbackAssetIds: [], allowFallback: false,
       mediaType: 'application/vnd.ise.trajectory+json',
-      trajectory: { format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt', startTimeMs: 1_700_000_000_000, endTimeMs: 1_700_000_060_000, monotonic: true },
+      trajectory: {
+        format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+        startTimeMs: 1_700_000_000_000, endTimeMs: 1_700_000_060_000, monotonic: true,
+        bounds: [[74.5859956466703, 30.0801879134059], [76.834468270714, 31.0374131710755]],
+      },
     },
     {
       assetId: 'image:summary', kind: 'image', displayName: 'Summary', aliases: [], fingerprint: hash,
@@ -205,6 +209,48 @@ test('camera and same-target state commands never overlap', () => {
   for (const targetId of new Set(plan.commands.map(item => item.targetId))) {
     assertNoOverlap(plan.commands.filter(item => item.targetId === targetId && item.type === 'model.set_state'))
   }
+})
+
+test('camera center follows the bounds of the selected trajectory', () => {
+  const ambalaInput = input('deployment')
+  const minhasInput = input('deployment')
+  const original = minhasInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  if (original.kind !== 'trajectory') assert.fail('Expected trajectory')
+  minhasInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:minhas',
+    displayName: 'Minhas route',
+    aliases: ['selected Minhas route'],
+    trajectory: {
+      ...original.trajectory,
+      bounds: [[71.8424174764746, 31.4704662866473], [74.3300338060499, 33.8839897314659]],
+    },
+  }))
+  minhasInput.narrativePlan.sceneRequirements[0]!.motionRequirements = ['selected Minhas route']
+
+  const ambalaCamera = compileScene(ambalaInput).commands.find(command => command.type === 'camera.transition')
+  const minhasCamera = compileScene(minhasInput).commands.find(command => command.type === 'camera.transition')
+
+  assert.ok(ambalaCamera)
+  assert.ok(minhasCamera)
+  assert.deepEqual(ambalaCamera.params.center.map(value => Number(value.toFixed(3))), [75.710, 30.559])
+  assert.deepEqual(minhasCamera.params.center.map(value => Number(value.toFixed(3))), [73.086, 32.677])
+  assert.notDeepEqual(ambalaCamera.params.center, minhasCamera.params.center)
+})
+
+test('counterattack camera is perceptibly tighter and more dynamic than the preceding phase', () => {
+  const compilerInput = input('interception')
+  compilerInput.narrativePlan.sceneRequirements.push({
+    ...compilerInput.narrativePlan.sceneRequirements[0]!,
+    requirementId: 'requirement-counterattack',
+    preferredTemplate: 'counterattack',
+    stateChanges: ['counterattack'],
+  })
+
+  const cameras = compileScene(compilerInput).commands.filter(command => command.type === 'camera.transition')
+  assert.equal(cameras.length, 2)
+  assert.ok(cameras[1]!.params.zoom - cameras[0]!.params.zoom >= 0.75)
+  assert.ok(Math.abs(cameras[1]!.params.bearing - cameras[0]!.params.bearing) >= 20)
+  assert.ok(Math.abs(cameras[1]!.params.pitch - cameras[0]!.params.pitch) >= 10)
 })
 
 test('trajectory reality time never becomes playback time', () => {

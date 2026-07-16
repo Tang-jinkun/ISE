@@ -293,7 +293,17 @@
         "coordinateOrder": "lng-lat-alt",
         "startTimeMs": 0,
         "endTimeMs": 182000,
-        "monotonic": true
+        "monotonic": true,
+        "bounds": [
+          [
+            74.58599564667027,
+            30.080187913405876
+          ],
+          [
+            76.83446827071397,
+            31.0374131710755
+          ]
+        ]
       }
     },
     {
@@ -322,7 +332,17 @@
         "coordinateOrder": "lng-lat-alt",
         "startTimeMs": 0,
         "endTimeMs": 0,
-        "monotonic": true
+        "monotonic": true,
+        "bounds": [
+          [
+            74.31988956090132,
+            30.200778806319356
+          ],
+          [
+            76.67433416686985,
+            31.544147203542252
+          ]
+        ]
       }
     },
     {
@@ -354,7 +374,17 @@
         "coordinateOrder": "lng-lat-alt",
         "startTimeMs": 0,
         "endTimeMs": 172000,
-        "monotonic": true
+        "monotonic": true,
+        "bounds": [
+          [
+            71.84241747647457,
+            31.4704662866473
+          ],
+          [
+            74.33003380604994,
+            33.88398973146586
+          ]
+        ]
       }
     },
     {
@@ -383,7 +413,17 @@
         "coordinateOrder": "lng-lat-alt",
         "startTimeMs": 0,
         "endTimeMs": 15000,
-        "monotonic": true
+        "monotonic": true,
+        "bounds": [
+          [
+            73.17425398287108,
+            30.952738347200103
+          ],
+          [
+            74.54003399811131,
+            32.42339573719686
+          ]
+        ]
       }
     },
     {

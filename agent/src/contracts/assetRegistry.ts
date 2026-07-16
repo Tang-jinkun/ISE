@@ -37,6 +37,12 @@ export const assetRegistryEntrySchema = z.discriminatedUnion('kind', [
       startTimeMs: z.number().int().nonnegative(),
       endTimeMs: z.number().int().nonnegative(),
       monotonic: z.literal(true),
+      bounds: z.tuple([
+        z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),
+        z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),
+      ]).refine(([[west, south], [east, north]]) => west <= east && south <= north, {
+        message: 'bounds must be ordered southwest to northeast',
+      }).optional(),
     }).refine(value => value.startTimeMs <= value.endTimeMs, { path: ['endTimeMs'], message: 'Invalid trajectory time range' }),
   }),
   z.strictObject({

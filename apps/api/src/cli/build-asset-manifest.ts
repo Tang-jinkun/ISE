@@ -345,6 +345,17 @@ function commonEntry(source: SourceAsset, bytes: Buffer, kind: AssetKind) {
   };
 }
 
+function trajectoryBounds(
+  points: RawTrajectorySample[],
+): [[number, number], [number, number]] {
+  const longitudes = points.map((point) => point.longitude);
+  const latitudes = points.map((point) => point.latitude);
+  return [
+    [Math.min(...longitudes), Math.min(...latitudes)],
+    [Math.max(...longitudes), Math.max(...latitudes)],
+  ];
+}
+
 async function buildEntry(
   source: SourceAsset,
   bytes: Buffer,
@@ -416,6 +427,7 @@ async function buildEntry(
             startTimeMs: 0,
             endTimeMs: 0,
             monotonic: true,
+            bounds: trajectoryBounds(raw),
           },
         };
       }
@@ -438,6 +450,7 @@ async function buildEntry(
       startTimeMs: normalized.points[0]!.timeMs,
       endTimeMs: normalized.points.at(-1)!.timeMs,
       monotonic: true,
+      bounds: trajectoryBounds(raw),
     },
   };
   await prepareAssetForUpload(entry, bytes);

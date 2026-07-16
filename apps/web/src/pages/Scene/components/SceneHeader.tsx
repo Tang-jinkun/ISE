@@ -100,6 +100,7 @@ export function SceneHeader({
             className="h-8 w-8 rounded-xl"
             aria-label="播放"
             onClick={onPlay}
+            data-testid="scene-runtime-play"
             disabled={!runtimeReady}
           >
             <Play className="h-3.5 w-3.5" />
@@ -110,6 +111,7 @@ export function SceneHeader({
             className="h-8 w-8 rounded-xl"
             aria-label="暂停"
             onClick={onPause}
+            data-testid="scene-runtime-pause"
             disabled={!runtimeReady}
           >
             <Pause className="h-3.5 w-3.5" />
@@ -120,6 +122,7 @@ export function SceneHeader({
             className="h-8 w-8 rounded-xl"
             aria-label="重播"
             onClick={onReplay}
+            data-testid="scene-runtime-replay"
             disabled={!runtimeReady}
           >
             <RotateCcw className="h-3.5 w-3.5" />

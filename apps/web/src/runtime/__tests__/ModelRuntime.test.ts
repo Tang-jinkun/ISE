@@ -104,9 +104,16 @@ function modelHarness(
     modelMetadata?: ModelMetadata;
     template?: THREE.Object3D;
     readGltfGate?: Promise<void>;
+    zoom?: number;
+    meterInMercatorCoordinateUnits?: number;
   } = {},
 ) {
-  const map = new FakeMap();
+  const map = new FakeMap({
+    center: [70, 20],
+    zoom: options.zoom ?? 3,
+    pitch: 0,
+    bearing: 0,
+  });
   const renderers: Array<{
     autoClear: boolean;
     resetState: ReturnType<typeof vi.fn>;
@@ -176,7 +183,8 @@ function modelHarness(
       x: 0.25,
       y: 0.5,
       z: altitudeM / 1_000_000,
-      meterInMercatorCoordinateUnits: () => 0.001,
+      meterInMercatorCoordinateUnits: () =>
+        options.meterInMercatorCoordinateUnits ?? 0.001,
     }),
   });
   return { map, renderers, createRenderer, resources, runtime, readGltf, readJson, clones };
@@ -363,6 +371,58 @@ it('exposes the applied GLB transform and trajectory orientation as a readonly f
       ),
     }),
   ]);
+});
+
+it('keeps a physically tiny GLB at least 24 pixels wide at zoom 7', async () => {
+  const nativeExtent = 100;
+  const zoom = 7;
+  const physicalProjectedSizePx = 0.03;
+  const meterInMercatorCoordinateUnits =
+    physicalProjectedSizePx / (nativeExtent * 512 * 2 ** zoom);
+  const template = new THREE.Group();
+  template.add(new THREE.Mesh(new THREE.BoxGeometry(nativeExtent, 20, 10)));
+  const { map, runtime } = modelHarness({
+    template,
+    zoom,
+    meterInMercatorCoordinateUnits,
+  });
+  await runtime.load([rafale('one')], [modelTrackFor('one')]);
+
+  runtime.apply(1_750);
+
+  expect(nativeExtent * meterInMercatorCoordinateUnits * 512 * 2 ** zoom).toBeCloseTo(
+    physicalProjectedSizePx,
+  );
+  expect(runtime.getFrameSnapshot()[0]).toEqual(
+    expect.objectContaining({
+      projectedSizePx: 24,
+      appliedScale: 24 / (nativeExtent * 512 * 2 ** zoom),
+    }),
+  );
+
+  map.jumpTo({ zoom: 20 });
+  runtime.apply(1_750);
+
+  expect(runtime.getFrameSnapshot()[0]).toEqual(
+    expect.objectContaining({
+      projectedSizePx: physicalProjectedSizePx * 2 ** (20 - zoom),
+      appliedScale: meterInMercatorCoordinateUnits,
+    }),
+  );
+});
+
+it('keeps the physical scale when a GLB has no measurable extent', async () => {
+  const { runtime } = modelHarness({ template: new THREE.Group(), zoom: 7 });
+  await runtime.load([rafale('one')], [modelTrackFor('one')]);
+
+  runtime.apply(1_750);
+
+  expect(runtime.getFrameSnapshot()[0]).toEqual(
+    expect.objectContaining({
+      projectedSizePx: 0,
+      appliedScale: 0.001,
+    }),
+  );
 });
 
 it('clones mesh materials per entity so state changes stay isolated', async () => {

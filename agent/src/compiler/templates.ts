@@ -16,6 +16,7 @@ export interface TemplateContext {
   entity: RuntimeEntity
   modelAssetId?: string
   trajectoryAssetId?: string
+  trajectoryBounds?: [[number, number], [number, number]]
   imageAssetId?: string
   videoAssetId?: string
   geojsonAssetId?: string
@@ -64,11 +65,31 @@ function builder(context: TemplateContext) {
     commands.push(follow)
     return { spawn, follow }
   }
-  const camera = () => commands.push({
-    ...common('camera:main'), type: 'camera.transition',
-    params: { center: [74.5, 32.5], zoom: 7, pitch: 45, bearing: 0, easing: 'easeInOut' },
-    desiredDurationMs: 1_500,
-  })
+  const camera = (profile: 'deployment' | 'interception' | 'counterattack') => {
+    if (!context.trajectoryBounds) throw new Error('REQUIRED_TRAJECTORY_BOUNDS_MISSING')
+    const [[west, south], [east, north]] = context.trajectoryBounds
+    const center: [number, number] = [(west + east) / 2, (south + north) / 2]
+    const longitudeSpan = (east - west) * Math.cos(center[1] * Math.PI / 180)
+    const span = Math.max(longitudeSpan, north - south, 0.01)
+    const baseZoom = Math.min(11, Math.max(4, Math.log2(360 / (span * 2.5))))
+    const profiles = {
+      deployment: { zoomOffset: 0, pitch: 38, bearing: 0 },
+      interception: { zoomOffset: 0.4, pitch: 48, bearing: 15 },
+      counterattack: { zoomOffset: 1.25, pitch: 60, bearing: 40 },
+    } as const
+    const view = profiles[profile]
+    commands.push({
+      ...common('camera:main'), type: 'camera.transition',
+      params: {
+        center,
+        zoom: Math.min(24, baseZoom + view.zoomOffset),
+        pitch: view.pitch,
+        bearing: view.bearing,
+        easing: 'easeInOut',
+      },
+      desiredDurationMs: 1_500,
+    })
+  }
   const state = (value: 'normal' | 'warning' | 'disabled' | 'hidden') => {
     if (!context.modelAssetId) return
     commands.push({
@@ -88,7 +109,7 @@ function builder(context: TemplateContext) {
 }
 
 const deployment: TemplateExpander = context => {
-  const out = builder(context); out.spawnAndFollow(); out.camera(); return out
+  const out = builder(context); out.spawnAndFollow(); out.camera('deployment'); return out
 }
 const attackChain: TemplateExpander = context => {
   const out = builder(context); out.state('warning')
@@ -100,7 +121,7 @@ const attackChain: TemplateExpander = context => {
   return out
 }
 const interception: TemplateExpander = context => {
-  const out = builder(context); out.spawnAndFollow(); out.camera(); return out
+  const out = builder(context); out.spawnAndFollow(); out.camera('interception'); return out
 }
 const electronicWarfare: TemplateExpander = context => {
   const out = builder(context); out.state('disabled')
@@ -112,7 +133,7 @@ const electronicWarfare: TemplateExpander = context => {
   return out
 }
 const counterattack: TemplateExpander = context => {
-  const out = builder(context); out.spawnAndFollow(); out.state('warning'); out.camera(); return out
+  const out = builder(context); out.spawnAndFollow(); out.state('warning'); out.camera('counterattack'); return out
 }
 const withdrawal: TemplateExpander = context => {
   const out = builder(context); const { follow } = out.spawnAndFollow(); out.commands.push({
@@ -128,7 +149,7 @@ const returnAndSummary: TemplateExpander = context => {
     params: { assetId: context.imageAssetId, layout: { xPct: 65, yPct: 8, widthPct: 30, heightPct: 30, zIndex: 20, opacity: 1, fit: 'contain' }, enter: 'fade', exit: 'fade' },
     desiredDurationMs: 5_000,
   }); else out.card('Summary image unavailable')
-  out.camera(); return out
+  return out
 }
 const genericMovement: TemplateExpander = context => {
   const out = builder(context); out.spawnAndFollow(); return out

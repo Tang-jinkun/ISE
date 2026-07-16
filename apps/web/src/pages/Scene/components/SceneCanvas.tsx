@@ -12,6 +12,8 @@ interface SceneCanvasProps {
   onMapDispose?: (map: mapboxgl.Map) => void;
 }
 
+type SceneMapWindow = typeof window & { __ISE_SCENE_MAP__?: mapboxgl.Map };
+
 export function SceneCanvas({
   mode = 'edit',
   onMapReady,
@@ -46,11 +48,16 @@ export function SceneCanvas({
       style: 'mapbox://styles/mapbox/satellite-v9',
       center: [110, 30],
       zoom: 3.5,
-      attributionControl: false
+      attributionControl: false,
+      antialias: true,
+      preserveDrawingBuffer: mode === 'preview',
     });
 
     mapInstance.current = map;
     taskSceneManager.mapManager.setMap(map);
+    if (import.meta.env.DEV && mode === 'preview') {
+      (window as SceneMapWindow).__ISE_SCENE_MAP__ = map;
+    }
 
     const resizeObserver = new ResizeObserver(() => {
       map.resize();
@@ -67,6 +74,10 @@ export function SceneCanvas({
     return () => {
       resizeObserver.disconnect();
       onMapDisposeRef.current?.(map);
+      const sceneMapWindow = window as SceneMapWindow;
+      if (sceneMapWindow.__ISE_SCENE_MAP__ === map) {
+        delete sceneMapWindow.__ISE_SCENE_MAP__;
+      }
       map.remove();
       mapInstance.current = null;
     };
@@ -94,6 +105,7 @@ export function SceneCanvas({
             ref={mapRef}
             data-testid="scene-runtime-map"
             className="absolute inset-0"
+            style={{ position: 'absolute', inset: 0 }}
           />
           <div
             ref={overlayRef}
@@ -122,7 +134,7 @@ export function SceneCanvas({
               ref={mapRef}
               data-testid="scene-runtime-map"
               className="absolute top-0 left-0 w-full h-full"
-              style={{ boxSizing: 'border-box' }}
+              style={{ boxSizing: 'border-box', position: 'absolute', inset: 0 }}
             />
             <div
               ref={overlayRef}

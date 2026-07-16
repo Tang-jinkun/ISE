@@ -245,13 +245,19 @@ describe('buildAssetManifest', () => {
       availability: 'available',
       fingerprint: sha256(base.canonicalTrajectoryBytes),
       size: base.canonicalTrajectoryBytes.byteLength,
-      trajectory: { monotonic: true },
+      trajectory: {
+        monotonic: true,
+        bounds: [[76.8, 30.4], [76.82, 30.41]],
+      },
     });
     expect(reversed).toMatchObject({
       availability: 'invalid',
       criticality: 'optional',
       fingerprint: sha256(base.reversedTrajectoryBytes),
       size: base.reversedTrajectoryBytes.byteLength,
+      trajectory: {
+        bounds: [[76.8, 30.4], [76.82, 30.41]],
+      },
     });
     expect(assetSeedManifestSchema.parse(manifest)).toEqual(manifest);
   });

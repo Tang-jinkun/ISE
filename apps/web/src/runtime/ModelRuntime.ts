@@ -42,6 +42,8 @@ export interface ModelEntityFrameSnapshot {
   entityId: string;
   modelAssetId?: string;
   visible: boolean;
+  projectedSizePx?: number;
+  appliedScale?: number;
   longitude?: number;
   latitude?: number;
   altitudeM?: number;
@@ -63,8 +65,11 @@ interface ModelInstance {
   entity: SceneEntity;
   items: ModelItem[];
   object: THREE.Object3D;
+  nativeExtent: number;
   metadata: ModelMetadata;
   materials: MaterialState[];
+  projectedSizePx?: number;
+  appliedScale?: number;
   frame?: ModelFrameState;
 }
 
@@ -74,6 +79,8 @@ interface ResolvedModel {
 }
 
 const layerId = 'ise-model-runtime';
+const mapboxTileSizePx = 512;
+const minimumProjectedSizePx = 24;
 
 const browserModelDependencies: ModelRuntimeDependencies = {
   createRenderer: (options) => new THREE.WebGLRenderer(options),
@@ -278,6 +285,7 @@ export class ModelRuntime {
         }
 
         const object = this.dependencies.cloneScene(model.template);
+        const nativeExtent = modelNativeExtent(object);
         const materials = cloneEntityMaterials(object);
         object.visible = false;
         this.scene.add(object);
@@ -285,6 +293,7 @@ export class ModelRuntime {
           entity,
           items: items.filter((item) => item.params.entityId === entityId),
           object,
+          nativeExtent,
           metadata: model.metadata,
           materials,
         });
@@ -314,12 +323,16 @@ export class ModelRuntime {
       const frame = reduceModelFrame(instance.entity, instance.items, this.trajectories, timeMs);
       applyMaterialState(instance.materials, frame.state);
       if (frame.sample) {
-        applyModelTransform(
+        const { scaleFactor } = applyModelTransform(
           instance.object,
           frame.sample,
           instance.metadata,
           this.dependencies.project,
         );
+        const size = modelDisplaySize(scaleFactor, instance.nativeExtent, this.map.getZoom());
+        instance.object.scale.set(size.appliedScale, -size.appliedScale, size.appliedScale);
+        instance.appliedScale = size.appliedScale;
+        instance.projectedSizePx = size.projectedSizePx;
       }
       instance.object.visible = frame.visible;
       instance.frame = frame;
@@ -332,10 +345,12 @@ export class ModelRuntime {
   }
 
   getFrameSnapshot(): ModelEntityFrameSnapshot[] {
-    return this.instances.map(({ entity, object, frame }) => ({
+    return this.instances.map(({ entity, object, frame, appliedScale, projectedSizePx }) => ({
       entityId: entity.entityId,
       ...(entity.modelAssetId ? { modelAssetId: entity.modelAssetId } : {}),
       visible: object.visible,
+      ...(appliedScale !== undefined ? { appliedScale } : {}),
+      ...(projectedSizePx !== undefined ? { projectedSizePx } : {}),
       ...(frame?.sample
         ? {
             longitude: frame.sample.longitude,
@@ -592,6 +607,31 @@ function cloneEntityMaterials(root: THREE.Object3D) {
     }
   });
   return [...clones.values()].map(snapshotMaterial);
+}
+
+function modelNativeExtent(root: THREE.Object3D) {
+  const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+  const extent = Math.max(size.x, size.y, size.z);
+  return Number.isFinite(extent) && extent > 0 ? extent : 0;
+}
+
+function modelDisplaySize(scaleFactor: number, nativeExtent: number, zoom: number) {
+  const worldSizePx = mapboxTileSizePx * 2 ** zoom;
+  if (
+    !Number.isFinite(scaleFactor) ||
+    !Number.isFinite(nativeExtent) ||
+    nativeExtent <= 0 ||
+    !Number.isFinite(worldSizePx) ||
+    worldSizePx <= 0
+  ) {
+    return { appliedScale: scaleFactor, projectedSizePx: 0 };
+  }
+  const minimumScale = minimumProjectedSizePx / (nativeExtent * worldSizePx);
+  const appliedScale = Math.max(scaleFactor, minimumScale);
+  return {
+    appliedScale,
+    projectedSizePx: nativeExtent * appliedScale * worldSizePx,
+  };
 }
 
 function cloneMaterial(
