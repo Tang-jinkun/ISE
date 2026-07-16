@@ -25,13 +25,31 @@ function ActivityIcon({ activity }: { activity: AgentTurnActivity }) {
   return <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />;
 }
 
-export function AgentTurn({ turn }: { turn: AgentTurnView }) {
-  const isRunning = turn.status === 'queued' || turn.status === 'running';
-  const [expanded, setExpanded] = useState(isRunning);
+function isActiveStatus(status: AgentTurnView['status']): boolean {
+  return status === 'queued' || status === 'running';
+}
+
+function turnActivitySummary(turn: AgentTurnView): string {
   const stepCount = turn.activities.length;
-  const activityName = isRunning
-    ? `执行过程，正在执行 ${stepCount} 步`
-    : `执行过程，已完成 ${stepCount} 步`;
+  if (isActiveStatus(turn.status)) return `执行过程，正在执行 ${stepCount} 步`;
+  if (turn.status === 'failed') return `执行过程，执行失败 ${stepCount} 步`;
+  if (turn.status === 'cancelled') return `执行过程，已取消 ${stepCount} 步`;
+  return `执行过程，已完成 ${stepCount} 步`;
+}
+
+function turnStatusLabel(turn: AgentTurnView): string {
+  const stepCount = turn.activities.length;
+  if (isActiveStatus(turn.status)) return `执行中 · ${stepCount} 步`;
+  if (turn.status === 'failed') return `执行失败 · ${stepCount} 步`;
+  if (turn.status === 'cancelled') return `已取消 · ${stepCount} 步`;
+  return `已完成 ${stepCount} 步`;
+}
+
+export function AgentTurn({ turn }: { turn: AgentTurnView }) {
+  const isRunning = isActiveStatus(turn.status);
+  const [expanded, setExpanded] = useState(isRunning || turn.status === 'failed');
+  const stepCount = turn.activities.length;
+  const activityName = turnActivitySummary(turn);
   const answer = turn.assistantMessage?.content ?? turn.outcome?.finalAnswer ?? '';
 
   return (
@@ -51,7 +69,9 @@ export function AgentTurn({ turn }: { turn: AgentTurnView }) {
             >
               {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               <span className="font-medium text-foreground">执行过程</span>
-              <span className="ml-auto">{isRunning ? '执行中' : `已完成 ${stepCount} 步`}</span>
+              <span className={cn('ml-auto', turn.status === 'failed' && 'text-destructive')}>
+                {turnStatusLabel(turn)}
+              </span>
             </button>
             {expanded && (
               <div className="border-t border-border px-3 py-2.5">
