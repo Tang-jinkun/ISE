@@ -81,4 +81,67 @@ describe('AgentTurn', () => {
       screen.getByText('尚未配置模型，请先在顶部完成模型配置')
     ).toBeInTheDocument();
   });
+
+  it('synchronizes expansion when a mounted turn completes and then fails', () => {
+    const runningTurn: AgentTurnView = {
+      ...baseTurn,
+      status: 'running',
+      activities: [
+        {
+          id: 'thinking-1',
+          type: 'thinking',
+          status: 'running',
+          text: '正在分析当前请求'
+        }
+      ]
+    };
+    const { rerender } = render(<AgentTurn turn={runningTurn} />);
+
+    expect(
+      screen.getByRole('button', { name: '执行过程，正在执行 1 步' })
+    ).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <AgentTurn
+        turn={{
+          ...runningTurn,
+          status: 'completed',
+          activities: [{ ...runningTurn.activities[0]!, status: 'completed' }]
+        }}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: '执行过程，已完成 1 步' })
+    ).toHaveAttribute('aria-expanded', 'false');
+
+    rerender(
+      <AgentTurn
+        turn={{
+          ...runningTurn,
+          status: 'failed',
+          activities: [{ ...runningTurn.activities[0]!, status: 'failed' }]
+        }}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: '执行过程，执行失败 1 步' })
+    ).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it.each([
+    ['failed', '执行失败 · 0 步'],
+    ['cancelled', '已取消 · 0 步']
+  ] as const)('renders a zero-activity %s terminal status', (status, label) => {
+    render(
+      <AgentTurn
+        turn={{
+          ...baseTurn,
+          status,
+          activities: []
+        }}
+      />
+    );
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
 });

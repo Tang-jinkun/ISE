@@ -34,6 +34,7 @@ import { NarrativePanel } from './components/NarrativePanel';
 import { NewScriptHeader } from './components/NewScriptHeader';
 import { ParamsPanel } from './components/ParamsPanel';
 import { ResourcePanel } from './components/ResourcePanel';
+import { SceneBlueprintSummary } from './components/SceneBlueprintSummary';
 import { SceneModal } from './components/SceneModal';
 import { SceneWorkspace } from './components/SceneWorkspace';
 import { modelProvider } from './modelProviders';
@@ -277,16 +278,20 @@ export default function Script() {
   const [modelConfig, setModelConfig] = useState<PublicModelConfig>(
     EMPTY_MODEL_CONFIG
   );
+  const [modelConfigError, setModelConfigError] = useState(false);
   const [modelConfigOpen, setModelConfigOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
     void getModelConfig()
       .then((config) => {
-        if (active) setModelConfig(config);
+        if (active) {
+          setModelConfig(config);
+          setModelConfigError(false);
+        }
       })
       .catch(() => {
-        if (active) setModelConfig(EMPTY_MODEL_CONFIG);
+        if (active) setModelConfigError(true);
       });
     return () => {
       active = false;
@@ -503,6 +508,7 @@ export default function Script() {
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(false);
   const [workspaceWidth, setWorkspaceWidth] = useState(42);
   const hadWorkspaceRef = useRef(false);
+  const forcedReviewRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!workspaceState.visible) {
@@ -514,6 +520,20 @@ export default function Script() {
       setActiveTab(workspaceState.defaultTab);
     }
   }, [activeTab, workspaceState]);
+
+  useEffect(() => {
+    if (
+      activeReview &&
+      workspaceState.availableTabs.includes('event-plan') &&
+      forcedReviewRef.current !== activeReview.reviewId
+    ) {
+      forcedReviewRef.current = activeReview.reviewId;
+      setActiveTab('event-plan');
+      setWorkspaceCollapsed(false);
+    } else if (!activeReview) {
+      forcedReviewRef.current = null;
+    }
+  }, [activeReview, workspaceState.availableTabs]);
 
   useEffect(() => {
     if (workspaceState.visible && !hadWorkspaceRef.current) {
@@ -536,6 +556,11 @@ export default function Script() {
   const [isSceneModalOpen, setIsSceneModalOpen] = useState(false);
   const [input, setInput] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
+  const [preparedAttachment, setPreparedAttachment] = useState<{
+    file: File;
+    sessionId: string;
+    attachmentId: string;
+  } | null>(null);
   const [hasSentInitialMessage, setHasSentInitialMessage] = useState(false);
   const [sending, setSending] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -570,16 +595,27 @@ export default function Script() {
     setOperationError(null);
 
     try {
-      const uploaded = attachment
+      const prepared =
+        attachment && preparedAttachment?.file === attachment
+          ? preparedAttachment
+          : null;
+      const uploaded = attachment && !prepared
         ? await uploadFile(attachment, { fileType: 'application' })
         : null;
-      const needsSession = !agentSessionId;
-      const sessionId = needsSession
-        ? (await createAgentSession()).sessionId
-        : agentSessionId;
+      const needsSession = !prepared && !agentSessionId;
+      const sessionId =
+        prepared?.sessionId ??
+        (needsSession ? (await createAgentSession()).sessionId : agentSessionId);
 
       if (uploaded) {
-        await attachAgentFile(sessionId, { fileId: uploaded.data.id });
+        const attached = await attachAgentFile(sessionId, {
+          fileId: uploaded.data.id
+        });
+        setPreparedAttachment({
+          file: attachment!,
+          sessionId,
+          attachmentId: attached.attachmentId
+        });
       }
       if (needsSession) {
         useAgentSessionStore.getState().open(sessionId);
@@ -594,6 +630,7 @@ export default function Script() {
       appendUserMessage(text || `附件：${attachment!.name}`, queued.runId);
       setInput('');
       setPendingAttachment(null);
+      setPreparedAttachment(null);
     } catch (error) {
       const content = errorText(error, '智能体接口调用失败');
       setOperationError(content);
@@ -690,8 +727,11 @@ export default function Script() {
           )
         }
         onConfigureModel={() => setModelConfigOpen(true)}
+        modelConfigError={modelConfigError}
         modelLabel={
-          modelConfig.configured && modelConfig.provider && modelConfig.model
+          modelConfigError
+            ? '模型状态异常'
+            : modelConfig.configured && modelConfig.provider && modelConfig.model
             ? `${modelProvider(modelConfig.provider).label} · ${modelConfig.model}`
             : '配置模型'
         }
@@ -705,7 +745,10 @@ export default function Script() {
         open={modelConfigOpen}
         onOpenChange={setModelConfigOpen}
         config={modelConfig}
-        onConfigChange={setModelConfig}
+        onConfigChange={(config) => {
+          setModelConfig(config);
+          setModelConfigError(false);
+        }}
       />
 
       <div className="flex-1 min-h-0 flex gap-0 px-4 py-4 overflow-hidden relative">
@@ -719,7 +762,7 @@ export default function Script() {
             </div>
 
             {/* Chat Messages Area */}
-            <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4 thin-scrollbar border border-border rounded-xl bg-background/50">
+            <div className="flex-1 space-y-4 overflow-y-auto px-2 py-2 thin-scrollbar">
               {turns.map((turn) => (
                 <div key={turn.id} className="space-y-4">
                   {turn.userMessage && (
@@ -745,7 +788,10 @@ export default function Script() {
                 disabled={sending}
                 error={operationError}
                 onValueChange={setInput}
-                onAttachmentChange={setPendingAttachment}
+                onAttachmentChange={(file) => {
+                  setPendingAttachment(file);
+                  setPreparedAttachment(null);
+                }}
                 onSend={() => void send()}
               />
             </div>
@@ -809,16 +855,32 @@ export default function Script() {
                 narrativePlan={narrativePlanArtifact}
               />
             ) : undefined,
+            blueprint: workspaceState.blueprint ? (
+              <SceneBlueprintSummary
+                artifact={workspaceState.blueprint}
+                view="blueprint"
+              />
+            ) : undefined,
             assets: workspaceState.runtime ? (
               <ResourcePanel
                 sceneConfig={compiledConfig}
                 diagnostics={sessionState.diagnostics}
+              />
+            ) : workspaceState.blueprint ? (
+              <SceneBlueprintSummary
+                artifact={workspaceState.blueprint}
+                view="resources"
               />
             ) : undefined,
             params: workspaceState.runtime ? (
               <ParamsPanel
                 sceneConfig={compiledConfig}
                 onUpdate={updateCompiledDraft}
+              />
+            ) : workspaceState.blueprint ? (
+              <SceneBlueprintSummary
+                artifact={workspaceState.blueprint}
+                view="params"
               />
             ) : undefined,
             preview: workspaceState.runtime ? (

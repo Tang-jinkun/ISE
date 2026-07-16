@@ -104,6 +104,22 @@ describe('selectWorkspaceState', () => {
     expect(state.defaultTab).toBe('preview');
   });
 
+  it('exposes usable blueprint, resource, and parameter tabs before runtime exists', () => {
+    const blueprint = artifact('blueprint-1', 'ise.scene-blueprint/v1');
+
+    const state = selectWorkspaceState({
+      artifacts: [blueprint],
+      activeReview: null,
+      latestTurnStatus: 'completed',
+      completedRuntimeArtifactId: null
+    });
+
+    expect(state.visible).toBe(true);
+    expect(state.defaultTab).toBe('blueprint');
+    expect(state.availableTabs).toEqual(['blueprint', 'assets', 'params']);
+    expect(state.blueprint).toBe(blueprint);
+  });
+
   it('ignores superseded artifacts and chooses the newest active version', () => {
     const oldPlan = artifact('event-old', 'ise.event-plan-draft/v1', {
       superseded: true,
@@ -127,6 +143,24 @@ describe('selectWorkspaceState', () => {
     });
 
     expect(state.eventPlan?.artifactId).toBe('event-v3');
+  });
+
+  it('prefers a resolved scene plan over a newer unresolved blueprint', () => {
+    const resolved = artifact('resolved-1', 'ise.resolved-scene-plan/v1', {
+      createdAt: '2026-07-16T00:00:01.000Z'
+    });
+    const newerBlueprint = artifact('blueprint-2', 'ise.scene-blueprint/v1', {
+      createdAt: '2026-07-16T00:00:02.000Z'
+    });
+
+    const state = selectWorkspaceState({
+      artifacts: [newerBlueprint, resolved],
+      activeReview: null,
+      latestTurnStatus: 'completed',
+      completedRuntimeArtifactId: null
+    });
+
+    expect(state.blueprint).toBe(resolved);
   });
 
   it('retains the furthest successful artifact when the latest turn fails', () => {

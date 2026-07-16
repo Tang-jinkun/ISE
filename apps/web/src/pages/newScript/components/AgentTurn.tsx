@@ -9,7 +9,7 @@ import {
   LoaderCircle,
   Wrench,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChatContent } from './ChatContent';
 
 function activityLabel(activity: AgentTurnActivity): string {
@@ -57,6 +57,10 @@ export function AgentTurn({ turn }: { turn: AgentTurnView }) {
   const activityName = turnActivitySummary(turn);
   const answer = turn.assistantMessage?.content ?? turn.outcome?.finalAnswer ?? '';
 
+  useEffect(() => {
+    setExpanded(isActiveStatus(turn.status) || turn.status === 'failed');
+  }, [turn.status]);
+
   return (
     <div className="flex gap-3" data-agent-turn={turn.id}>
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
@@ -99,6 +103,18 @@ export function AgentTurn({ turn }: { turn: AgentTurnView }) {
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {stepCount === 0 && !isRunning && (
+          <div
+            role="status"
+            className={cn(
+              'flex items-center gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2 text-xs text-muted-foreground',
+              turn.status === 'failed' && 'text-destructive'
+            )}
+          >
+            <span className="font-medium text-foreground">执行过程</span>
+            <span className="ml-auto">{turnStatusLabel(turn)}</span>
           </div>
         )}
         {answer ? (

@@ -100,6 +100,44 @@ describe('NarrativePanel', () => {
     expect(screen.getByText('目标时长 180 秒')).toBeInTheDocument();
   });
 
+  it('renders NarrationPlan beats instead of requiring legacy subtitles', () => {
+    const narrationPlan: AgentArtifactView = {
+      ...narration,
+      type: 'ise.narration-plan/v1',
+      data: {
+        targetDurationMs: 45_000,
+        beats: [
+          {
+            subtitleId: 'subtitle-2',
+            eventUnitId: 'event-2',
+            text: '编队进入对峙空域并建立态势感知',
+            evidenceRefs: ['evidence-3'],
+            beatRole: 'action',
+            attentionTarget: 'JF-17 编队',
+            importance: 'medium',
+            estimatedDurationMs: 6_000
+          }
+        ]
+      }
+    };
+
+    render(
+      <NarrativePanel
+        selectedNode={{ id: 'n-root', title: '印巴空中对抗', summary: '' }}
+        nowText={() => ''}
+        onCopy={vi.fn()}
+        eventPlan={eventPlan}
+        narrativePlan={narrationPlan}
+      />
+    );
+
+    expect(
+      screen.getByText('编队进入对峙空域并建立态势感知')
+    ).toBeInTheDocument();
+    expect(screen.getByText('JF-17 编队')).toBeInTheDocument();
+    expect(screen.getByText('动作')).toBeInTheDocument();
+  });
+
   it('keeps copy as a compact command', () => {
     const onCopy = vi.fn();
     render(

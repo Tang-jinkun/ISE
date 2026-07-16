@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { loadConfig } from '../src/config.ts';
 import {
@@ -143,4 +146,34 @@ test('agent startup accepts either a complete environment model or no model', ()
       MODEL_BASE_URL: 'https://api.openai.com/v1'
     })
   );
+});
+
+test('agent startup never consults a disk .env for MODEL_API_KEY', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ise-agent-env-'));
+  const previousDirectory = process.cwd();
+  try {
+    await writeFile(
+      join(directory, '.env'),
+      [
+        'MODEL_BASE_URL=https://disk.example/v1',
+        'MODEL_NAME=disk-model',
+        'MODEL_API_KEY=disk-secret'
+      ].join('\n')
+    );
+    process.chdir(directory);
+
+    const config = loadConfig({
+      NEST_API_BASE_URL: 'http://127.0.0.1:3000'
+    });
+    assert.equal(config.MODEL_API_KEY, undefined);
+
+    const serverSource = await readFile(
+      new URL('../src/server.ts', import.meta.url),
+      'utf8'
+    );
+    assert.doesNotMatch(serverSource, /loadEnvFile/);
+  } finally {
+    process.chdir(previousDirectory);
+    await rm(directory, { recursive: true, force: true });
+  }
 });

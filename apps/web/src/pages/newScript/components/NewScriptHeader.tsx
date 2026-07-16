@@ -4,7 +4,8 @@ import {
   FileText,
   History,
   Save,
-  Settings2
+  Settings2,
+  TriangleAlert
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import type { ArtifactExports } from '../artifactExports';
@@ -17,6 +18,7 @@ export type NewScriptHeaderProps = {
   onOpenLegacy(): void;
   onConfigureModel(): void;
   modelLabel: string;
+  modelConfigError: boolean;
   exports: ArtifactExports;
   saving: boolean;
   onSave(): void;
@@ -31,6 +33,7 @@ export function NewScriptHeader({
   onOpenLegacy,
   onConfigureModel,
   modelLabel,
+  modelConfigError,
   exports,
   saving,
   onSave,
@@ -61,12 +64,24 @@ export function NewScriptHeader({
       <div className="ml-auto flex min-w-0 items-center gap-2">
         <button
           type="button"
+          aria-label={modelConfigError ? '模型状态异常' : undefined}
           onClick={onConfigureModel}
-          className="inline-flex h-8 min-w-0 max-w-56 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={modelConfigError
+            ? 'inline-flex h-8 min-w-0 max-w-56 items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 text-xs text-destructive transition-colors hover:bg-destructive/10'
+            : 'inline-flex h-8 min-w-0 max-w-56 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'}
         >
-          <Settings2 className="h-3.5 w-3.5 shrink-0" />
+          {modelConfigError ? (
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <Settings2 className="h-3.5 w-3.5 shrink-0" />
+          )}
           <span className="truncate">{modelLabel}</span>
         </button>
+        {modelConfigError && (
+          <span role="alert" className="sr-only">
+            模型配置状态加载失败
+          </span>
+        )}
 
         <button
           type="button"

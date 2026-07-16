@@ -340,6 +340,22 @@ describe('NewScript real Agent flow', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a distinct warning when model configuration status cannot load', async () => {
+    mocks.getModelConfig.mockRejectedValueOnce(new Error('认证服务不可用'));
+
+    renderNewScript();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '模型配置状态加载失败'
+    );
+    expect(
+      screen.getByRole('button', { name: '模型状态异常' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '配置模型' })
+    ).not.toBeInTheDocument();
+  });
+
   it('uses the full conversation surface before any artifact exists', () => {
     renderNewScript();
 
@@ -370,6 +386,36 @@ describe('NewScript real Agent flow', () => {
     expect(
       within(workspace).getByRole('button', { name: '批准事件计划' })
     ).toBeInTheDocument();
+  });
+
+  it('forces a newly pending EventPlan review over an existing Preview tab', async () => {
+    renderNewScript();
+    await uploadReport();
+    hydrateArtifacts([compiledArtifact]);
+    emitAgentEvent({
+      id: '1',
+      type: 'run.completed',
+      data: { runtimeArtifactId: 'compiled-1' }
+    });
+
+    const workspace = screen.getByRole('complementary', {
+      name: '场景工作台'
+    });
+    await waitFor(() =>
+      expect(within(workspace).getByRole('tab', { name: '预览' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    );
+
+    hydrateArtifacts([compiledArtifact, eventPlanArtifact]);
+    emitAgentEvent({ id: '2', type: 'review.requested', data: review });
+
+    await waitFor(() =>
+      expect(
+        within(workspace).getByRole('tab', { name: '事件计划' })
+      ).toHaveAttribute('aria-selected', 'true')
+    );
   });
 
   it('keeps a selected DOCX pending until send, then uploads, attaches, and clears it', async () => {
@@ -556,6 +602,8 @@ describe('NewScript real Agent flow', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
     await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(2));
+    expect(mocks.uploadFile).toHaveBeenCalledTimes(1);
+    expect(mocks.attachAgentFile).toHaveBeenCalledTimes(1);
     expect(mocks.sendAgentMessage).toHaveBeenLastCalledWith('session-1', {
       content: expect.stringMatching(/生成失败后可以重试[\s\S]*180\s*秒/)
     });

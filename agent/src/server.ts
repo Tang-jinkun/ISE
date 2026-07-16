@@ -1,4 +1,3 @@
-import { loadEnvFile } from 'node:process'
 import { OpenAICompatibleAdapter } from '@ise/agent-core'
 import { FetchNestGateway } from './adapters/nestGateway.ts'
 import { createHttpApp } from './api/httpApp.ts'
@@ -6,12 +5,6 @@ import { loadConfig } from './config.ts'
 import { AgentDatabase } from './persistence/database.ts'
 import { AgentRepositories } from './persistence/repositories.ts'
 import { ModelConfigStore } from './model/modelConfig.ts'
-
-try {
-  loadEnvFile()
-} catch (error) {
-  if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error
-}
 
 const config = loadConfig(process.env)
 const database = await AgentDatabase.open(config.AGENT_DB_PATH, config.AGENT_SQLITE_DRIVER)

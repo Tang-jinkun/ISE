@@ -15,6 +15,8 @@ type SubtitleView = {
   text: string;
   importance: 'high' | 'medium' | 'low';
   evidenceRefs: string[];
+  beatRole?: string;
+  attentionTarget?: string;
 };
 
 const importanceLabel = {
@@ -22,6 +24,15 @@ const importanceLabel = {
   medium: '中重要度',
   low: '低重要度'
 } as const;
+
+const beatRoleLabel: Record<string, string> = {
+  setup: '铺垫',
+  action: '动作',
+  transition: '转场',
+  turning_point: '转折',
+  result: '结果',
+  summary: '总结'
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -35,10 +46,14 @@ function eventUnits(artifact?: AgentArtifactView): AgentEventUnit[] {
 }
 
 function subtitles(artifact?: AgentArtifactView): SubtitleView[] {
-  if (!isRecord(artifact?.data) || !Array.isArray(artifact.data.subtitles)) {
+  if (!isRecord(artifact?.data)) {
     return [];
   }
-  return artifact.data.subtitles.flatMap((value) => {
+  const values = Array.isArray(artifact.data.beats)
+    ? artifact.data.beats
+    : artifact.data.subtitles;
+  if (!Array.isArray(values)) return [];
+  return values.flatMap((value) => {
     if (
       !isRecord(value) ||
       typeof value.subtitleId !== 'string' ||
@@ -57,7 +72,13 @@ function subtitles(artifact?: AgentArtifactView): SubtitleView[] {
         importance: value.importance as SubtitleView['importance'],
         evidenceRefs: value.evidenceRefs.filter(
           (reference): reference is string => typeof reference === 'string'
-        )
+        ),
+        ...(typeof value.beatRole === 'string'
+          ? { beatRole: value.beatRole }
+          : {}),
+        ...(typeof value.attentionTarget === 'string'
+          ? { attentionTarget: value.attentionTarget }
+          : {})
       }
     ];
   });
@@ -125,6 +146,18 @@ export function NarrativePanel({
                     <span className="ml-auto">{importanceLabel[subtitle.importance]}</span>
                   </div>
                   <p className="text-sm leading-6 text-foreground">{subtitle.text}</p>
+                  {(subtitle.beatRole || subtitle.attentionTarget) && (
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-foreground/75">
+                      {subtitle.beatRole && (
+                        <span>
+                          {beatRoleLabel[subtitle.beatRole] ?? subtitle.beatRole}
+                        </span>
+                      )}
+                      {subtitle.attentionTarget && (
+                        <span>{subtitle.attentionTarget}</span>
+                      )}
+                    </div>
+                  )}
                   <p className="mt-2 text-[10px] text-muted-foreground">
                     {subtitle.evidenceRefs.length} 条证据
                   </p>

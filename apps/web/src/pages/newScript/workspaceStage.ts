@@ -50,6 +50,11 @@ const ROLE_TYPES = {
   ])
 } as const;
 
+const BLUEPRINT_TYPE_PRIORITY = [
+  'ise.resolved-scene-plan/v1',
+  'ise.scene-blueprint/v1'
+] as const;
+
 function newest(
   artifacts: AgentArtifactView[],
   types: ReadonlySet<string>
@@ -62,12 +67,26 @@ function newest(
     })[0];
 }
 
+function newestByTypePriority(
+  artifacts: AgentArtifactView[],
+  types: readonly string[]
+): AgentArtifactView | undefined {
+  for (const type of types) {
+    const selected = newest(artifacts, new Set([type]));
+    if (selected) return selected;
+  }
+  return undefined;
+}
+
 export function selectWorkspaceState(
   input: WorkspaceStateInput
 ): WorkspaceState {
   const eventPlan = newest(input.artifacts, ROLE_TYPES.eventPlan);
   const narration = newest(input.artifacts, ROLE_TYPES.narration);
-  const blueprint = newest(input.artifacts, ROLE_TYPES.blueprint);
+  const blueprint = newestByTypePriority(
+    input.artifacts,
+    BLUEPRINT_TYPE_PRIORITY
+  );
   const runtimeCandidates = input.artifacts.filter(
     (artifact) =>
       !artifact.superseded && ROLE_TYPES.runtime.has(artifact.type)
@@ -81,7 +100,8 @@ export function selectWorkspaceState(
   if (eventPlan) availableTabs.push('event-plan');
   if (narration) availableTabs.push('narration');
   if (blueprint) availableTabs.push('blueprint');
-  if (runtime) availableTabs.push('assets', 'params', 'preview');
+  if (blueprint || runtime) availableTabs.push('assets', 'params');
+  if (runtime) availableTabs.push('preview');
 
   let defaultTab: WorkspaceTab | null = null;
   if (input.activeReview && eventPlan) defaultTab = 'event-plan';

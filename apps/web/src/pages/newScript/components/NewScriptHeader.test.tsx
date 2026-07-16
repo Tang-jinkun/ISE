@@ -10,6 +10,7 @@ function renderHeader(overrides: Partial<Parameters<typeof NewScriptHeader>[0]> 
     onOpenLegacy: vi.fn(),
     onConfigureModel: vi.fn(),
     modelLabel: '配置模型',
+    modelConfigError: false,
     exports: {},
     saving: false,
     onSave: vi.fn(),
