@@ -124,6 +124,35 @@ describe('useAgentSessionStore', () => {
     expect(JSON.stringify(useAgentSessionStore.getState().turns)).not.toContain('secret');
   });
 
+  it('adds public run failure diagnostics to the failed turn', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+
+    store.applyEvent('session-1', event('1', 'run.failed', {
+      runId: 'run-1',
+      status: 'failed',
+      diagnostics: [{
+        code: 'MODEL_NOT_CONFIGURED',
+        message: 'Model is not configured',
+        severity: 'error',
+      }],
+    }));
+
+    expect(useAgentSessionStore.getState().turns).toEqual([
+      expect.objectContaining({
+        id: 'run-1',
+        status: 'failed',
+        activities: [{
+          id: 'diagnostic-1-1',
+          type: 'diagnostic',
+          status: 'failed',
+          code: 'MODEL_NOT_CONFIGURED',
+          summary: 'Model is not configured',
+        }],
+      }),
+    ]);
+  });
+
   it('ignores duplicate, older, and non-canonical numeric event IDs', () => {
     const store = useAgentSessionStore.getState();
     store.open('session-1');

@@ -8,6 +8,7 @@ import { SkillRegistry } from '@ise/skills-core'
 import type { AuthorizedFile, NestGateway } from '../src/adapters/nestGateway.ts'
 import { BaseRuntimeAdapter } from '../src/adapters/baseRuntimeAdapter.ts'
 import { createHttpApp } from '../src/api/httpApp.ts'
+import { ModelConfigStore } from '../src/model/modelConfig.ts'
 import { AgentDatabase } from '../src/persistence/database.ts'
 import { AgentRepositories } from '../src/persistence/repositories.ts'
 import { PersistentArtifactStore } from '../src/persistence/persistentArtifactStore.ts'
@@ -481,6 +482,51 @@ test('model factory snapshots the owning subject when a turn starts', async () =
   await waitFor(() => modelInputs.length === 1, 'Model factory was not called')
 
   assert.deepEqual(modelInputs, [{ sessionId, subject: 'user-model-owner' }])
+  await app.close()
+  database.close()
+})
+
+test('an unconfigured model fails the turn with a public MODEL_NOT_CONFIGURED code', async () => {
+  const database = await AgentDatabase.open(':memory:', 'sql.js')
+  const repositories = new AgentRepositories(database)
+  const modelConfigs = new ModelConfigStore()
+  const app = await createHttpApp({
+    repositories,
+    nest: new TestNestGateway(),
+    modelConfigs,
+    modelFactory: ({ subject }) => {
+      modelConfigs.require(subject)
+      throw new Error('unreachable')
+    },
+  })
+  const sessionId = await createSession(app, 'user-without-model')
+
+  const response = await app.inject({
+    method: 'POST',
+    url: `/sessions/${sessionId}/messages`,
+    headers: bearer('user-without-model'),
+    payload: { content: '生成态势场景' },
+  })
+  assert.equal(response.statusCode, 202)
+  await waitForTerminal(repositories, sessionId)
+
+  const run = repositories.runs.listBySession(sessionId)[0]!
+  const terminal = repositories.events.after(sessionId, '0')
+    .find(event => event.type === 'run.failed')!
+  assert.equal(run.error?.code, 'MODEL_NOT_CONFIGURED')
+  assert.equal((terminal.data.diagnostics as { code: string }[])[0]?.code, 'MODEL_NOT_CONFIGURED')
+  const turns = await app.inject({
+    method: 'GET',
+    url: `/sessions/${sessionId}/turns`,
+    headers: bearer('user-without-model'),
+  })
+  assert.deepEqual(turns.json().turns[0].activities, [{
+    id: `diagnostic-${terminal.id}-1`,
+    type: 'diagnostic',
+    status: 'failed',
+    code: 'MODEL_NOT_CONFIGURED',
+    summary: 'Model is not configured',
+  }])
   await app.close()
   database.close()
 })

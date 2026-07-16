@@ -2,7 +2,7 @@ import type { AgentContext, AgentRunResult, Artifact, ModelAdapter } from '@ise/
 import type { SkillRegistry } from '@ise/skills-core'
 import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { QueuedRunResponse } from '../api/contracts.ts'
-import { agentError } from '../api/errors.ts'
+import { AgentServiceError, agentError } from '../api/errors.ts'
 import {
   DOCUMENT_IR_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
@@ -320,7 +320,12 @@ export class SessionAgentRunner {
       : error instanceof CompiledArtifactInvalidError
         ? [diagnostic(error.code, 'Compiled runtime artifact failed validation')]
         : undefined
-    const code = publicFailureCode(aborted ? 'RUN_CANCELLED' : compilationDiagnostics?.[0]?.code ?? 'AGENT_RUN_FAILED')
+    const serviceCode = error instanceof AgentServiceError ? error.code : undefined
+    const code = publicFailureCode(
+      aborted
+        ? 'RUN_CANCELLED'
+        : compilationDiagnostics?.[0]?.code ?? serviceCode ?? 'AGENT_RUN_FAILED',
+    )
     const message = publicFailureMessage(code)
     const diagnostics = publicFailureDiagnostics(compilationDiagnostics ?? [{ code, severity: 'error' }])
     this.options.repositories.transaction(() => {

@@ -14,7 +14,12 @@ import { ChatContent } from './ChatContent';
 
 function activityLabel(activity: AgentTurnActivity): string {
   if (activity.type === 'thinking') return activity.text ?? '正在分析当前请求';
-  if (activity.type === 'diagnostic') return activity.summary ?? '执行状态已更新';
+  if (activity.type === 'diagnostic') {
+    if (activity.code === 'MODEL_NOT_CONFIGURED') {
+      return '尚未配置模型，请先在顶部完成模型配置';
+    }
+    return activity.summary ?? '执行状态已更新';
+  }
   return activity.summary ?? activity.name ?? '正在调用工具';
 }
 

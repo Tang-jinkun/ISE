@@ -86,7 +86,7 @@ function sanitizeDiagnostic(value: unknown): Diagnostic | undefined {
   const candidate = definedFields([
     ['code', stringField(value, 'code')],
     ['severity', stringField(value, 'severity')],
-    ['recoverable', typeof value.recoverable === 'boolean' ? value.recoverable : undefined],
+    ['recoverable', typeof value.recoverable === 'boolean' ? value.recoverable : false],
     ['eventUnitId', stringField(value, 'eventUnitId')],
     ['commandId', stringField(value, 'commandId')],
     ['assetId', stringField(value, 'assetId')],

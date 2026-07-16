@@ -139,6 +139,7 @@ export type AgentTurnActivity = {
   status: 'running' | 'completed' | 'failed';
   text?: string;
   name?: string;
+  code?: string;
   summary?: string;
   percentage?: number;
 };

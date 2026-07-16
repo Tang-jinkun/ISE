@@ -59,4 +59,26 @@ describe('AgentTurn', () => {
     expect(screen.getByText('运行时编译失败')).toBeInTheDocument();
     expect(screen.queryByText(/已完成/)).not.toBeInTheDocument();
   });
+
+  it('shows an actionable message when the model is not configured', () => {
+    render(
+      <AgentTurn
+        turn={{
+          ...baseTurn,
+          status: 'failed',
+          activities: [{
+            id: 'diagnostic-1-1',
+            type: 'diagnostic',
+            status: 'failed',
+            code: 'MODEL_NOT_CONFIGURED',
+            summary: 'Model is not configured'
+          }]
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText('尚未配置模型，请先在顶部完成模型配置')
+    ).toBeInTheDocument();
+  });
 });
