@@ -14,6 +14,8 @@ import { PersistentArtifactStore } from '../src/persistence/persistentArtifactSt
 import {
   COMPILED_RUNTIME_ARTIFACT,
   ASSET_REGISTRY_ARTIFACT,
+  DOCUMENT_IR_ARTIFACT,
+  EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
   type CompiledRuntimeArtifactData,
@@ -471,7 +473,7 @@ test('attachment is validated remotely before its stable metadata is persisted',
   database.close()
 })
 
-test('message queues one run and interrupt aborts it', async () => {
+test('a text-only message seeds user brief evidence before the run starts', async () => {
   const blockingModel = new BlockingModel()
   const { app, database, repositories } = await fixture(blockingModel)
   const sessionId = await createSession(app)
@@ -481,6 +483,15 @@ test('message queues one run and interrupt aborts it', async () => {
   assert.equal(queued.statusCode, 202)
   assert.equal(queued.json().status, 'queued')
   await blockingModel.started
+  const document = repositories.artifacts.listLedger(sessionId)
+    .find(artifact => artifact.type === DOCUMENT_IR_ARTIFACT)
+  const evidence = repositories.artifacts.listLedger(sessionId)
+    .find(artifact => artifact.type === EVIDENCE_IR_ARTIFACT)
+  assert.ok(document)
+  assert.ok(evidence)
+  assert.equal((document.data as { paragraphs: Array<{ text: string }> }).paragraphs[0]?.text, 'generate event plan')
+  assert.equal((evidence.data as { records: Array<{ claim: string }> }).records[0]?.claim, 'generate event plan')
+  assert.match(repositories.runs.get(queued.json().runId)?.objective ?? '', /Active artifact IDs: \[[^\]]+\]/)
   const second = await app.inject({
     method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'), payload: { content: 'second' },
   })

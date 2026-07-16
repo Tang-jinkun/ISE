@@ -92,7 +92,7 @@ describe('Agent REST client', () => {
     vi.unstubAllGlobals();
   });
 
-  it('creates an empty session with POST, bearer auth, and no body or content type', async () => {
+  it('creates an empty session with the required JSON body', async () => {
     const response = { sessionId: 'session-1', status: 'idle' as const };
     mockJsonResponse(201, response);
 
@@ -100,16 +100,18 @@ describe('Agent REST client', () => {
 
     const [url, init] = fetchMock.mock.calls.at(-1)!;
     expect(String(url)).toMatch(/\/sessions$/);
-    expect(init).toEqual(expect.objectContaining({ method: 'POST' }));
-    expect(init).not.toHaveProperty('body');
+    expect(init).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({})
+      })
+    );
     expect(init?.headers).toEqual(
       expect.objectContaining({
         Accept: 'application/json',
-        Authorization: 'Bearer jwt'
+        Authorization: 'Bearer jwt',
+        'Content-Type': 'application/json'
       })
-    );
-    expect(init?.headers).not.toEqual(
-      expect.objectContaining({ 'Content-Type': expect.anything() })
     );
   });
 

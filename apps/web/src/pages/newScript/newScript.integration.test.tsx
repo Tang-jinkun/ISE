@@ -182,14 +182,21 @@ function setObjective(objective: string) {
   });
 }
 
-async function uploadReport(objective = '生成印巴空战复盘场景') {
-  setObjective(objective);
+function selectReport() {
   const file = new File(['report'], 'report.docx', {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   });
-  fireEvent.change(screen.getByLabelText('导入 DOCX 报告'), {
-    target: { files: [file] }
-  });
+  fireEvent.change(
+    screen.getByLabelText('添加 DOCX 附件', { selector: 'input' }),
+    { target: { files: [file] } }
+  );
+  return file;
+}
+
+async function uploadReport(objective = '生成印巴空战复盘场景') {
+  setObjective(objective);
+  const file = selectReport();
+  fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
   await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
   return file;
 }
@@ -256,7 +263,15 @@ describe('NewScript real Agent flow', () => {
     expect(mocks.useAgentSession).not.toHaveBeenCalled();
   });
 
-  it('uploads, creates, attaches, opens, and sends the objective in exact order', async () => {
+  it('keeps the project id when returning to the legacy workspace', () => {
+    renderNewScript();
+
+    fireEvent.click(screen.getByRole('button', { name: '退回旧版' }));
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/script?projectId=script-1');
+  });
+
+  it('keeps a selected DOCX pending until send, then uploads, attaches, and clears it', async () => {
     const order: string[] = [];
     const initialOpen = useAgentSessionStore.getState().open;
     useAgentSessionStore.setState({
@@ -294,7 +309,18 @@ describe('NewScript real Agent flow', () => {
     });
 
     renderNewScript();
-    const file = await uploadReport();
+    setObjective('生成印巴空战复盘场景');
+    const file = selectReport();
+
+    expect(screen.getByText('report.docx')).toBeInTheDocument();
+    expect(screen.getByText('6 B')).toBeInTheDocument();
+    expect(mocks.uploadFile).not.toHaveBeenCalled();
+    expect(mocks.createAgentSession).not.toHaveBeenCalled();
+    expect(mocks.attachAgentFile).not.toHaveBeenCalled();
+    expect(mocks.sendAgentMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
 
     expect(order).toEqual(['upload', 'session', 'attach', 'open', 'message']);
     expect(mocks.uploadFile).toHaveBeenCalledWith(file, {
@@ -309,6 +335,64 @@ describe('NewScript real Agent flow', () => {
     });
     expect(mocks.useAgentSession).toHaveBeenCalledWith('session-1');
     expect(mocks.useAgentSession).not.toHaveBeenCalledWith('');
+    expect(screen.queryByText('report.docx')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('输入你的问题...')).toHaveValue('');
+  });
+
+  it('starts a new Agent session from text without requiring a DOCX', async () => {
+    const order: string[] = [];
+    const initialOpen = useAgentSessionStore.getState().open;
+    useAgentSessionStore.setState({
+      open: (sessionId) => {
+        order.push('open');
+        initialOpen(sessionId);
+      }
+    });
+    mocks.createAgentSession.mockImplementation(async () => {
+      order.push('session');
+      return { sessionId: 'session-1', status: 'idle' as const };
+    });
+    mocks.sendAgentMessage.mockImplementation(async () => {
+      order.push('message');
+      return { runId: 'run-1', status: 'queued' as const };
+    });
+
+    renderNewScript();
+    setObjective('直接根据文字生成港口态势场景');
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
+    expect(order).toEqual(['session', 'open', 'message']);
+    expect(mocks.uploadFile).not.toHaveBeenCalled();
+    expect(mocks.attachAgentFile).not.toHaveBeenCalled();
+    expect(mocks.sendAgentMessage).toHaveBeenCalledWith('session-1', {
+      content: expect.stringMatching(/直接根据文字生成港口态势场景[\s\S]*180\s*秒/)
+    });
+  });
+
+  it('retains text and the pending DOCX when sending fails', async () => {
+    mocks.sendAgentMessage.mockRejectedValueOnce(new Error('智能体暂时不可用'));
+
+    renderNewScript();
+    setObjective('生成失败后可以重试');
+    selectReport();
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('智能体暂时不可用');
+    expect(screen.getByPlaceholderText('输入你的问题...')).toHaveValue(
+      '生成失败后可以重试'
+    );
+    expect(screen.getByText('report.docx')).toBeInTheDocument();
+
+    mocks.sendAgentMessage.mockResolvedValueOnce({
+      runId: 'run-retry',
+      status: 'queued'
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(2));
+    expect(mocks.sendAgentMessage).toHaveBeenLastCalledWith('session-1', {
+      content: expect.stringMatching(/生成失败后可以重试[\s\S]*180\s*秒/)
+    });
   });
 
   it('calls approve, revise, and reject with exact contracts and exposes progress', async () => {

@@ -158,7 +158,39 @@ Run: `npm run test -w @ise/web -- src/pages/User/views/HomePage/HomePage.test.ts
 
 Expected: PASS.
 
-### Task 4: Regression verification
+### Task 4: Ground text-only sessions in a user brief
+
+**Files:**
+- Modify: `agent/test/session-api.test.ts`
+- Modify: `agent/test/skill.test.ts`
+- Modify: `agent/src/session/sessionAgentRunner.ts`
+- Modify: `agent/skills/generate-battle-replay/SKILL.md`
+
+**Interfaces:**
+- Consumes: the first user message, Session attachments, persistent artifact ledger.
+- Produces: one user-created DocumentIR and EvidenceIR when a Session has neither an attachment nor existing evidence.
+
+- [ ] **Step 1: Write failing text-only grounding tests**
+
+Require a zero-attachment message to persist DocumentIR/EvidenceIR containing the user text before model execution. Require the replay skill to document its no-attachment text-brief path.
+
+- [ ] **Step 2: Run tests and verify RED**
+
+Run: `tsx --test agent/test/session-api.test.ts agent/test/skill.test.ts`
+
+Expected: FAIL because no brief artifacts exist and the skill always instructs DOCX parsing.
+
+- [ ] **Step 3: Seed and document user text briefs**
+
+Before creating the first run, create a user-authored DocumentIR and EvidenceIR only when the Session has no attachments and no active EvidenceIR. Mark the source as a user-provided, independently unverified text brief. Update the skill to inspect this evidence directly when no attachment ID is present.
+
+- [ ] **Step 4: Run tests and verify GREEN**
+
+Run: `tsx --test agent/test/session-api.test.ts agent/test/skill.test.ts`
+
+Expected: PASS.
+
+### Task 5: Regression verification
 
 **Files:**
 - Verify only; no planned production changes.

@@ -45,8 +45,6 @@ export default function HomePage() {
   const [createType, setCreateType] = useState<ProjectType>('scene');
   const [createTitle, setCreateTitle] = useState('');
   const [creating, setCreating] = useState(false);
-  const [confirmNewScript, setConfirmNewScript] =
-    useState<RecentProject | null>(null);
 
   const buildProjectTitle = (
     item: { title?: string; name?: string },
@@ -124,7 +122,7 @@ export default function HomePage() {
       if (createType === 'script') {
         const res = await createScript({ title: createTitle });
         newId = String(res.data.id);
-        navigate(`/script?projectId=${newId}`);
+        navigate(`/new-script?projectId=${newId}`);
       } else {
         const res = await createBlankScene({ title: createTitle });
         newId = String(res.data.id);
@@ -200,47 +198,6 @@ export default function HomePage() {
                 {creating ? '创建中...' : '确定创建'}
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!confirmNewScript}
-        onOpenChange={(open) => !open && setConfirmNewScript(null)}
-      >
-        <DialogContent className="bg-card border border-border text-foreground max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">
-              进入脚本工作台
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              我们推出了新版脚本工作台，是否立即体验？
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                if (confirmNewScript) {
-                  navigate(`/script?projectId=${confirmNewScript.id}`);
-                }
-                setConfirmNewScript(null);
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground hover:bg-card/60"
-            >
-              进入旧版
-            </Button>
-            <Button
-              onClick={() => {
-                if (confirmNewScript) {
-                  navigate(`/new-script?projectId=${confirmNewScript.id}`);
-                }
-                setConfirmNewScript(null);
-              }}
-              className="bg-cyan-600 hover:bg-cyan-700 text-xs text-foreground px-4"
-            >
-              体验新版
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -349,7 +306,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => {
                   if (project.type === 'script') {
-                    setConfirmNewScript(project);
+                    navigate(`/new-script?projectId=${project.id}`);
                   } else {
                     navigate(`/scene?projectId=${project.id}`);
                   }

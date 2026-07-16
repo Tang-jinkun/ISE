@@ -30,6 +30,8 @@ test('loads the generate-battle-replay project skill with its bounded tool surfa
   assert.match(skill.instructions, /EventUnit/)
   assert.match(skill.instructions, /NarrativePlan/)
   assert.match(skill.instructions, /never invent asset IDs/i)
+  assert.match(skill.instructions, /without an attachment/i)
+  assert.match(skill.instructions, /user-provided text brief/i)
 })
 
 test('documents all evidence classes and rejects the known unsupported SRT claims', async () => {

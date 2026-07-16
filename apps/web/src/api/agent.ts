@@ -220,7 +220,10 @@ async function agentRequest<T>(
 }
 
 export const createAgentSession = (): Promise<CreateSessionResponse> =>
-  agentRequest<CreateSessionResponse>('/sessions', { method: 'POST' });
+  agentRequest<CreateSessionResponse>('/sessions', {
+    method: 'POST',
+    json: {}
+  });
 
 export const attachAgentFile = (
   sessionId: string,

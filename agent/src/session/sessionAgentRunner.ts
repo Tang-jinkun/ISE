@@ -3,7 +3,12 @@ import type { SkillRegistry } from '@ise/skills-core'
 import type { NestGateway } from '../adapters/nestGateway.ts'
 import type { QueuedRunResponse } from '../api/contracts.ts'
 import { agentError } from '../api/errors.ts'
-import { EVENT_PLAN_ACCEPTED_ARTIFACT, EVENT_PLAN_DRAFT_ARTIFACT } from '../contracts/artifactTypes.ts'
+import {
+  DOCUMENT_IR_ARTIFACT,
+  EVIDENCE_IR_ARTIFACT,
+  EVENT_PLAN_ACCEPTED_ARTIFACT,
+  EVENT_PLAN_DRAFT_ARTIFACT,
+} from '../contracts/artifactTypes.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
@@ -28,6 +33,9 @@ import { capabilityManifest } from '../compiler/capabilityManifest.ts'
 import { assetRegistrySnapshotSchema } from '../contracts/assetRegistry.ts'
 import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
 import { eventPlanSchema } from '../contracts/eventPlan.ts'
+import type { DocumentIR } from '../contracts/document.ts'
+import type { EvidenceIR } from '../contracts/evidence.ts'
+import { sha256 } from '../services/fingerprint.ts'
 import { EventBroker } from './eventBroker.ts'
 import { PublicEventSink } from './publicEventSink.ts'
 import { SessionAttachmentReader } from './sessionAttachmentReader.ts'
@@ -63,7 +71,8 @@ export class SessionAgentRunner {
   }): QueuedRunResponse {
     const run = this.options.repositories.transaction(() => {
       this.options.repositories.sessions.requireOwned(input.sessionId, input.subject)
-      this.options.repositories.messages.append(input.sessionId, 'user', input.content)
+      const message = this.options.repositories.messages.append(input.sessionId, 'user', input.content)
+      this.seedTextBriefIfNeeded(input.sessionId, message.id, input.content)
       const created = this.options.repositories.runs.createQueued(
         input.sessionId,
         this.buildBoundedObjective(input.sessionId, input.content),
@@ -459,5 +468,64 @@ export class SessionAgentRunner {
       `Active artifact IDs: ${JSON.stringify(artifactIds)}`,
       `Attachment file IDs: ${JSON.stringify(attachmentIds)}`,
     ].join('\n')
+  }
+
+  private seedTextBriefIfNeeded(sessionId: string, messageId: string, content: string): void {
+    if (this.options.repositories.attachments.list(sessionId).length > 0) return
+    if (
+      this.options.repositories.artifacts
+        .listLedger(sessionId)
+        .some(artifact => artifact.type === EVIDENCE_IR_ARTIFACT && !artifact.superseded)
+    ) return
+
+    const documentId = `text-brief-${messageId}`
+    const sourceRef = `user-message:${messageId}`
+    const evidenceId = `evidence-${messageId}`
+    const title = content.split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || 'User scene brief'
+    const document: DocumentIR = {
+      schemaVersion: 'document-ir/v1',
+      documentId,
+      title,
+      sourceHash: sha256(content),
+      sections: [],
+      paragraphs: [{
+        paragraphId: `paragraph-${messageId}`,
+        sourceRef,
+        sectionPath: [],
+        text: content,
+      }],
+      tables: [],
+      warnings: ['User-provided text brief; facts have not been independently verified.'],
+    }
+    const evidence: EvidenceIR = {
+      schemaVersion: 'evidence-ir/v1',
+      documentId,
+      records: [{
+        evidenceId,
+        sourceRef,
+        claim: content,
+        kind: 'explicit_fact',
+        entities: [],
+        confidence: 1,
+        ambiguities: ['User-provided scenario intent, not an independently verified report.'],
+      }],
+    }
+
+    new PersistentArtifactStore(sessionId, this.options.repositories.artifacts).createMany([
+      {
+        type: DOCUMENT_IR_ARTIFACT,
+        createdBy: 'user',
+        logicalKey: `document:${documentId}`,
+        data: document,
+        metadata: { documentId, sourceHash: document.sourceHash, sourceKind: 'text-brief' },
+      },
+      {
+        type: EVIDENCE_IR_ARTIFACT,
+        createdBy: 'user',
+        logicalKey: `evidence:${documentId}`,
+        data: evidence,
+        metadata: { documentId, sourceKind: 'text-brief' },
+      },
+    ])
   }
 }

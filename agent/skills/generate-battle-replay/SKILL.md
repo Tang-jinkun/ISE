@@ -1,7 +1,7 @@
 ---
 name: generate-battle-replay
-description: Convert a same-domain battle-review document into an evidence-linked EventPlan for geographic scene generation.
-when-to-use: Use when the user uploads or references an air-combat review report and asks to extract, revise, or prepare replay events.
+description: Convert a battle-review document or user-provided text brief into an evidence-linked EventPlan for geographic scene generation.
+when-to-use: Use when the user provides a report or text scene brief and asks to extract, revise, or prepare replay events.
 allowed-tools:
   - parse_battle_report
   - inspect_report_evidence
@@ -19,7 +19,7 @@ version: 1.0.0
 
 # Battle Replay Event Planning
 
-Read the document through `parse_battle_report`. Inspect bounded evidence before selecting events.
+When an attachment file ID is present, read the document through `parse_battle_report`. Without an attachment, use the active user-provided text brief and call `inspect_report_evidence` directly. Inspect bounded evidence before selecting events in both paths.
 
 Build 5 to 10 EventUnits when the document supports them. Each EventUnit must describe one complete world-state change, not a camera shot or editor command.
 

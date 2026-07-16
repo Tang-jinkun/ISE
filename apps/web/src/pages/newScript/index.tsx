@@ -27,6 +27,7 @@ import {
   ChevronDown,
   Clapperboard,
   FileText,
+  History,
   Info,
   Layout,
   ListTree,
@@ -66,6 +67,12 @@ const buildGenerationObjective = (
 
 const errorText = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback;
+
+const formatFileSize = (size: number) => {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const reviewBody = ({
   artifactId,
@@ -527,6 +534,8 @@ export default function Script() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSceneModalOpen, setIsSceneModalOpen] = useState(false);
   const [input, setInput] = useState('');
+  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
+  const [hasSentInitialMessage, setHasSentInitialMessage] = useState(false);
   const [sending, setSending] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -566,51 +575,37 @@ export default function Script() {
     ]);
   };
 
-  const startGeneration = async (file: File) => {
-    const objective = input.trim();
-    if (!objective || sending) {
-      if (!objective) message.error('请先输入场景生成目标');
-      return;
-    }
-
-    setSending(true);
-    setOperationError(null);
-    appendUserMessage(objective);
-    setInput('');
-    try {
-      const uploaded = await uploadFile(file, { fileType: 'application' });
-      const session = await createAgentSession();
-      await attachAgentFile(session.sessionId, { fileId: uploaded.data.id });
-      useAgentSessionStore.getState().open(session.sessionId);
-      setAgentSessionId(session.sessionId);
-      await sendAgentMessage(session.sessionId, {
-        content: buildGenerationObjective(objective)
-      });
-    } catch (error) {
-      const content = errorText(error, '智能体接口调用失败');
-      setOperationError(content);
-      message.error(content);
-    } finally {
-      setSending(false);
-    }
-  };
-
   const send = async (overrideContent?: string) => {
     const text =
       typeof overrideContent === 'string' ? overrideContent : input.trim();
     if (!text || sending) return;
-    if (!agentSessionId) {
-      message.error('请先导入 DOCX 报告');
-      return;
-    }
 
     setSending(true);
     setOperationError(null);
-    setInput('');
-    appendUserMessage(text);
 
     try {
-      await sendAgentMessage(agentSessionId, { content: text });
+      const uploaded = pendingAttachment
+        ? await uploadFile(pendingAttachment, { fileType: 'application' })
+        : null;
+      const needsSession = !agentSessionId;
+      const sessionId = needsSession
+        ? (await createAgentSession()).sessionId
+        : agentSessionId;
+
+      if (uploaded) {
+        await attachAgentFile(sessionId, { fileId: uploaded.data.id });
+      }
+      if (needsSession) {
+        useAgentSessionStore.getState().open(sessionId);
+        setAgentSessionId(sessionId);
+      }
+      await sendAgentMessage(sessionId, {
+        content: hasSentInitialMessage ? text : buildGenerationObjective(text)
+      });
+      setHasSentInitialMessage(true);
+      appendUserMessage(text);
+      setInput('');
+      setPendingAttachment(null);
     } catch (error) {
       const content = errorText(error, '智能体接口调用失败');
       setOperationError(content);
@@ -734,6 +729,18 @@ export default function Script() {
           </div>
 
           <div className="flex items-center gap-3">
+            {projectId && (
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(`/script?projectId=${encodeURIComponent(projectId)}`)
+                }
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <History className="h-3.5 w-3.5" />
+                退回旧版
+              </button>
+            )}
             <ThemeToggle />
             <ArtifactExportControls exports={artifactExports} />
             <button
@@ -804,7 +811,10 @@ export default function Script() {
                 <Bot className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
                 智能问答
               </div>
-              <DataImportButton onImport={startGeneration} isLoading={sending} />
+              <DataImportButton
+                onImport={setPendingAttachment}
+                isLoading={sending}
+              />
             </div>
 
             {/* Chat Messages Area */}
@@ -889,10 +899,34 @@ export default function Script() {
 
             {/* Input Area */}
             <div className="flex-none pt-3">
+              {pendingAttachment && (
+                <div className="mb-2 flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-2">
+                  <FileText className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-300" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-medium text-foreground">
+                      {pendingAttachment.name}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {formatFileSize(pendingAttachment.size)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="移除附件"
+                    title="移除附件"
+                    disabled={sending}
+                    onClick={() => setPendingAttachment(null)}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <div className="flex-1 relative">
                   <textarea
                     value={input}
+                    disabled={sending}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
@@ -906,6 +940,7 @@ export default function Script() {
                 </div>
                 <button
                   type="button"
+                  aria-label="发送消息"
                   onClick={() => void send()}
                   disabled={sending || !input.trim()}
                   className={cn(
