@@ -618,8 +618,17 @@ function Get-SessionView {
 function Wait-ForCondition {
   param([string]$Description, [int]$TimeoutSeconds, [scriptblock]$Probe)
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  $consecutiveBridgeFailures = 0
   do {
-    $result = & $Probe
+    $result = $null
+    try {
+      $result = & $Probe
+      $consecutiveBridgeFailures = 0
+    } catch {
+      if ($_.Exception.Message -notmatch '^NEST_BRIDGE_FAILED:') { throw }
+      $consecutiveBridgeFailures += 1
+      if ($consecutiveBridgeFailures -gt 3) { throw }
+    }
     if ($null -ne $result -and $result -ne $false) { return $result }
     $remainingMs = [int][Math]::Max(0, ($deadline - [DateTime]::UtcNow).TotalMilliseconds)
     if ($remainingMs -le 0) { break }

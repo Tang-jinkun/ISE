@@ -34,11 +34,17 @@ Status: COMPLETE FOR PRE-SERVICE ACCEPTANCE PREPARATION
 7. Independent-review Preview camera regression, using the helper command:
    - Exit 1: `Persisted desktop acceptance is missing dynamic Preview camera marker: function cameraAcceptanceTimes`.
    - The GREEN E2E rejects the old `2_000` and `15_750` thresholds, derives two bounded samples from visible camera tracks, and seeks the Preview timeline playhead directly.
+8. Real-flow transient bridge regression, using the helper command:
+   - Exit 1 on the first probe: `NEST_BRIDGE_FAILED: session polling failed with HTTP 502.`
+   - The second successful probe was never reached, reproducing the real DOCX run's zero-tolerance polling failure.
+   - GREEN tolerates at most three consecutive `NEST_BRIDGE_FAILED` probes, resets after any nonthrowing probe, throws the fourth unchanged, and throws every other error immediately.
+   - Deadline coverage uses a nonzero one-second deadline and a 1.2-second native `Thread.Sleep` inside the first failing probe; the result is `REAL_DEMO_WAIT_TIMEOUT` with `probeCount = 1`, proving no second probe and no deadline reset.
 
 ## GREEN evidence
 
-- PowerShell helper test: exit 0, 7 markers printed.
+- PowerShell helper test: exit 0, 8 markers printed.
   - `EMPTY_ARTIFACT_LEDGER=ok`
+  - `TRANSIENT_BRIDGE_RETRY=ok`
   - `ACCESS_TOKEN_SELECTION=ok`
   - `ORDERED_DICTIONARY_PROPERTY=ok`
   - `EVENT_UNIT_COPY=ok`
@@ -62,6 +68,7 @@ Status: COMPLETE FOR PRE-SERVICE ACCEPTANCE PREPARATION
 - Secret/source-path scans run before persistence and again over all seven exports plus `scene-id.txt`.
 - Exports exactly seven BOM-free UTF-8 JSON names plus `scene-id.txt`.
 - Reuses `ISE_E2E_ACCESS_TOKEN` when supplied so the flow and persisted E2E share one user, while preserving secret-safe random registration as the fallback.
+- Retries only transient `NEST_BRIDGE_FAILED` polling errors, with a three-consecutive-error budget and no expansion to other HTTP or business failures.
 - Persisted desktop acceptance reads the loaded SceneProjectConfig, derives image/video, overlapping two-aircraft follow-path, and two visible camera-transition sample times, asserts unique persisted entity/routes, finite snapshots, two moving same-ID aircraft, orientation change, real media decode/play, replay reset/progression, canvas movement, controls, camera movement through direct Preview seeking, and Preview framing.
 
 ## Concerns

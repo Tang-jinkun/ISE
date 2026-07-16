@@ -54,6 +54,7 @@ foreach ($name in @(
   'ConvertTo-JsonText',
   'Copy-EventUnits',
   'Get-SessionArtifacts',
+  'Wait-ForCondition',
   'Assert-NoSecretMaterial',
   'Write-Utf8File',
   'Get-FlowAccessToken',
@@ -80,6 +81,79 @@ function Invoke-JsonRequest {
     }
   }
   return [pscustomobject]@{ artifacts = @() }
+}
+
+function Start-Sleep {
+  param([int]$Milliseconds)
+}
+
+$script:PollIntervalSeconds = 1
+$script:TransientProbeCount = 0
+$transientRecovery = Wait-ForCondition 'one transient bridge failure' 30 {
+  $script:TransientProbeCount += 1
+  if ($script:TransientProbeCount -eq 1) {
+    throw 'NEST_BRIDGE_FAILED: session polling failed with HTTP 502.'
+  }
+  return 'recovered'
+}
+if ($transientRecovery -ne 'recovered' -or $script:TransientProbeCount -ne 2) {
+  throw 'Expected one transient bridge failure to be retried.'
+}
+
+$script:ResetProbeCount = 0
+$resetRecovery = Wait-ForCondition 'bridge retry reset' 30 {
+  $script:ResetProbeCount += 1
+  if ($script:ResetProbeCount -in @(1, 2, 3, 5, 6, 7)) {
+    throw 'NEST_BRIDGE_FAILED: session polling failed with HTTP 502.'
+  }
+  if ($script:ResetProbeCount -eq 4) { return $null }
+  return 'reset-recovered'
+}
+if ($resetRecovery -ne 'reset-recovered' -or $script:ResetProbeCount -ne 8) {
+  throw 'Expected a successful pending probe to reset the consecutive bridge failure count.'
+}
+
+$script:FourthFailureCount = 0
+$fourthFailureRejected = $false
+try {
+  $null = Wait-ForCondition 'four consecutive bridge failures' 30 {
+    $script:FourthFailureCount += 1
+    throw 'NEST_BRIDGE_FAILED: fourth consecutive bridge failure.'
+  }
+} catch {
+  $fourthFailureRejected = $_.Exception.Message -eq 'NEST_BRIDGE_FAILED: fourth consecutive bridge failure.'
+}
+if (-not $fourthFailureRejected -or $script:FourthFailureCount -ne 4) {
+  throw 'Expected the fourth consecutive bridge failure to throw immediately.'
+}
+
+$script:OtherFailureCount = 0
+$otherFailureRejected = $false
+try {
+  $null = Wait-ForCondition 'unrelated polling failure' 30 {
+    $script:OtherFailureCount += 1
+    throw 'REAL_DEMO_HTTP_FAILED: unrelated polling failure.'
+  }
+} catch {
+  $otherFailureRejected = $_.Exception.Message -eq 'REAL_DEMO_HTTP_FAILED: unrelated polling failure.'
+}
+if (-not $otherFailureRejected -or $script:OtherFailureCount -ne 1) {
+  throw 'Expected non-bridge errors to throw without retry.'
+}
+
+$script:DeadlineProbeCount = 0
+$deadlinePreserved = $false
+try {
+  $null = Wait-ForCondition 'expired transient bridge retry' 1 {
+    $script:DeadlineProbeCount += 1
+    [System.Threading.Thread]::Sleep(1200)
+    throw 'NEST_BRIDGE_FAILED: session polling failed with HTTP 502.'
+  }
+} catch {
+  $deadlinePreserved = $_.Exception.Message -match '^REAL_DEMO_WAIT_TIMEOUT:'
+}
+if (-not $deadlinePreserved -or $script:DeadlineProbeCount -ne 1) {
+  throw 'Expected the nonzero total wait deadline to prevent a second probe.'
 }
 
 $priorAccessToken = $env:ISE_E2E_ACCESS_TOKEN
@@ -291,6 +365,7 @@ try {
 }
 
 [Console]::Out.WriteLine('EMPTY_ARTIFACT_LEDGER=ok')
+[Console]::Out.WriteLine('TRANSIENT_BRIDGE_RETRY=ok')
 [Console]::Out.WriteLine('ACCESS_TOKEN_SELECTION=ok')
 [Console]::Out.WriteLine('ORDERED_DICTIONARY_PROPERTY=ok')
 [Console]::Out.WriteLine('EVENT_UNIT_COPY=ok')
