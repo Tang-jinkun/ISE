@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ArtifactStore, FakeModelAdapter, ToolRegistry } from '@ise/agent-core'
+import { ArtifactStore, FakeModelAdapter, ToolRegistry, type AgentTool } from '@ise/agent-core'
 import { SkillRegistry } from '@ise/skills-core'
 import {
   EVENT_PLAN_ACCEPTED_ARTIFACT,
@@ -130,6 +130,35 @@ test('ISE host plain allow cannot create an accepted event plan without a bindin
   assert.ok(toolResult && toolResult.role === 'tool')
   assert.equal(toolResult.isError, true)
   assert.match(toolResult.content, /trusted user confirmation binding/i)
+})
+
+test('ISE host allows more than twelve distinct evidence observations', async () => {
+  const inspectTool: AgentTool = {
+    name: 'inspect_evidence',
+    description: 'Inspect one evidence record',
+    risk: 'read',
+    inputSchema: { type: 'object' },
+    async execute(input) {
+      return { content: `Evidence ${(input as { index: number }).index}` }
+    },
+  }
+  const model = new FakeModelAdapter([
+    ...Array.from({ length: 13 }, (_, index) => ({
+      content: '',
+      toolCalls: [{ id: String(index), name: 'inspect_evidence', input: { index } }],
+    })),
+    { content: 'Evidence analysis completed.' },
+  ])
+
+  const result = await new IseAgentHost({
+    model,
+    tools: new ToolRegistry([inspectTool]),
+    skills: new SkillRegistry(),
+    workspace: process.cwd(),
+  }).run('Inspect the evidence before producing a plan.')
+
+  assert.equal(result.goal.status, 'completed')
+  assert.equal(result.goal.turnCount, 14)
 })
 
 function seededDraft(): {

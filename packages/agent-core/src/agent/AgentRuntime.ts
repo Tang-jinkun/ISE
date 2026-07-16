@@ -114,6 +114,7 @@ export class AgentRuntime {
       signal: this.options.signal,
     }
     const toolCallHistory: string[] = []
+    const successfulToolCallHistory = new Set<string>()
     let noProgressCount = 0
     const maxNoProgressSteer = 2   // inject steering after this many no-progress turns
     const maxNoProgressStop = 4    // force stop after this many no-progress turns
@@ -352,6 +353,7 @@ export class AgentRuntime {
       // Per-tool failure loop detection: if the same tool fails 3 consecutive
       // times without producing new artifacts or state changes, stop the run.
       // This is a strict guard against a tool that is fundamentally broken.
+      let observedNewToolResult = false
       {
         let toolFailedWithoutProgress = false
         for (const call of response.toolCalls) {
@@ -359,6 +361,11 @@ export class AgentRuntime {
             m => m.role === 'tool' && m.toolCallId === call.id,
           )
           if (toolResult?.role !== 'tool' || !toolResult.isError) {
+            const successfulCallSignature = canonicalToolCalls([call])
+            if (!successfulToolCallHistory.has(successfulCallSignature)) {
+              successfulToolCallHistory.add(successfulCallSignature)
+              observedNewToolResult = true
+            }
             // Successful tool — reset per-tool failure counter
             failedToolName = undefined
             failedToolCount = 0
@@ -429,6 +436,7 @@ export class AgentRuntime {
       const progressMadeThisTurn =
         artifacts.list().length !== artifactCountBefore ||
         canonical(domainState.snapshot()) !== canonicalStateBefore ||
+        observedNewToolResult ||
         (!!context.skillScope && !hadSkillScopeBefore) ||
         diagnostics.length > diagnosticsCountBefore ||
         goal.status !== goalStatusBefore

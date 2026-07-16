@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { eventPlanSchema, type EventPlan } from '../contracts/eventPlan.ts'
 import { narrativePlanSchema, type NarrativePlan, type SceneRequirement, type TemplateName } from '../contracts/narrativePlan.ts'
 import { assetRegistrySnapshotSchema, type AssetRegistryEntry, type AssetRegistrySnapshot } from '../contracts/assetRegistry.ts'
@@ -28,18 +29,35 @@ const movementTemplates = new Set<TemplateName>([
 
 function entityId(value: string): string {
   const slug = value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-  return `entity:${slug || 'other'}`
+  const digest = createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 12)
+  const stableName = /[^\x00-\x7f]/.test(value) ? `${slug || 'other'}-${digest}` : slug || `other-${digest}`
+  return `entity:${stableName}`
 }
 
-function semanticValues(requirement: SceneRequirement): string[] {
+function semanticGroups(requirement: SceneRequirement): string[][] {
   return [
-    ...requirement.focusEntities,
-    ...requirement.spatialRelations,
-    ...requirement.stateChanges,
-    ...requirement.motionRequirements,
-    ...requirement.attentionRequirements,
-    ...requirement.requiredFacts,
+    ...requirement.focusEntities.map(value => [value]),
+    requirement.motionRequirements,
+    requirement.spatialRelations,
+    requirement.stateChanges,
+    requirement.attentionRequirements,
+    requirement.requiredFacts,
   ]
+}
+
+function matchesSemanticValue(entry: AssetRegistryEntry, values: readonly string[]): boolean {
+  const requested = values.map(normalizeAssetName)
+  const canonicalNames = [entry.assetId, entry.displayName].map(normalizeAssetName)
+  if (canonicalNames.some(name => requested.includes(name))) return true
+  const aliasNames = entry.aliases.flatMap(alias => {
+    const name = normalizeAssetName(alias)
+    const stem = name.replace(/(?:航迹|\s*route)$/u, '').trim()
+    return stem && stem !== name ? [name, stem] : [name]
+  })
+  return aliasNames.some(name =>
+    requested.some(value => name === value || (
+      Math.min(name.length, value.length) >= 2 && (name.includes(value) || value.includes(name))
+    )))
 }
 
 function selectAsset(
@@ -47,42 +65,54 @@ function selectAsset(
   kind: AssetRegistryEntry['kind'],
   requirement: SceneRequirement,
 ): AssetRegistryEntry | undefined {
-  const requested = new Set(semanticValues(requirement).map(normalizeAssetName))
   const allCandidates = [...registry.entries.values()]
     .filter(entry => entry.kind === kind)
     .sort((left, right) => left.assetId.localeCompare(right.assetId))
-  const exactCandidates = allCandidates.filter(entry =>
-    [entry.assetId, entry.displayName, ...entry.aliases].some(value => requested.has(normalizeAssetName(value))))
-  const candidates = exactCandidates.length > 0 ? exactCandidates : allCandidates
-  const resolved = new Map<string, AssetRegistryEntry>()
   let firstFailure: CompilationError | undefined
-  for (const candidate of candidates) {
-    try {
-      const entry = registry.resolve(candidate.assetId)
-      if (entry?.kind === kind) resolved.set(entry.assetId, entry)
-    } catch (error) {
-      if (!(error instanceof CompilationError)) throw error
-      firstFailure ??= error
+  const resolveCandidates = (candidates: readonly AssetRegistryEntry[]): AssetRegistryEntry | undefined => {
+    const resolved = new Map<string, AssetRegistryEntry>()
+    for (const candidate of candidates) {
+      try {
+        const entry = registry.resolve(candidate.assetId)
+        if (entry?.kind === kind) resolved.set(entry.assetId, entry)
+      } catch (error) {
+        if (!(error instanceof CompilationError)) throw error
+        firstFailure ??= error
+      }
     }
+    if (resolved.size > 1) {
+      throw new CompilationError([diagnostic(
+        'ASSET_SELECTION_AMBIGUOUS',
+        `${requirement.requirementId} ${kind} maps to ${[...resolved.keys()].join(', ')}`,
+      )])
+    }
+    return resolved.size === 1 ? resolved.values().next().value : undefined
   }
-  if (resolved.size > 1) {
-    throw new CompilationError([diagnostic(
-      'ASSET_SELECTION_AMBIGUOUS',
-      `${requirement.requirementId} ${kind} maps to ${[...resolved.keys()].join(', ')}`,
-    )])
+
+  for (const values of semanticGroups(requirement)) {
+    const candidates = allCandidates.filter(entry => matchesSemanticValue(entry, values))
+    if (candidates.length === 0) continue
+    const selected = resolveCandidates(candidates)
+    if (selected) return selected
   }
-  if (resolved.size === 1) return resolved.values().next().value
+  const fallback = resolveCandidates(allCandidates)
+  if (fallback) return fallback
   if (firstFailure) throw firstFailure
   return undefined
 }
 
 function resolveModel(registry: AssetRegistry, name: string): Extract<AssetRegistryEntry, { kind: 'model' }> | undefined {
-  const aliasIds = registry.aliases.get(normalizeAssetName(name)) ?? []
-  if (aliasIds.length > 1) registry.resolveAlias(name)
-  const exact = aliasIds.length === 1 ? registry.resolve(aliasIds[0]!) : undefined
-  if (exact?.kind === 'model') return exact
-  const byType = registry.resolveEntityType('aircraft')
-  return byType?.kind === 'model' ? byType : undefined
+  const candidates = [...registry.entries.values()]
+    .filter((entry): entry is Extract<AssetRegistryEntry, { kind: 'model' }> =>
+      entry.kind === 'model' && matchesSemanticValue(entry, [name]))
+    .sort((left, right) => left.assetId.localeCompare(right.assetId))
+    .map(entry => registry.resolve(entry.assetId))
+    .filter((entry): entry is Extract<AssetRegistryEntry, { kind: 'model' }> => entry?.kind === 'model')
+  if (candidates.length > 1) throw new CompilationError([diagnostic(
+    'ASSET_SELECTION_AMBIGUOUS',
+    `${name} model maps to ${candidates.map(item => item.assetId).join(', ')}`,
+  )])
+  return candidates[0]
 }
 
 function buildEntities(eventPlan: EventPlan, narrativePlan: NarrativePlan, registry: AssetRegistry): RuntimeEntity[] {
@@ -206,12 +236,20 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   for (const requirement of narrativePlan.sceneRequirements) {
     const unit = eventPlan.eventUnits.find(item => item.eventUnitId === requirement.eventUnitId)
     if (!unit) throw new CompilationError([diagnostic('EVENT_UNIT_NOT_FOUND', requirement.eventUnitId)])
-    const entity = entitiesByName.get(requirement.focusEntities[0] ?? '') ?? entities[0]
-    if (!entity) throw new CompilationError([diagnostic('ENTITY_NOT_FOUND', requirement.requirementId)])
     const template = requirement.preferredTemplate ?? inferTemplateFromStateChange(requirement)
     const requiresMovement = movementTemplates.has(template)
+    const focusEntities = requirement.focusEntities.flatMap(name => {
+      const entity = entitiesByName.get(name)
+      return entity ? [entity] : []
+    })
+    const entity = requiresMovement
+      ? focusEntities.find(item => item.modelAssetId) ?? focusEntities[0] ?? entities[0]
+      : focusEntities[0] ?? entities[0]
+    if (!entity) throw new CompilationError([diagnostic('ENTITY_NOT_FOUND', requirement.requirementId)])
     const trajectory = requiresMovement ? selectAsset(registry, 'trajectory', requirement) : undefined
-    const image = template === 'return_and_summary' ? selectAsset(registry, 'image', requirement) : undefined
+    const image = template === 'return_and_summary' || template === 'status_explanation'
+      ? selectAsset(registry, 'image', requirement)
+      : undefined
     const video = template === 'attack_chain' ? selectAsset(registry, 'video', requirement) : undefined
     const geojson = template === 'electronic_warfare' ? selectAsset(registry, 'geojson', requirement) : undefined
     if (requiresMovement && !trajectory) throw new CompilationError([diagnostic('REQUIRED_ASSET_MISSING', 'trajectory')])

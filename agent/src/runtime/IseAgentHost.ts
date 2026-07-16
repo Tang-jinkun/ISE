@@ -40,7 +40,7 @@ export class IseAgentHost {
       tools: this.options.tools,
       skills: this.options.skills,
       workspace: this.options.workspace,
-      maxTurns: this.options.maxTurns ?? 12,
+      maxTurns: this.options.maxTurns ?? 20,
       artifacts: this.options.artifacts ?? new ArtifactStore(),
       domainState: this.options.domainState ?? new DomainStateStore(),
       eventSink: this.options.eventSink,

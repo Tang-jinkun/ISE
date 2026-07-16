@@ -209,6 +209,32 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
   return accepted.id
 }
 
+test('downstream run objective includes the exact accepted tuple and EventPlan snapshot', async (t) => {
+  const model = new ControllableModel()
+  const f = await terminalFixture(t, model, false)
+  const acceptedArtifactId = prepareAcceptedRun(f)
+  const accepted = f.repositories.artifacts.get(f.session.id, acceptedArtifactId)!
+  const queued = f.runner.enqueueAfterApproval({
+    sessionId: f.session.id,
+    subject: 'user-1',
+    authorization: 'Bearer user-1',
+    acceptedArtifactId,
+  })
+  await model.started
+
+  const objective = f.repositories.runs.get(queued.runId)!.objective
+  assert.match(objective, /Use only propose_scene_plan/)
+  assert.match(objective, new RegExp(acceptedArtifactId))
+  assert.match(objective, /"planId":"terminal-plan"/)
+  assert.match(objective, new RegExp(String(accepted.metadata?.fingerprint)))
+  assert.match(objective, /"title":"Terminal"/)
+
+  f.runner.interrupt(f.session.id, 'user-1')
+  await waitForTerminal(f.repositories, f.session.id)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  f.database.close()
+})
+
 type CompiledFixtureVariant =
   | 'runtime-schema'
   | 'scene-schema'

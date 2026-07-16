@@ -6,7 +6,7 @@ import {
   type SceneTrack,
 } from '@ise/runtime-contracts';
 import { MapRuntime, type RuntimeTrail } from './MapRuntime';
-import { ModelRuntime } from './ModelRuntime';
+import { ModelRuntime, type ModelEntityFrameSnapshot } from './ModelRuntime';
 import { OverlayRuntime } from './OverlayRuntime';
 import { PlaybackClock } from './PlaybackClock';
 import { ResourceManager } from './ResourceManager';
@@ -29,6 +29,7 @@ interface MapRuntimePort {
 interface ModelRuntimePort {
   load(entities: SceneEntity[], tracks: SceneTrack[], signal?: AbortSignal): Promise<void>;
   apply(timeMs: number): RuntimeTrail[];
+  getFrameSnapshot(): ModelEntityFrameSnapshot[];
   dispose(): void;
 }
 
@@ -257,6 +258,9 @@ export class SceneRuntimeImpl implements SceneRuntime {
     const trails = this.modelRuntime.apply(frame.timeMs);
     this.mapRuntime.applyTrails(trails);
     this.overlayRuntime.apply(frame);
+    this.options.overlayRoot.dataset.runtimeModels = JSON.stringify(
+      this.modelRuntime.getFrameSnapshot(),
+    );
     this.options.overlayRoot.dataset.runtimeTimeMs = String(Math.round(frame.timeMs));
   }
 
@@ -343,6 +347,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
     this.config = undefined;
     this.mediaUnlocked = false;
     delete this.options.overlayRoot.dataset.runtimeTimeMs;
+    delete this.options.overlayRoot.dataset.runtimeModels;
 
     attempt(() => unsubscribeClock?.());
     attempt(() => this.overlayRuntime.dispose());

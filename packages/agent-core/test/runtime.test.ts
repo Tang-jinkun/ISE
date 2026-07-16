@@ -758,9 +758,44 @@ test('runtime stops a repeated multi-tool cycle before max turns', async () => {
   }).run('Validate the binding once')
 
   assert.equal(result.goal.status, 'failed')
-  // Diminishing-returns (4 no-artifact turns) fires before cycle detection (6 turns).
-  assert.equal(result.goal.turnCount, 4)
-  assert.equal(result.diagnostics[0]?.code, 'AGENT_NO_PROGRESS')
+  assert.equal(result.goal.turnCount, 6)
+  assert.equal(result.diagnostics[0]?.code, 'AGENT_REPEATED_TOOL_CALL_LOOP')
+  assert.equal(
+    result.transcript.filter(event => event.type === 'tool_call').length,
+    5,
+    'the repeated cycle that triggers the guard must not execute',
+  )
+})
+
+test('runtime treats distinct successful read calls as observation progress', async () => {
+  const inspectTool: AgentTool = {
+    name: 'inspect_evidence',
+    description: 'Inspect one evidence record',
+    risk: 'read',
+    inputSchema: { type: 'object' },
+    async execute(input) {
+      return { content: `Evidence ${(input as { id: number }).id}` }
+    },
+  }
+  const model = new FakeModelAdapter([
+    ...Array.from({ length: 5 }, (_, index) => ({
+      content: '',
+      toolCalls: [{ id: String(index), name: 'inspect_evidence', input: { id: index } }],
+    })),
+    { content: 'Evidence review completed.' },
+  ])
+  const result = await new AgentRuntime({
+    model,
+    tools: new ToolRegistry([inspectTool]),
+    skills: new SkillRegistry(),
+    workspace: process.cwd(),
+    maxTurns: 8,
+  }).run('Inspect five distinct evidence records')
+
+  assert.equal(result.goal.status, 'completed')
+  assert.equal(result.goal.turnCount, 6)
+  assert.equal(result.goal.finalSummary, 'Evidence review completed.')
+  assert.equal(result.diagnostics.some(item => item.code === 'AGENT_NO_PROGRESS'), false)
 })
 
 test('runtime stops one tool after three varied failures without progress', async () => {

@@ -101,6 +101,19 @@ test('all nine registered templates compile through the strict command schema', 
   }
 })
 
+test('withdrawal hides the model only after its follow path completes', () => {
+  const plan = compileScene(input('withdrawal'))
+  const spawn = plan.commands.find(command => command.type === 'model.spawn')
+  const follow = plan.commands.find(command => command.type === 'model.follow_path')
+  const hide = plan.commands.find(command => command.type === 'model.hide')
+
+  assert.ok(spawn)
+  assert.ok(follow)
+  assert.ok(hide)
+  assert.ok(follow.startMs >= spawn.startMs + spawn.durationMs)
+  assert.ok(hide.startMs >= follow.startMs + follow.durationMs)
+})
+
 test('unknown template names and command types are rejected', () => {
   assert.equal(templateNameSchema.safeParse('free_form_code').success, false)
   const valid = compileScene(input()).commands[0]!
@@ -110,6 +123,76 @@ test('unknown template names and command types are rejected', () => {
 test('required missing trajectory creates diagnostics and no plan', () => {
   assert.throws(() => compileScene(input('deployment', 'missing')), (error: unknown) =>
     error instanceof CompilationError && error.diagnostics.some(item => item.code === 'REQUIRED_ASSET_MISSING'))
+})
+
+test('generic entities stay unbound when multiple aircraft models exist', () => {
+  const compilerInput = input('deployment')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'model')!
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'model:rafale', displayName: 'Rafale', aliases: ['阵风'],
+  }))
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities.push('airborne early warning')
+
+  const plan = compileScene(compilerInput)
+  assert.equal(plan.entities.find(entity => entity.displayName === 'JF-17')?.modelAssetId, 'model:jf17')
+  assert.equal(plan.entities.find(entity => entity.displayName === 'airborne early warning')?.modelAssetId, undefined)
+  assert.equal(plan.entities.find(entity => entity.displayName === 'airborne early warning')?.kind, 'other')
+})
+
+test('registered model aliases match entity names with contextual prefixes', () => {
+  const compilerInput = input('status_explanation')
+  const model = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'model')!
+  model.aliases = ['JF-17 formation']
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['blue JF-17 formation']
+
+  const entity = compileScene(compilerInput).entities.find(item => item.displayName === 'blue JF-17 formation')
+  assert.equal(entity?.modelAssetId, 'model:jf17')
+})
+
+test('movement templates target the first focus entity with a registered model', () => {
+  const compilerInput = input('deployment')
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['airborne early warning', 'JF-17']
+
+  const plan = compileScene(compilerInput)
+  const follow = plan.commands.find(command => command.type === 'model.follow_path')
+  assert.equal(follow?.targetId, plan.entities.find(entity => entity.displayName === 'JF-17')?.entityId)
+})
+
+test('state templates do not emit model commands for entities without a model asset', () => {
+  for (const template of ['attack_chain', 'electronic_warfare'] as const) {
+    const compilerInput = input(template)
+    compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['unmodeled command entity']
+
+    const plan = compileScene(compilerInput)
+    const unmodeled = plan.entities.find(entity => entity.displayName === 'unmodeled command entity')
+
+    assert.ok(unmodeled)
+    assert.equal(unmodeled.modelAssetId, undefined)
+    assert.equal(
+      plan.commands.some(command => command.targetId === unmodeled.entityId && command.type.startsWith('model.')),
+      false,
+    )
+  }
+})
+
+test('non-ASCII entity names receive distinct stable runtime IDs', () => {
+  const compilerInput = input('status_explanation')
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['预警机', '地面雷达']
+
+  const first = compileScene(compilerInput).entities
+  const second = compileScene(compilerInput).entities
+  assert.equal(new Set(first.map(entity => entity.entityId)).size, 2)
+  assert.deepEqual(first.map(entity => entity.entityId), second.map(entity => entity.entityId))
+  assert.ok(first.every(entity => entity.entityId.startsWith('entity:other-')))
+})
+
+test('mixed-script entity names with the same ASCII core remain distinct', () => {
+  const compilerInput = input('status_explanation')
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['苏-30MKI', '印方苏-30MKI编队']
+
+  const entities = compileScene(compilerInput).entities
+  assert.equal(new Set(entities.map(entity => entity.entityId)).size, 2)
+  assert.ok(entities.every(entity => /^entity:30mki-[0-9a-f]{12}$/.test(entity.entityId)))
 })
 
 test('camera and same-target state commands never overlap', () => {
@@ -165,6 +248,45 @@ test('requirement aliases select one trajectory from multiple available candidat
   assert.equal(follow?.params.action === 'model.follow_path' ? follow.params.trajectoryAssetId : undefined, 'trajectory:zzz-alternate')
 })
 
+test('focus entity asset aliases take priority over lower-level semantic matches', () => {
+  const compilerInput = input('deployment')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  original.aliases = ['JF-17 route']
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:alternate', displayName: 'Alternate route', aliases: ['alternate registered route'],
+  }))
+  compilerInput.narrativePlan.sceneRequirements[0]!.motionRequirements = ['alternate registered route']
+
+  const follow = compileScene(compilerInput).commands.find(command => command.type === 'model.follow_path')
+  assert.equal(follow?.params.action === 'model.follow_path' ? follow.params.trajectoryAssetId : undefined, 'trajectory:jf17-1')
+})
+
+test('ordered focus entities select the first available compatible trajectory', () => {
+  const compilerInput = input('deployment')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  original.aliases = ['JF-17 route']
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:wingman', displayName: 'Wingman route', aliases: ['wingman aircraft route'],
+  }))
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['JF-17', 'wingman aircraft']
+
+  const follow = compileScene(compilerInput).commands.find(command => command.type === 'model.follow_path')
+  assert.equal(follow?.params.action === 'model.follow_path' ? follow.params.trajectoryAssetId : undefined, 'trajectory:jf17-1')
+})
+
+test('trajectory aliases match prefixed entity names without their type suffix', () => {
+  const compilerInput = input('deployment')
+  const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
+  original.aliases = ['苏-30MKI编队航迹']
+  compilerInput.assetRegistry.assets.push(cloneAsset(original, {
+    assetId: 'trajectory:alternate', displayName: 'Alternate route', aliases: [],
+  }))
+  compilerInput.narrativePlan.sceneRequirements[0]!.focusEntities = ['印方苏-30MKI编队', 'JF-17']
+
+  const follow = compileScene(compilerInput).commands.find(command => command.type === 'model.follow_path')
+  assert.equal(follow?.params.action === 'model.follow_path' ? follow.params.trajectoryAssetId : undefined, 'trajectory:jf17-1')
+})
+
 test('a missing first trajectory does not hide the only available candidate', () => {
   const compilerInput = input('deployment', 'missing')
   const original = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'trajectory')!
@@ -203,4 +325,14 @@ test('requirement aliases select image and video assets and reject ambiguity', (
     assert.throws(() => compileScene(compilerInput), (error: unknown) =>
       error instanceof CompilationError && error.diagnostics.some(item => item.code === 'ASSET_SELECTION_AMBIGUOUS'))
   }
+})
+
+test('status explanation emits an image command when a semantic image alias matches', () => {
+  const compilerInput = input('status_explanation')
+  const image = compilerInput.assetRegistry.assets.find(asset => asset.kind === 'image')!
+  image.aliases = ['status illustration']
+  compilerInput.narrativePlan.sceneRequirements[0]!.attentionRequirements = ['status illustration']
+
+  const command = compileScene(compilerInput).commands.find(item => item.type === 'image.show')
+  assert.equal(command && 'assetId' in command.params ? command.params.assetId : undefined, 'image:summary')
 })

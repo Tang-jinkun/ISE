@@ -33,21 +33,21 @@
       "assetId": "model:rafale",
       "sourceRelativePath": "印巴glb（修改6.0）/Refale.glb",
       "displayName": "Rafale",
-      "aliases": ["Refale", "阵风战斗机", "阵风战斗机编队"],
+      "aliases": ["Refale", "阵风", "阵风战斗机", "阵风战斗机编队"],
       "criticality": "required"
     },
     {
       "assetId": "model:su30mki",
       "sourceRelativePath": "印巴glb（修改6.0）/SU-30MKI.glb",
       "displayName": "Su-30MKI",
-      "aliases": ["SU-30MKI", "苏-30MKI编队"],
+      "aliases": ["SU-30MKI", "苏-30MKI", "苏-30MKI编队"],
       "criticality": "required"
     },
     {
       "assetId": "video:ooda-chain",
       "sourceRelativePath": "素材/ooda作战链示例视频.mp4",
       "displayName": "OODA作战链示例视频",
-      "aliases": ["ooda作战链示例视频"],
+      "aliases": ["ooda作战链示例视频", "攻击链", "作战链", "交战链"],
       "criticality": "required"
     },
     {
@@ -117,7 +117,7 @@
       "assetId": "image:airport",
       "sourceRelativePath": "素材/机场.png",
       "displayName": "机场",
-      "aliases": [],
+      "aliases": ["返航", "机场"],
       "criticality": "required"
     },
     {
@@ -131,28 +131,28 @@
       "assetId": "trajectory:ambala-rafale-1",
       "sourceRelativePath": "json/AMBALA Rafale-1.json",
       "displayName": "AMBALA Rafale-1",
-      "aliases": ["Rafale-1"],
+      "aliases": ["Rafale-1", "Rafale route", "阵风航迹", "阵风编队航迹", "阵风战斗机航迹", "阵风战斗机编队航迹", "安巴拉航迹"],
       "criticality": "required"
     },
     {
       "assetId": "trajectory:minhas-j10ce-1",
       "sourceRelativePath": "json/MINAS J-10CE-1.json",
       "displayName": "MINAS J-10CE-1",
-      "aliases": ["J-10CE-1", "MINHAS J-10CE-1"],
+      "aliases": ["J-10CE-1", "MINHAS J-10CE-1", "J-10 route", "JF-17 route", "JF-17战机航迹", "JF-17编队航迹", "米纳斯航迹", "拉菲基航迹"],
       "criticality": "required"
     },
     {
       "assetId": "trajectory:pakistan-missile-1",
       "sourceRelativePath": "json/巴方导弹1.json",
       "displayName": "巴方导弹1",
-      "aliases": [],
+      "aliases": ["Pakistan missile route", "巴方导弹航迹", "巴方导弹", "来袭导弹", "导弹航迹"],
       "criticality": "required"
     },
     {
       "assetId": "trajectory:ambala-su30mki-1",
       "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
       "displayName": "AMBALA Su-30MKI-1",
-      "aliases": ["Su-30MKI-1"],
+      "aliases": ["Su-30MKI-1", "Su-30MKI route", "苏-30MKI航迹", "苏-30MKI编队航迹", "阿达姆普尔航迹"],
       "criticality": "optional"
     }
   ],

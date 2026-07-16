@@ -38,6 +38,19 @@ export interface ModelFrameState {
   trail: RuntimeTrail;
 }
 
+export interface ModelEntityFrameSnapshot {
+  entityId: string;
+  modelAssetId?: string;
+  visible: boolean;
+  longitude?: number;
+  latitude?: number;
+  altitudeM?: number;
+  headingDeg?: number;
+  pitchDeg?: number;
+  position: [number, number, number];
+  quaternion: [number, number, number, number];
+}
+
 interface MaterialState {
   material: THREE.Material;
   color?: THREE.Color;
@@ -52,6 +65,7 @@ interface ModelInstance {
   object: THREE.Object3D;
   metadata: ModelMetadata;
   materials: MaterialState[];
+  frame?: ModelFrameState;
 }
 
 interface ResolvedModel {
@@ -308,12 +322,32 @@ export class ModelRuntime {
         );
       }
       instance.object.visible = frame.visible;
+      instance.frame = frame;
       if (frame.visible && frame.trail.coordinates.length > 0) {
         trails.push(frame.trail);
       }
     }
     this.map.triggerRepaint();
     return trails;
+  }
+
+  getFrameSnapshot(): ModelEntityFrameSnapshot[] {
+    return this.instances.map(({ entity, object, frame }) => ({
+      entityId: entity.entityId,
+      ...(entity.modelAssetId ? { modelAssetId: entity.modelAssetId } : {}),
+      visible: object.visible,
+      ...(frame?.sample
+        ? {
+            longitude: frame.sample.longitude,
+            latitude: frame.sample.latitude,
+            altitudeM: frame.sample.altitudeM,
+            headingDeg: frame.sample.headingDeg,
+            pitchDeg: frame.sample.pitchDeg,
+          }
+        : {}),
+      position: object.position.toArray() as [number, number, number],
+      quaternion: object.quaternion.toArray() as [number, number, number, number],
+    }));
   }
 
   dispose() {

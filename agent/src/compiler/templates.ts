@@ -54,24 +54,29 @@ function builder(context: TemplateContext) {
       desiredDurationMs: 500,
     }
     commands.push(spawn)
-    commands.push({
+    const follow: CommandDraft = {
       ...common(context.entity.entityId),
       type: 'model.follow_path',
       dependsOn: [spawn.commandId],
       params: { action: 'model.follow_path', entityId: context.entity.entityId, trajectoryAssetId: context.trajectoryAssetId },
       desiredDurationMs: 6_000,
-    })
+    }
+    commands.push(follow)
+    return { spawn, follow }
   }
   const camera = () => commands.push({
     ...common('camera:main'), type: 'camera.transition',
     params: { center: [74.5, 32.5], zoom: 7, pitch: 45, bearing: 0, easing: 'easeInOut' },
     desiredDurationMs: 1_500,
   })
-  const state = (value: 'normal' | 'warning' | 'disabled' | 'hidden') => commands.push({
-    ...common(context.entity.entityId), type: 'model.set_state',
-    params: { action: 'model.set_state', entityId: context.entity.entityId, state: value },
-    desiredDurationMs: 1_000,
-  })
+  const state = (value: 'normal' | 'warning' | 'disabled' | 'hidden') => {
+    if (!context.modelAssetId) return
+    commands.push({
+      ...common(context.entity.entityId), type: 'model.set_state',
+      params: { action: 'model.set_state', entityId: context.entity.entityId, state: value },
+      desiredDurationMs: 1_000,
+    })
+  }
   const card = (text: string) => informationCards.push({
     cardId: `card:${safeId(context.eventUnit.eventUnitId)}:${safeId(context.requirement.requirementId)}:${informationCards.length + 1}`,
     eventUnitId: context.eventUnit.eventUnitId,
@@ -110,8 +115,9 @@ const counterattack: TemplateExpander = context => {
   const out = builder(context); out.spawnAndFollow(); out.state('warning'); out.camera(); return out
 }
 const withdrawal: TemplateExpander = context => {
-  const out = builder(context); out.spawnAndFollow(); out.commands.push({
+  const out = builder(context); const { follow } = out.spawnAndFollow(); out.commands.push({
     ...out.common(context.entity.entityId), type: 'model.hide',
+    dependsOn: [follow.commandId],
     params: { action: 'model.hide', entityId: context.entity.entityId }, desiredDurationMs: 500,
   }); return out
 }
@@ -128,7 +134,13 @@ const genericMovement: TemplateExpander = context => {
   const out = builder(context); out.spawnAndFollow(); return out
 }
 const statusExplanation: TemplateExpander = context => {
-  const out = builder(context); out.commands.push({
+  const out = builder(context)
+  if (context.imageAssetId) out.commands.push({
+    ...out.common('overlay:status'), type: 'image.show',
+    params: { assetId: context.imageAssetId, layout: { xPct: 65, yPct: 8, widthPct: 30, heightPct: 30, zIndex: 20, opacity: 1, fit: 'contain' }, enter: 'fade', exit: 'fade' },
+    desiredDurationMs: 5_000,
+  })
+  out.commands.push({
     ...out.common('marker:status'), type: 'marker.show',
     params: { coordinates: [74.5, 32.5], label: context.requirement.requiredFacts[0] ?? context.eventUnit.title, color: '#ffcc00' },
     desiredDurationMs: 4_000,

@@ -25,7 +25,10 @@
     },
     {
       "displayName": "机场",
-      "aliases": [],
+      "aliases": [
+        "返航",
+        "机场"
+      ],
       "fingerprint": "sha256:fa4b3010f5a98ccad482dae64db1450ea99eaa6d17761365b13ed89c8bec567b",
       "sourceRelativePath": "素材/机场.png",
       "objectName": "demo-assets/image/airport.png",
@@ -203,6 +206,7 @@
       "displayName": "Rafale",
       "aliases": [
         "Refale",
+        "阵风",
         "阵风战斗机",
         "阵风战斗机编队"
       ],
@@ -234,6 +238,7 @@
       "displayName": "Su-30MKI",
       "aliases": [
         "SU-30MKI",
+        "苏-30MKI",
         "苏-30MKI编队"
       ],
       "fingerprint": "sha256:50e4ddcedda0819895460b2f6c18ec0de60a0bac52558bc8a706687c8e44a49f",
@@ -263,7 +268,13 @@
     {
       "displayName": "AMBALA Rafale-1",
       "aliases": [
-        "Rafale-1"
+        "Rafale-1",
+        "Rafale route",
+        "阵风航迹",
+        "阵风编队航迹",
+        "阵风战斗机航迹",
+        "阵风战斗机编队航迹",
+        "安巴拉航迹"
       ],
       "fingerprint": "sha256:b4c46ebd7db910cf8212cf46afeb8713552725abe7d769dbe4db917205233ea5",
       "sourceRelativePath": "json/AMBALA Rafale-1.json",
@@ -288,7 +299,11 @@
     {
       "displayName": "AMBALA Su-30MKI-1",
       "aliases": [
-        "Su-30MKI-1"
+        "Su-30MKI-1",
+        "Su-30MKI route",
+        "苏-30MKI航迹",
+        "苏-30MKI编队航迹",
+        "阿达姆普尔航迹"
       ],
       "fingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
       "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
@@ -314,7 +329,13 @@
       "displayName": "MINAS J-10CE-1",
       "aliases": [
         "J-10CE-1",
-        "MINHAS J-10CE-1"
+        "MINHAS J-10CE-1",
+        "J-10 route",
+        "JF-17 route",
+        "JF-17战机航迹",
+        "JF-17编队航迹",
+        "米纳斯航迹",
+        "拉菲基航迹"
       ],
       "fingerprint": "sha256:debdb6cff51c0f58293e779000e11d47c6ea86ca661f9c781f87acc9c1a62dad",
       "sourceRelativePath": "json/MINAS J-10CE-1.json",
@@ -338,7 +359,13 @@
     },
     {
       "displayName": "巴方导弹1",
-      "aliases": [],
+      "aliases": [
+        "Pakistan missile route",
+        "巴方导弹航迹",
+        "巴方导弹",
+        "来袭导弹",
+        "导弹航迹"
+      ],
       "fingerprint": "sha256:bc5307fe15118999e80ca9208c7a4d42e186aa7c445c78e4938472a1cfa2c089",
       "sourceRelativePath": "json/巴方导弹1.json",
       "objectName": "demo-assets/trajectory/pakistan-missile-1.json",
@@ -438,7 +465,10 @@
     {
       "displayName": "OODA作战链示例视频",
       "aliases": [
-        "ooda作战链示例视频"
+        "ooda作战链示例视频",
+        "攻击链",
+        "作战链",
+        "交战链"
       ],
       "fingerprint": "sha256:2a13ff6e87b396ab6805516664a456d321309fb29ce12a7e9edc601de38fd2b6",
       "sourceRelativePath": "素材/ooda作战链示例视频.mp4",

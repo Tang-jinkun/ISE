@@ -104,9 +104,20 @@ export class SessionAgentRunner {
     const plan = eventPlanSchema.parse(accepted.data)
     const acceptedFingerprint = accepted.metadata?.fingerprint
     if (typeof acceptedFingerprint !== 'string') throw agentError(409, 'ACCEPTED_EVENT_PLAN_INVALID')
+    const sourceEventPlan = {
+      artifactId: accepted.id,
+      planId: plan.planId,
+      version: plan.version,
+      fingerprint: acceptedFingerprint,
+    }
     const created = this.options.repositories.runs.createQueued(
       input.sessionId,
-      `Create exactly one grounded NarrativePlan for accepted EventPlan artifact ${input.acceptedArtifactId} through propose_scene_plan, then stop.`,
+      [
+        'Create exactly one grounded NarrativePlan for the accepted EventPlan, then stop.',
+        'Use only propose_scene_plan. Do not parse the document, propose or accept another EventPlan, or invoke compiler tools.',
+        `Exact sourceEventPlan tuple: ${JSON.stringify(sourceEventPlan)}`,
+        `Accepted EventPlan snapshot: ${JSON.stringify(plan)}`,
+      ].join('\n'),
       { artifactId: accepted.id, version: plan.version, fingerprint: acceptedFingerprint },
     )
     this.options.repositories.sessions.transition(input.sessionId, ['awaiting_review'], 'queued', created.id)

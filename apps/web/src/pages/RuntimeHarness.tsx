@@ -155,6 +155,8 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
       center: [76.8165, 30.412],
       zoom: 9,
       attributionControl: false,
+      antialias: true,
+      preserveDrawingBuffer: true,
     });
     const handleLoad = () => {
       nextMap.resize();
@@ -178,6 +180,11 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
     timeMs,
   });
   const status = mapboxToken ? runtime.status : 'error';
+  const runtimeErrorMessage = runtime.error
+    ? runtime.error instanceof Error
+      ? runtime.error.message
+      : String(runtime.error)
+    : undefined;
 
   return (
     <div className="fixed inset-0 bg-background">
@@ -185,6 +192,7 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
         ref={mapRootRef}
         data-testid="runtime-map"
         className="absolute inset-0"
+        style={{ position: 'absolute', inset: 0 }}
       />
       <div
         ref={overlayRootRef}
@@ -255,6 +263,7 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
         <span
           data-testid="runtime-status"
           data-status={status}
+          data-error-message={runtimeErrorMessage}
           className="w-12 text-xs text-muted-foreground"
         >
           {status}

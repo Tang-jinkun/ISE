@@ -17,6 +17,7 @@ vi.mock('@/config/public-env', () => ({
 vi.mock('@/hooks/useSceneRuntime', () => ({
   useSceneRuntime: vi.fn(() => ({
     status: 'ready',
+    error: null,
     currentTimeMs: 0,
     play: vi.fn().mockResolvedValue(undefined),
     pause: vi.fn(),
@@ -113,6 +114,27 @@ describe('RuntimeHarness source selection', () => {
 
     expect(getScene).not.toHaveBeenCalled();
     expectRuntimeConfig(RUNTIME_MAIN_CONFIG);
+  });
+
+  it('exposes a runtime load error without adding visible diagnostic UI', () => {
+    vi.mocked(useSceneRuntime).mockReturnValueOnce({
+      runtime: null,
+      status: 'error',
+      error: new Error('Model asset failed to load'),
+      currentTimeMs: 0,
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      replay: vi.fn().mockResolvedValue(undefined),
+      seek: vi.fn().mockResolvedValue(undefined),
+    });
+
+    renderHarness('?fixture=runtime-main');
+
+    expect(screen.getByTestId('runtime-status')).toHaveAttribute(
+      'data-error-message',
+      'Model asset failed to load',
+    );
+    expect(screen.queryByText('Model asset failed to load')).not.toBeInTheDocument();
   });
 
   it('isolates runtime-catalog calibration from the normal runtime controller', () => {

@@ -341,6 +341,30 @@ it('produces the identical entity transform when applying the same seek time aga
   expect(transformSnapshot(clones[0]!)).toEqual(first);
 });
 
+it('exposes the applied GLB transform and trajectory orientation as a readonly frame snapshot', async () => {
+  const { runtime } = modelHarness();
+  await runtime.load([rafale('one')], [modelTrackFor('one')]);
+
+  runtime.apply(1_750);
+
+  expect(runtime.getFrameSnapshot()).toEqual([
+    expect.objectContaining({
+      entityId: 'one',
+      modelAssetId: 'model:rafale',
+      visible: true,
+      longitude: 76.375,
+      latitude: 30,
+      altitudeM: 1_037.5,
+      position: [0.25, 0.5, 0.0010375],
+      headingDeg: expect.any(Number),
+      pitchDeg: expect.any(Number),
+      quaternion: expect.toSatisfy(
+        (value: number[]) => value.length === 4 && value.some((part) => part !== 0),
+      ),
+    }),
+  ]);
+});
+
 it('clones mesh materials per entity so state changes stay isolated', async () => {
   const templateMaterial = new THREE.MeshStandardMaterial({
     color: 0x88aacc,

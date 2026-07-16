@@ -148,6 +148,19 @@ function sceneRuntimeHarness(
       }
       return [{ entityId: 'aircraft-1', coordinates: [[76, 30] as const] }];
     }),
+    getFrameSnapshot: vi.fn(() => [
+      {
+        entityId: 'aircraft-1',
+        visible: true,
+        longitude: 76.25,
+        latitude: 30.5,
+        altitudeM: 1_050,
+        headingDeg: 92,
+        pitchDeg: 4,
+        position: [0.25, 0.5, 0.00105] as [number, number, number],
+        quaternion: [0, 0, 0.7, 0.7] as [number, number, number, number],
+      },
+    ]),
     dispose: vi.fn(),
   };
   let unlockAttempt = 0;
@@ -275,6 +288,15 @@ it('applies clock frames in map, model, trail, overlay order', async () => {
     'overlay.apply:250:playing:tick',
   ]);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('250');
+  expect(JSON.parse(harness.overlayRoot.dataset.runtimeModels ?? '')).toEqual([
+    expect.objectContaining({
+      entityId: 'aircraft-1',
+      visible: true,
+      headingDeg: 92,
+      pitchDeg: 4,
+      position: [0.25, 0.5, 0.00105],
+    }),
+  ]);
 });
 
 it('unlocks media before starting the clock and applies a playing frame', async () => {
