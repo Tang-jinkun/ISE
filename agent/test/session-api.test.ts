@@ -457,6 +457,34 @@ test('session ownership is checked on session, artifacts, and SSE', async () => 
   database.close()
 })
 
+test('model factory snapshots the owning subject when a turn starts', async () => {
+  const database = await AgentDatabase.open(':memory:', 'sql.js')
+  const repositories = new AgentRepositories(database)
+  const modelInputs: Array<{ sessionId: string; subject: string }> = []
+  const app = await createHttpApp({
+    repositories,
+    nest: new TestNestGateway(),
+    modelFactory: input => {
+      modelInputs.push(input as unknown as { sessionId: string; subject: string })
+      return { complete: async () => ({ content: 'done' }) }
+    },
+  })
+  const sessionId = await createSession(app, 'user-model-owner')
+
+  const response = await app.inject({
+    method: 'POST',
+    url: `/sessions/${sessionId}/messages`,
+    headers: bearer('user-model-owner'),
+    payload: { content: '生成态势场景' },
+  })
+  assert.equal(response.statusCode, 202)
+  await waitFor(() => modelInputs.length === 1, 'Model factory was not called')
+
+  assert.deepEqual(modelInputs, [{ sessionId, subject: 'user-model-owner' }])
+  await app.close()
+  database.close()
+})
+
 test('turns endpoint returns linked public messages and persisted outcome', async () => {
   const f = await fixture()
   const sessionId = await createSession(f.app)

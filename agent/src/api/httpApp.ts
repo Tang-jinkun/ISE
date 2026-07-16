@@ -10,14 +10,18 @@ import { ReviewService } from '../session/reviewService.ts'
 import { mapAgentError } from './errors.ts'
 import { registerReviewRoutes } from './reviewRoutes.ts'
 import { registerSessionRoutes } from './sessionRoutes.ts'
+import { registerModelConfigRoutes } from './modelConfigRoutes.ts'
+import { ModelConfigStore } from '../model/modelConfig.ts'
 
 export interface CreateHttpAppOptions {
   repositories: AgentRepositories
   nest: NestGateway
-  modelFactory: (sessionId: string) => ModelAdapter
+  modelFactory: (input: { sessionId: string; subject: string }) => ModelAdapter
   skills?: SkillRegistry
   workspace?: string
   events?: EventBroker
+  modelConfigs?: ModelConfigStore
+  modelFetch?: typeof fetch
 }
 
 async function loadSkills(): Promise<SkillRegistry> {
@@ -57,5 +61,10 @@ export async function createHttpApp(options: CreateHttpAppOptions): Promise<Fast
   })
   await registerSessionRoutes(app, { repositories: options.repositories, nest: options.nest, runner, events })
   await registerReviewRoutes(app, { nest: options.nest, reviews })
+  await registerModelConfigRoutes(app, {
+    nest: options.nest,
+    modelConfigs: options.modelConfigs ?? new ModelConfigStore(),
+    fetch: options.modelFetch,
+  })
   return app
 }

@@ -1,7 +1,7 @@
 import type { Diagnostic } from '@ise/agent-core'
 
 const publicCodePattern = /^[A-Z][A-Z0-9_]{0,63}$/
-const knownPublicCode = /^(?:AGENT_RUN_FAILED|RUN_[A-Z0-9_]+|ASSET_[A-Z0-9_]+|REQUIRED_ASSET_[A-Z0-9_]+|OPTIONAL_ASSET_[A-Z0-9_]+|COMPILED_[A-Z0-9_]+|COMPILATION_[A-Z0-9_]+|RUNTIME_[A-Z0-9_]+|NARRATIVE_[A-Z0-9_]+|CAPABILITY_[A-Z0-9_]+|COMMAND_[A-Z0-9_]+|LINEAGE_[A-Z0-9_]+|OUTPUT_[A-Z0-9_]+|DUPLICATE_[A-Z0-9_]+|ENTITY_[A-Z0-9_]+|EVENT_UNIT_[A-Z0-9_]+|SOURCE_EVENT_PLAN_[A-Z0-9_]+)$/
+const knownPublicCode = /^(?:AGENT_RUN_FAILED|RUN_[A-Z0-9_]+|MODEL_[A-Z0-9_]+|ASSET_[A-Z0-9_]+|REQUIRED_ASSET_[A-Z0-9_]+|OPTIONAL_ASSET_[A-Z0-9_]+|COMPILED_[A-Z0-9_]+|COMPILATION_[A-Z0-9_]+|RUNTIME_[A-Z0-9_]+|NARRATIVE_[A-Z0-9_]+|CAPABILITY_[A-Z0-9_]+|COMMAND_[A-Z0-9_]+|LINEAGE_[A-Z0-9_]+|OUTPUT_[A-Z0-9_]+|DUPLICATE_[A-Z0-9_]+|ENTITY_[A-Z0-9_]+|EVENT_UNIT_[A-Z0-9_]+|SOURCE_EVENT_PLAN_[A-Z0-9_]+)$/
 
 export function publicFailureCode(value: unknown): string {
   return typeof value === 'string' && publicCodePattern.test(value) && knownPublicCode.test(value)
@@ -11,6 +11,7 @@ export function publicFailureCode(value: unknown): string {
 
 export function publicFailureMessage(code: string): string {
   if (code === 'RUN_CANCELLED') return 'Run cancelled by the session owner'
+  if (code === 'MODEL_NOT_CONFIGURED') return 'Model is not configured'
   if (/ASSET|COMPIL|RUNTIME|NARRATIVE|CAPABILITY|COMMAND|LINEAGE|OUTPUT/.test(code)) {
     return 'Replay compilation failed'
   }

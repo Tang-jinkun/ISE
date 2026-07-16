@@ -44,7 +44,7 @@ import { classifyRequestKind, type SessionRequestKind } from './requestKind.ts'
 export interface SessionAgentRunnerOptions {
   repositories: AgentRepositories
   nest: NestGateway
-  modelFactory: (sessionId: string) => ModelAdapter
+  modelFactory: (input: { sessionId: string; subject: string }) => ModelAdapter
   skills: SkillRegistry
   workspace: string
   events?: EventBroker
@@ -171,10 +171,12 @@ export class SessionAgentRunner {
       if (current.status === 'queued') {
         this.options.repositories.sessions.transition(run.sessionId, ['queued'], 'running', run.id)
       }
+      const session = this.options.repositories.sessions.get(run.sessionId)
+      if (!session) throw agentError(404, 'SESSION_NOT_FOUND')
       const artifacts = new PersistentArtifactStore(run.sessionId, this.options.repositories.artifacts, run.id)
       let compiledArtifactInvalid = false
       const result = await new IseAgentHost({
-        model: this.options.modelFactory(run.sessionId),
+        model: this.options.modelFactory({ sessionId: run.sessionId, subject: session.subject }),
         tools: createSessionToolRegistry({
           attachmentReader: new SessionAttachmentReader(
             run.sessionId,

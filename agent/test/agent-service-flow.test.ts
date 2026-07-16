@@ -119,7 +119,7 @@ async function service(modelAvailability: 'available' | 'missing' = 'available')
   const app = await createHttpApp({
     repositories,
     nest,
-    modelFactory: sessionId => new FlowModel(sessionId, repositories, parsed.document.documentId, evidenceIds),
+    modelFactory: ({ sessionId }) => new FlowModel(sessionId, repositories, parsed.document.documentId, evidenceIds),
   })
   return { app, database, repositories }
 }
