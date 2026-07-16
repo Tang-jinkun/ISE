@@ -37,15 +37,21 @@ function runPowerShell(
   childEnvironment: Record<string, string>,
   errorCode: CredentialErrorCode,
 ): string {
-  const result = spawnSync(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-    {
-      env: { ...process.env, ...childEnvironment },
-      encoding: 'utf8',
-      windowsHide: true,
-    },
-  );
+  const result = (() => {
+    try {
+      return spawnSync(
+        'powershell.exe',
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+        {
+          env: { ...process.env, ...childEnvironment },
+          encoding: 'utf8',
+          windowsHide: true,
+        },
+      );
+    } catch {
+      throw new CredentialProtectorError(errorCode);
+    }
+  })();
   if (result.error !== undefined || result.status !== 0) {
     throw new CredentialProtectorError(errorCode);
   }
