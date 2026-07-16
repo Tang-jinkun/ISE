@@ -112,6 +112,9 @@ export default function Preview() {
         onPlay={() => void runtime.play().catch(() => undefined)}
         onPause={runtime.pause}
         onReplay={() => void runtime.replay().catch(() => undefined)}
+        onSeek={(timeSeconds) => {
+          void runtime.seek(timeSeconds * 1_000).catch(() => undefined);
+        }}
         runtimeReady={runtime.status === 'ready'}
         mode="preview"
       />

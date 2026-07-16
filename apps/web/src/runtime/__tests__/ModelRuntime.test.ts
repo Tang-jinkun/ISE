@@ -492,11 +492,11 @@ it('renders with the Mapbox canvas and shared WebGL context', async () => {
   const { map, renderers, createRenderer, runtime } = modelHarness();
   await runtime.load([rafale('one')], [modelTrackFor('one')]);
   const layer = map.getLayer('ise-model-runtime') as {
-    render(gl: unknown, matrix: number[]): void;
+    render(gl: unknown, matrix: Float64Array): void;
   };
   const renderer = renderers[0]!;
 
-  layer.render({}, new THREE.Matrix4().identity().toArray());
+  layer.render({}, new Float64Array(new THREE.Matrix4().identity().toArray()));
 
   expect(createRenderer).toHaveBeenCalledWith({
     canvas: map.getCanvas(),
@@ -506,6 +506,35 @@ it('renders with the Mapbox canvas and shared WebGL context', async () => {
   expect(renderer.autoClear).toBe(false);
   expect(renderer.resetState).toHaveBeenCalledTimes(1);
   expect(renderer.render).toHaveBeenCalledTimes(1);
+});
+
+it('renders with the MapLibre projection payload', async () => {
+  const { map, renderers, runtime } = modelHarness();
+  await runtime.load([rafale('one')], [modelTrackFor('one')]);
+  const layer = map.getLayer('ise-model-runtime') as {
+    render(
+      gl: unknown,
+      payload: {
+        defaultProjectionData: { mainMatrix: Float32Array };
+      },
+    ): void;
+  };
+  const renderer = renderers[0]!;
+
+  layer.render({}, {
+    defaultProjectionData: {
+      mainMatrix: new Float32Array(
+        new THREE.Matrix4().identity().toArray(),
+      ),
+    },
+  });
+
+  expect(renderer.resetState).toHaveBeenCalledTimes(1);
+  expect(renderer.render).toHaveBeenCalledTimes(1);
+  const renderedCamera = renderer.render.mock.calls[0]![1] as THREE.Camera;
+  expect(renderedCamera.projectionMatrix.elements).toEqual(
+    new THREE.Matrix4().identity().elements,
+  );
 });
 
 it('re-adds the custom layer after style reload and repaints after apply', async () => {

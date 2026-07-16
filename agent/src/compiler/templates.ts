@@ -225,3 +225,62 @@ export function expandSupplementalRequirement(
     informationCards: expanded.informationCards,
   }
 }
+
+export function expandRequestedMedia(
+  mediaIntents: readonly string[],
+  context: TemplateContext,
+  existingCommands: readonly CommandDraft[],
+): TemplateExpansion {
+  const commands: CommandDraft[] = []
+  const informationCards: InformationCardDraft[] = []
+  const common = (kind: 'image' | 'video', targetId: string) => ({
+    commandId: `cmd:${safeId(context.eventUnit.eventUnitId)}:${safeId(context.requirement.requirementId)}:media:${kind}`,
+    eventUnitId: context.eventUnit.eventUnitId,
+    targetId,
+    dependsOn: [] as string[],
+    onFailure: 'abort' as const,
+    evidenceRefs: [...context.eventUnit.evidenceRefs],
+  })
+  if (mediaIntents.includes('image') && !existingCommands.some(command => command.type === 'image.show')) {
+    if (context.imageAssetId) commands.push({
+      ...common('image', 'overlay:summary'),
+      type: 'image.show',
+      params: {
+        assetId: context.imageAssetId,
+        layout: { xPct: 65, yPct: 8, widthPct: 30, heightPct: 30, zIndex: 20, opacity: 1, fit: 'contain' },
+        enter: 'fade',
+        exit: 'fade',
+      },
+      desiredDurationMs: 5_000,
+    })
+    else informationCards.push({
+      cardId: `card:${safeId(context.eventUnit.eventUnitId)}:${safeId(context.requirement.requirementId)}:media:image`,
+      eventUnitId: context.eventUnit.eventUnitId,
+      text: 'Summary image unavailable',
+      evidenceRefs: [...context.eventUnit.evidenceRefs],
+      desiredDurationMs: 4_000,
+    })
+  }
+  if (mediaIntents.includes('video') && !existingCommands.some(command => command.type === 'video.play')) {
+    if (context.videoAssetId) commands.push({
+      ...common('video', 'overlay:video'),
+      type: 'video.play',
+      params: {
+        assetId: context.videoAssetId,
+        layout: { xPct: 60, yPct: 5, widthPct: 35, heightPct: 30, zIndex: 20, opacity: 1, fit: 'contain' },
+        volume: 0,
+        playbackRate: 1,
+        loop: false,
+      },
+      desiredDurationMs: 6_000,
+    })
+    else informationCards.push({
+      cardId: `card:${safeId(context.eventUnit.eventUnitId)}:${safeId(context.requirement.requirementId)}:media:video`,
+      eventUnitId: context.eventUnit.eventUnitId,
+      text: 'Engagement video unavailable',
+      evidenceRefs: [...context.eventUnit.evidenceRefs],
+      desiredDurationMs: 4_000,
+    })
+  }
+  return { commands, informationCards }
+}

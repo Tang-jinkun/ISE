@@ -134,6 +134,25 @@ class CompilerCallingModel implements ModelAdapter {
   }
 }
 
+class LongEvidenceInspectionModel implements ModelAdapter {
+  calls = 0
+
+  async complete(): Promise<ModelResponse> {
+    this.calls += 1
+    if (this.calls <= 21) {
+      return {
+        content: '',
+        toolCalls: [{
+          id: `inspect-${this.calls}`,
+          name: 'inspect_report_evidence',
+          input: { query: `evidence-query-${this.calls}` },
+        }],
+      }
+    }
+    return { content: 'Evidence inspection completed.' }
+  }
+}
+
 async function fixture(model: ModelAdapter = { complete: async () => ({ content: 'done' }) }) {
   const database = await AgentDatabase.open(':memory:', 'sql.js')
   const repositories = new AgentRepositories(database)
@@ -821,6 +840,54 @@ test('a factual question about an existing scene completes as an answer turn wit
   assert.equal(repositories.messages.get(run.assistantMessageId!)?.content, finalAnswer)
   assert.deepEqual(repositories.artifacts.listByRun(sessionId, run.id), [])
   assert.equal(repositories.events.after(sessionId, '0').at(-1)?.data.finalAnswer, finalAnswer)
+  await app.close()
+  database.close()
+})
+
+test('the session service can continue beyond 20 evidence-inspection turns', async () => {
+  const model = new LongEvidenceInspectionModel()
+  const { app, database, repositories } = await fixture(model)
+  const sessionId = await createSession(app)
+  new PersistentArtifactStore(sessionId, repositories.artifacts).createMany([
+    {
+      id: 'existing-runtime-for-long-inspection',
+      type: COMPILED_RUNTIME_ARTIFACT,
+      createdBy: 'tool',
+      logicalKey: 'compiled-runtime:long-inspection',
+      data: { sceneProjectConfig: { totalDurationMs: 180_000 } },
+    },
+    {
+      id: 'evidence-for-long-inspection',
+      type: EVIDENCE_IR_ARTIFACT,
+      createdBy: 'tool',
+      logicalKey: 'evidence:long-inspection',
+      data: {
+        schemaVersion: 'evidence-ir/v1',
+        documentId: 'long-inspection-document',
+        records: [{
+          evidenceId: 'long-inspection-record',
+          sourceRef: 'paragraph-1',
+          claim: 'The scene contains aircraft.',
+          kind: 'explicit_fact',
+          entities: ['aircraft'],
+          confidence: 1,
+          ambiguities: [],
+        }],
+      },
+    },
+  ])
+
+  const queued = await app.inject({
+    method: 'POST',
+    url: `/sessions/${sessionId}/messages`,
+    headers: bearer('user-1'),
+    payload: { content: '这个场景有多长？' },
+  })
+  assert.equal(queued.statusCode, 202)
+  await waitForTerminal(repositories, sessionId)
+
+  assert.equal(model.calls, 22)
+  assert.equal(repositories.runs.get(queued.json().runId)?.status, 'completed')
   await app.close()
   database.close()
 })

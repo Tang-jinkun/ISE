@@ -23,6 +23,10 @@ const mapboxMock = vi.hoisted(() => {
   return { instance, Map };
 });
 
+const mapEngineMock = vi.hoisted(() => ({
+  createBaseMap: vi.fn(() => mapboxMock.instance),
+}));
+
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
   disconnect() {}
@@ -53,6 +57,8 @@ vi.mock('mapbox-gl', () => ({
     Map: mapboxMock.Map,
   },
 }));
+
+vi.mock('@/lib/mapEngine', () => mapEngineMock);
 
 vi.mock('./RuntimeCatalogCalibrationViewport', () => ({
   RuntimeCatalogCalibrationViewport: ({
@@ -98,6 +104,7 @@ describe('RuntimeHarness source selection', () => {
     vi.mocked(getScene).mockReset();
     vi.mocked(useSceneRuntime).mockClear();
     mapboxMock.Map.mockClear();
+    mapEngineMock.createBaseMap.mockClear();
   });
 
   it('loads sceneId before a fixture and passes its valid config to the runtime', async () => {
@@ -137,9 +144,10 @@ describe('RuntimeHarness source selection', () => {
 
     expect(getScene).not.toHaveBeenCalled();
     expectRuntimeConfig(RUNTIME_MAIN_CONFIG);
-    expect(mapboxMock.Map).toHaveBeenCalledWith(
+    expect(mapEngineMock.createBaseMap).toHaveBeenCalledWith(
       expect.objectContaining({
-        style: expect.objectContaining({ version: 8 }),
+        center: [76.8165, 30.412],
+        preserveDrawingBuffer: true,
       }),
     );
   });

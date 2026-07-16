@@ -438,6 +438,21 @@ test('every primary SceneBeat binds one existing subtitle and its EventUnit', ()
   }
 })
 
+test('derives media intents and adds a default summary image to the final beat', () => {
+  const fixture = planningFixture()
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.mediaIntents,
+    [],
+  )
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:launch')?.mediaIntents,
+    ['video', 'image'],
+  )
+})
+
 function planningFixtureWithParticipants(
   participantsByEvent: Partial<Record<string, string[]>>,
 ) {
@@ -797,6 +812,39 @@ test('compileChoreography binds one shot and exact 800ms visual lead to every na
       }],
     )
   }
+})
+
+test('compileChoreography keeps an actorless subtitle beat by using the nearest scene subjects', () => {
+  const planning = planningFixture()
+  planning.narrativePlan.subtitles.splice(2, 0, {
+    subtitleId: 'subtitle:status',
+    eventUnitId: 'event:launch',
+    text: 'The status explanation remains grounded in the launch event.',
+    evidenceRefs: ['ev-launch'],
+    importance: 'medium',
+  })
+  const narrationPlan = buildNarrationPlan(planning)
+  const generatedBlueprint = buildSceneBlueprint({ ...planning, narrationPlan })
+  const sceneBeats = generatedBlueprint.sceneBeats.map((beat, index) => index === 2
+    ? { ...beat, actorRefs: [] }
+    : beat)
+  const blueprint = { ...generatedBlueprint, sceneBeats }
+  const assetRegistry = resolutionRegistry()
+  const resolvedScenePlan = resolveSceneBlueprint({ blueprint, assetRegistry })
+
+  const choreography = compileChoreography({
+    narrationPlan,
+    sceneBlueprint: blueprint,
+    resolvedScenePlan,
+    assetRegistry,
+  })
+
+  const previous = choreography.shotPlan.find(shot => shot.subtitleId === 'subtitle:launch')
+  const status = choreography.shotPlan.find(shot => shot.subtitleId === 'subtitle:status')
+  assert.ok(previous)
+  assert.ok(status)
+  assert.deepEqual(status.subjectRefs, previous.subjectRefs)
+  assert.deepEqual(status.sceneBeatRefs, [sceneBeats[2]!.sceneBeatId])
 })
 
 test('compileChoreography rejects synthesized trajectory diagnostics instead of hiding them', () => {

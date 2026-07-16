@@ -203,6 +203,7 @@ export class SessionAgentRunner {
         }),
         skills: this.options.skills,
         workspace: this.options.workspace,
+        maxTurns: 32,
         artifacts,
         domainState: new PersistentDomainStateStore(run.sessionId, this.options.repositories.sessions),
         eventSink: new PublicEventSink(run.sessionId, this.events, run.id, false),

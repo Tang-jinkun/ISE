@@ -21,6 +21,7 @@ import { capabilityManifest } from './capabilityManifest.ts'
 import {
   cameraParamsForBounds,
   expandRequirement,
+  expandRequestedMedia,
   expandSupplementalRequirement,
   inferTemplateFromStateChange,
   type CameraProfile,
@@ -519,10 +520,13 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const entity = actorId ? entities.find(candidate => candidate.entityId === actorId) : entities[0]
     if (!unit || !entity) fail('EVENT_UNIT_NOT_FOUND', requirement.eventUnitId)
     const template = requirement.preferredTemplate ?? inferTemplateFromStateChange(requirement)
-    const image = template === 'return_and_summary' || template === 'status_explanation'
+    const mediaIntents = beat?.mediaIntents ?? []
+    const image = mediaIntents.includes('image') || template === 'return_and_summary' || template === 'status_explanation'
       ? selectAsset(registry, 'image', requirement)
       : undefined
-    const video = template === 'attack_chain' ? selectAsset(registry, 'video', requirement) : undefined
+    const video = mediaIntents.includes('video') || template === 'attack_chain'
+      ? selectAsset(registry, 'video', requirement)
+      : undefined
     const geojson = template === 'electronic_warfare' ? selectAsset(registry, 'geojson', requirement) : undefined
     const expansion = expandSupplementalRequirement(requirement, {
       eventUnit: unit,
@@ -538,6 +542,21 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     })
     commands.push(...expansion.commands)
     informationCards.push(...expansion.informationCards)
+    const requestedMedia = expandRequestedMedia(mediaIntents, {
+      requirement,
+      eventUnit: unit,
+      entity,
+      modelAssetId: entity.modelAssetId,
+      trajectoryAssetId: entity.defaultTrajectoryAssetId,
+      trajectoryBounds: entity.defaultTrajectoryAssetId
+        ? routeBounds(assetRegistry, entity.defaultTrajectoryAssetId)
+        : undefined,
+      imageAssetId: assetId(image, 'image'),
+      videoAssetId: assetId(video, 'video'),
+      geojsonAssetId: assetId(geojson, 'geojson'),
+    }, expansion.commands)
+    commands.push(...requestedMedia.commands)
+    informationCards.push(...requestedMedia.informationCards)
   }
 
   const scheduled = scheduleNarrative({

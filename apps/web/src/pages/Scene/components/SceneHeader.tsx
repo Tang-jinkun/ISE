@@ -25,6 +25,7 @@ interface SceneHeaderProps {
   onPlay?: () => void;
   onPause?: () => void;
   onReplay?: () => void;
+  onSeek?: (timeSeconds: number) => void;
   runtimeReady?: boolean;
   projectId?: string | null;
   mode?: 'edit' | 'preview';
@@ -45,6 +46,7 @@ export function SceneHeader({
   onPlay,
   onPause,
   onReplay,
+  onSeek,
   runtimeReady = false,
   projectId,
   mode = 'edit'
@@ -133,6 +135,20 @@ export function SceneHeader({
               {formatTime(currentTime)} / {formatTime(totalDuration)}
             </span>
           </div>
+          {mode === 'preview' && (
+            <input
+              type="range"
+              min={0}
+              max={totalDuration}
+              step={0.001}
+              value={Math.min(totalDuration, Math.max(0, currentTime))}
+              aria-label="场景时间线"
+              data-testid="scene-runtime-seek"
+              className="ml-2 h-1 w-36 cursor-pointer accent-cyan-500"
+              disabled={!runtimeReady}
+              onChange={(event) => onSeek?.(Number(event.target.value))}
+            />
+          )}
         </div>
         <ThemeToggle />
         {mode === 'edit' && (

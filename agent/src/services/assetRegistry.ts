@@ -39,7 +39,11 @@ function aliasDiagnostics(assets: readonly AssetRegistryEntry[]): CompilationDia
   return [...aliases.entries()]
     .filter(([, ids]) => ids.size > 1)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([alias, ids]) => diagnostic('ASSET_ALIAS_CONFLICT', `Alias ${alias} maps to ${[...ids].sort().join(', ')}`))
+    .map(([alias, ids]) => diagnostic(
+      'ASSET_ALIAS_CONFLICT',
+      `Alias ${alias} maps to ${[...ids].sort().join(', ')}`,
+      'warning',
+    ))
 }
 
 export function createAssetRegistrySnapshot(input: unknown): AssetRegistrySnapshot {
@@ -80,7 +84,11 @@ export class AssetRegistry {
     for (const [alias, ids] of aliasSets) this.aliases.set(alias, [...ids].sort())
     for (const [alias, assetIds] of this.aliases) {
       if (assetIds.length > 1 && !this.diagnostics.some(item => item.code === 'ASSET_ALIAS_CONFLICT' && item.message.includes(alias))) {
-        this.diagnostics.push(diagnostic('ASSET_ALIAS_CONFLICT', `Alias ${alias} maps to ${assetIds.join(', ')}`))
+        this.diagnostics.push(diagnostic(
+          'ASSET_ALIAS_CONFLICT',
+          `Alias ${alias} maps to ${assetIds.join(', ')}`,
+          'warning',
+        ))
       }
     }
     this.diagnostics.sort((left, right) => `${left.code}:${left.message}`.localeCompare(`${right.code}:${right.message}`))

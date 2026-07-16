@@ -91,12 +91,30 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       formationPattern: groups.get(groupRef)?.formationPattern ?? 'formation',
     }]
   }))
+  const subjectsForBeat = (beat: SceneBlueprint['sceneBeats'][number]) => resolvedScenePlan.resolvedActors
+    .filter(actor => beat.actorRefs.includes(actor.actorGroupRef))
+    .map(actor => actor.actorInstanceId)
+  const nearestSubjectRefs = (beatIndex: number): string[] => {
+    const direct = subjectsForBeat(sceneBlueprint.sceneBeats[beatIndex]!)
+    if (direct.length > 0) return direct
+    for (let distance = 1; distance < sceneBlueprint.sceneBeats.length; distance++) {
+      const previous = sceneBlueprint.sceneBeats[beatIndex - distance]
+      if (previous) {
+        const subjects = subjectsForBeat(previous)
+        if (subjects.length > 0) return subjects
+      }
+      const next = sceneBlueprint.sceneBeats[beatIndex + distance]
+      if (next) {
+        const subjects = subjectsForBeat(next)
+        if (subjects.length > 0) return subjects
+      }
+    }
+    return []
+  }
   const shotPlan = narrationPlan.beats.map(narrationBeat => {
     const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.subtitleId === narrationBeat.subtitleId)
     if (!sceneBeat) fail('NARRATION_SCENE_BEAT_UNBOUND', narrationBeat.subtitleId)
-    const subjectRefs = resolvedScenePlan.resolvedActors
-      .filter(actor => sceneBeat.actorRefs.includes(actor.actorGroupRef))
-      .map(actor => actor.actorInstanceId)
+    const subjectRefs = nearestSubjectRefs(sceneBlueprint.sceneBeats.indexOf(sceneBeat))
     if (subjectRefs.length === 0) fail('SCENE_BEAT_SUBJECTS_EMPTY', sceneBeat.sceneBeatId)
     return {
       shotId: `shot:${sceneBeat.sceneBeatId}`,

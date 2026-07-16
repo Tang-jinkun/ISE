@@ -50,7 +50,9 @@ function Get-ContainerEnvironmentValue {
 function Get-ComposeLabel {
   param($Inspect)
   if ($null -eq $Inspect -or $null -eq $Inspect.Config.Labels) { return $null }
-  return $Inspect.Config.Labels.'com.docker.compose.project'
+  $property = $Inspect.Config.Labels.PSObject.Properties['com.docker.compose.project']
+  if ($null -eq $property) { return $null }
+  return $property.Value
 }
 
 function Assert-LegacyVolume {

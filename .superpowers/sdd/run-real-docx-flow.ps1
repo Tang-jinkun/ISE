@@ -332,9 +332,14 @@ function Assert-ActualArtifactSchemas {
     $SceneProjectConfig,
     [string]$RepoRoot
   )
-  $tsx = Join-Path $RepoRoot 'node_modules/.bin/tsx.cmd'
-  if (-not (Test-Path -LiteralPath $tsx -PathType Leaf)) {
-    Fail-Flow 'REAL_DEMO_TSX_MISSING' 'node_modules/.bin/tsx.cmd is required for exact artifact validation.'
+  $tsxCandidates = @((Join-Path $RepoRoot 'node_modules/.bin/tsx.cmd'))
+  $gitCommonDir = & git -C $RepoRoot rev-parse --path-format=absolute --git-common-dir 2>$null
+  if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitCommonDir)) {
+    $tsxCandidates += Join-Path (Split-Path ([string]$gitCommonDir.Trim()) -Parent) 'node_modules/.bin/tsx.cmd'
+  }
+  $tsx = $tsxCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+  if ([string]::IsNullOrWhiteSpace($tsx)) {
+    Fail-Flow 'REAL_DEMO_TSX_MISSING' 'A workspace node_modules/.bin/tsx.cmd is required for exact artifact validation.'
   }
   $payload = ConvertTo-JsonText ([ordered]@{
     eventPlan = $EventPlan
@@ -486,7 +491,7 @@ function Select-CorrelatedArtifacts {
 }
 
 function Assert-FinalDomainInvariants {
-  param($Selection)
+  param($Selection, [int]$ExpectedActorCount = 0)
   $blueprint = Get-PropertyValue $Selection.SceneBlueprint 'data'
   $resolved = Get-PropertyValue $Selection.ResolvedScenePlan 'data'
   $choreography = Get-PropertyValue $Selection.ChoreographyPlan 'data'
@@ -499,6 +504,9 @@ function Assert-FinalDomainInvariants {
   $assignments = @(Get-PropertyValue $resolved 'actorRouteAssignments')
   if ($actorGroups.Count -le 1 -or $resolvedActors.Count -le 1 -or $assignments.Count -ne $resolvedActors.Count) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The generated scene must contain multiple actor groups and one route assignment per resolved actor.'
+  }
+  if ($ExpectedActorCount -gt 0 -and $resolvedActors.Count -ne $ExpectedActorCount) {
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' "Expected exactly $ExpectedActorCount resolved actors from the source report, received $($resolvedActors.Count)."
   }
 
   $actorIds = @($resolvedActors | ForEach-Object { Get-PropertyValue $_ 'actorInstanceId' } | Sort-Object -Unique)
@@ -521,6 +529,11 @@ function Assert-FinalDomainInvariants {
   )
   if (@($diagnostics | Where-Object { (Get-PropertyValue $_ 'code') -eq 'TRAJECTORY_SYNTHESIZED' }).Count -ne 0) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Synthesized trajectories are forbidden.'
+  }
+  if (@($diagnostics | Where-Object {
+    (Get-PropertyValue $_ 'severity') -eq 'error' -or (Get-PropertyValue $_ 'recoverable') -eq $false
+  }).Count -ne 0) {
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Unrecoverable final-plan diagnostics are forbidden.'
   }
 
   $choreographyActorIds = @(@(Get-PropertyValue $choreography 'actorInstances') | ForEach-Object {
@@ -940,7 +953,7 @@ function Invoke-RealFlow {
   }
 
   Assert-CompiledCorrelation $completed.Compiled $completed.Accepted $reviewArtifactId
-  Assert-FinalDomainInvariants $completed
+  Assert-FinalDomainInvariants $completed 13
   $eventPlan = Get-PropertyValue $completed.Accepted 'data'
   $narrationPlan = Get-PropertyValue $completed.Narration 'data'
   $sceneBlueprint = Get-PropertyValue $completed.SceneBlueprint 'data'

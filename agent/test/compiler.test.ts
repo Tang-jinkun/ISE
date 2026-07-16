@@ -454,6 +454,16 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
     && item.sourceArtifactIds.every(id => expectedSources.has(id))))
 })
 
+test('final compiler honors a blueprint image intent when the narrative template is withdrawal', () => {
+  const fixture = multiActorCompilerFixture()
+  fixture.narrativePlan.sceneRequirements.at(-1)!.preferredTemplate = 'withdrawal'
+
+  const imageCommands = compileFinalScene(fixture.input).commands.filter(command => command.type === 'image.show')
+
+  assert.equal(imageCommands.length, 1)
+  assert.equal(imageCommands[0]!.params.assetId, 'image:summary')
+})
+
 test('all nine registered templates compile through the strict command schema', () => {
   const templates: TemplateName[] = [
     'deployment', 'attack_chain', 'interception', 'electronic_warfare', 'counterattack',

@@ -1,5 +1,6 @@
 import type { SceneTrack } from '@ise/runtime-contracts';
-import mapboxgl from 'mapbox-gl';
+import { runtimeMapEngine } from '@/lib/mapEngine';
+import type mapboxgl from 'mapbox-gl';
 import { z } from 'zod';
 import { SceneRuntimeError } from './errors';
 import type { ResourceManager } from './ResourceManager';
@@ -42,7 +43,7 @@ export interface RuntimeTrail {
 }
 
 const browserDependencies: MapRuntimeDependencies = {
-  createMarker: (element) => new mapboxgl.Marker({ element }),
+  createMarker: (element) => new runtimeMapEngine.Marker({ element }),
 };
 
 const geoId = (trackId: string, itemId: string) => `ise:geo:${trackId}:${itemId}`;

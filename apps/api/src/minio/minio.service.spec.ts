@@ -12,6 +12,7 @@ describe('MinioService endpoint selection', () => {
     'MINIO_PORT',
     'MINIO_PUBLIC_ENDPOINT',
     'MINIO_PUBLIC_PORT',
+    'MINIO_REGION',
     'MINIO_ACCESS_KEY',
     'MINIO_SECRET_KEY',
     'MINIO_BUCKET',
@@ -28,6 +29,7 @@ describe('MinioService endpoint selection', () => {
       MINIO_PORT: '9000',
       MINIO_PUBLIC_ENDPOINT: '127.0.0.1',
       MINIO_PUBLIC_PORT: '19000',
+      MINIO_REGION: 'us-east-1',
       MINIO_ACCESS_KEY: 'unit-access-key',
       MINIO_SECRET_KEY: 'unit-secret-key',
       MINIO_BUCKET: 'ise',
@@ -46,7 +48,7 @@ describe('MinioService endpoint selection', () => {
     previousEnvironment.clear();
   });
 
-  it('uses the internal client for bucket access and the public client for signed URLs', async () => {
+  it('uses a region-bound public client to sign without endpoint discovery', async () => {
     const internalClient = {
       bucketExists: jest.fn().mockResolvedValue(true),
       getObject: jest.fn().mockResolvedValue(Readable.from('data')),
@@ -78,6 +80,7 @@ describe('MinioService endpoint selection', () => {
       useSSL: false,
       accessKey: 'unit-access-key',
       secretKey: 'unit-secret-key',
+      region: 'us-east-1',
     });
     expect(internalClient.bucketExists).toHaveBeenCalledWith('ise');
     expect(internalClient.getObject).toHaveBeenCalledWith('ise', 'demo/model.glb');

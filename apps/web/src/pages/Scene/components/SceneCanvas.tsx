@@ -1,10 +1,9 @@
 import { useTheme } from '@/components/theme/ThemeProvider';
+import { createBaseMap } from '@/lib/mapEngine';
 import taskSceneManager from '@/stores/sceneManager';
 import { ChevronRight } from 'lucide-react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import type mapboxgl from 'mapbox-gl';
 import { useEffect, useRef } from 'react';
-import { mapboxToken } from '@/config/public-env';
 
 interface SceneCanvasProps {
   mode?: 'edit' | 'preview';
@@ -32,20 +31,10 @@ export function SceneCanvas({
   }, [onMapDispose, onMapReady]);
 
   useEffect(() => {
-    if (!mapboxToken || !mapRef.current) return;
+    if (!mapRef.current) return;
 
-    const token = mapboxToken;
-
-    if (!token) {
-      mapRef.current.innerHTML =
-        '<div style="color:#9ca3af;font-size:11px;padding:8px">未配置 MAPBOX_TOKEN，无法加载地图</div>';
-      return;
-    }
-
-    mapboxgl.accessToken = token;
-    const map = new mapboxgl.Map({
+    const map = createBaseMap({
       container: mapRef.current,
-      style: 'mapbox://styles/mapbox/satellite-v9',
       center: [110, 30],
       zoom: 3.5,
       attributionControl: false,
@@ -92,10 +81,6 @@ export function SceneCanvas({
   //     );
   //   }
   // }, [theme]);
-
-  if (!mapboxToken) {
-    return <div role="alert">PUBLIC_MAPBOX_TOKEN is not configured.</div>;
-  }
 
   if (mode === 'preview') {
     return (

@@ -297,8 +297,9 @@ test('model config API replaces an unavailable credential with an explicit key',
   f.database.close();
 });
 
-test('production server wires persisted model configs through the Windows protector', async () => {
+test('production server wires persisted model configs through the configured credential protector', async () => {
   const source = await readFile(new URL('../src/server.ts', import.meta.url), 'utf8');
-  assert.match(source, /new WindowsDpapiCredentialProtector\(\)/);
+  assert.match(source, /createCredentialProtector\(\{/);
+  assert.match(source, /AGENT_CREDENTIAL_KEY_FILE:\s*config\.AGENT_CREDENTIAL_KEY_FILE/);
   assert.match(source, /repository:\s*repositories\.modelConfigs/);
 });

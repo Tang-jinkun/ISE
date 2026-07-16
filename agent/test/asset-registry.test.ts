@@ -6,6 +6,7 @@ import {
   assetRegistryEntrySchema,
   assetRegistrySnapshotSchema,
   type AssetRegistryEntry,
+  type AssetRegistrySnapshot,
 } from '../src/contracts/assetRegistry.ts'
 import {
   AssetRegistry,
@@ -187,4 +188,22 @@ test('inspect tool persists metadata only and never emits access secrets', async
   const result = await tool.execute({ aliases: ['JF-17'], limit: 10 }, context)
   assert.equal(result.artifacts?.[0]?.type, 'ise.asset-registry/v1')
   assert.equal(/https?:|objectName|sourceRelativePath|authorization|Bearer/i.test(JSON.stringify(result)), false)
+})
+
+test('inspect tool records unresolved exploratory aliases as recoverable warnings', async () => {
+  const registrySnapshot = snapshot([modelEntry()])
+  const tool = createAssetTools(async () => registrySnapshot)[0]!
+  const context: AgentContext = {
+    workspace: process.cwd(),
+    goal: { objective: 'test', status: 'active', turnCount: 0, maxTurns: 1, evidence: [], remainingIssues: [], startedAt: new Date(0).toISOString() },
+    artifacts: new ArtifactStore(), domainState: new DomainStateStore(),
+  }
+
+  const result = await tool.execute({ aliases: ['unknown-aircraft'], limit: 10 }, context)
+  const artifact = result.artifacts?.[0]?.data as AssetRegistrySnapshot
+  assert.deepEqual(artifact.diagnostics.map(item => ({
+    code: item.code,
+    severity: item.severity,
+    recoverable: item.recoverable,
+  })), [{ code: 'ASSET_NOT_FOUND', severity: 'warning', recoverable: true }])
 })

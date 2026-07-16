@@ -92,6 +92,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
     const controller = new AbortController();
     this.loadController = controller;
     this.state = 'loading';
+    let loadStage: 'map' | 'model' | 'overlay' | 'initial-frame' = 'map';
 
     try {
       const visibleTracks = config.tracks.filter((track) => track.visible);
@@ -100,6 +101,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
         controller.signal,
       );
       this.assertActiveLoad(controller);
+      loadStage = 'model';
       await this.modelRuntime.load(
         config.entities,
         visibleTracks.filter(
@@ -108,6 +110,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
         controller.signal,
       );
       this.assertActiveLoad(controller);
+      loadStage = 'overlay';
       await this.overlayRuntime.load(
         visibleTracks.filter(isOverlayTrack),
         controller.signal,
@@ -118,22 +121,24 @@ export class SceneRuntimeImpl implements SceneRuntime {
       this.withSuppressedClockFrame(() => this.clock.setDuration(config.totalDurationMs));
       this.assertActiveLoad(controller);
       this.state = 'ready';
+      loadStage = 'initial-frame';
       this.applyLifecycleFrame({ timeMs: 0, playing: false, forceMediaSeek: true });
     } catch (error) {
       if (this.isDisposed()) {
         throw disposedError(error);
       }
+      const loadError = normalizeLoadError(error, loadStage);
       this.state = 'disposed';
-      controller.abort(error);
+      controller.abort(loadError);
       try {
         this.disposeOwners();
       } catch (cleanupError) {
         throw new AggregateError(
-          [error, cleanupError],
+          [loadError, cleanupError],
           'Scene runtime load failed and cleanup also failed',
         );
       }
-      throw error;
+      throw loadError;
     } finally {
       if (this.loadController === controller) {
         this.loadController = undefined;
@@ -363,6 +368,17 @@ export class SceneRuntimeImpl implements SceneRuntime {
       throw new AggregateError(errors, 'Failed to dispose scene runtime owners');
     }
   }
+}
+
+function normalizeLoadError(error: unknown, stage: 'map' | 'model' | 'overlay' | 'initial-frame') {
+  if (error instanceof Error) return error;
+  const suffix = error === undefined || error === null
+    ? 'without an error'
+    : `with ${String(error)}`;
+  return new SceneRuntimeError(
+    'RUNTIME_NOT_LOADED',
+    `Scene runtime ${stage} stage failed ${suffix}`,
+  );
 }
 
 function createBrowserDependencies(

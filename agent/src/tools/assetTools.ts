@@ -14,6 +14,14 @@ const inspectReplayAssetsInputSchema = z.strictObject({
 
 const inspectReplayAssetsInputJsonSchema = z.toJSONSchema(inspectReplayAssetsInputSchema, { target: 'draft-2020-12' })
 
+function recordInspectionDiagnostics(registry: AssetRegistry, error: CompilationError) {
+  registry.diagnostics.push(...error.diagnostics.map(item => ({
+    ...item,
+    severity: 'warning' as const,
+    recoverable: true,
+  })))
+}
+
 function selectRegistryEntries(registry: AssetRegistry, query: z.infer<typeof inspectReplayAssetsInputSchema>): AssetRegistryEntry[] {
   const selected = new Map<string, AssetRegistryEntry>()
   for (const assetId of query.assetIds ?? []) {
@@ -22,7 +30,7 @@ function selectRegistryEntries(registry: AssetRegistry, query: z.infer<typeof in
       if (entry) selected.set(entry.assetId, entry)
     } catch (error) {
       if (!(error instanceof CompilationError)) throw error
-      registry.diagnostics.push(...error.diagnostics)
+      recordInspectionDiagnostics(registry, error)
     }
   }
   for (const alias of query.aliases ?? []) {
@@ -31,7 +39,7 @@ function selectRegistryEntries(registry: AssetRegistry, query: z.infer<typeof in
       if (entry) selected.set(entry.assetId, entry)
     } catch (error) {
       if (!(error instanceof CompilationError)) throw error
-      registry.diagnostics.push(...error.diagnostics)
+      recordInspectionDiagnostics(registry, error)
     }
   }
   for (const entityType of query.entityTypes ?? []) {
@@ -40,7 +48,7 @@ function selectRegistryEntries(registry: AssetRegistry, query: z.infer<typeof in
       if (entry) selected.set(entry.assetId, entry)
     } catch (error) {
       if (!(error instanceof CompilationError)) throw error
-      registry.diagnostics.push(...error.diagnostics)
+      recordInspectionDiagnostics(registry, error)
     }
   }
   if (selected.size === 0 && !query.assetIds && !query.aliases && !query.entityTypes) {

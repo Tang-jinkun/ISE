@@ -48,7 +48,8 @@ function deferred<T>() {
 
 function sceneRuntimeHarness(
   options: {
-    modelLoadError?: Error;
+    modelLoadError?: unknown;
+    modelLoadRejects?: boolean;
     modelLoadGate?: Promise<void>;
     unlockError?: Error;
     unlockGates?: Promise<void>[];
@@ -136,8 +137,8 @@ function sceneRuntimeHarness(
         if (options.modelLoadGate) {
           await options.modelLoadGate;
         }
-        if (options.modelLoadError) {
-          throw options.modelLoadError;
+        if (options.modelLoadRejects || options.modelLoadError !== undefined) {
+          return Promise.reject(options.modelLoadError);
         }
       },
     ),
@@ -489,6 +490,20 @@ it('rolls back every component when a critical load rejects', async () => {
 
   expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
   await expect(harness.runtime.play()).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
+});
+
+it('reports the component stage when a load rejects without a reason', async () => {
+  const harness = sceneRuntimeHarness({ modelLoadRejects: true });
+  let failure: unknown;
+
+  try {
+    await harness.runtime.load(validConfig);
+  } catch (error) {
+    failure = error;
+  }
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe('Scene runtime model stage failed without an error');
 });
 
 it('aborts and rolls back once when disposed during an in-flight load', async () => {

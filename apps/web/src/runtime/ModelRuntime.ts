@@ -1,5 +1,6 @@
 import type { ResolvedAssetAccess, SceneEntity, SceneTrack } from '@ise/runtime-contracts';
-import mapboxgl from 'mapbox-gl';
+import { runtimeMapEngine } from '@/lib/mapEngine';
+import type mapboxgl from 'mapbox-gl';
 import * as THREE from 'three';
 import { SceneRuntimeError } from './errors';
 import type { RuntimeTrail } from './MapRuntime';
@@ -86,7 +87,10 @@ const browserModelDependencies: ModelRuntimeDependencies = {
   createRenderer: (options) => new THREE.WebGLRenderer(options),
   cloneScene: (root) => root.clone(true),
   project: (longitude, latitude, altitudeM) =>
-    mapboxgl.MercatorCoordinate.fromLngLat([longitude, latitude], altitudeM),
+    runtimeMapEngine.MercatorCoordinate.fromLngLat(
+      [longitude, latitude],
+      altitudeM,
+    ),
 };
 
 export function reduceModelFrame(
@@ -493,7 +497,16 @@ export class ModelRuntime {
         this.renderer.autoClear = false;
       },
       render: (_gl, matrix) => {
-        this.camera.projectionMatrix.fromArray(matrix as unknown as number[]);
+        const projectionMatrix = Array.isArray(matrix) || ArrayBuffer.isView(matrix)
+          ? matrix
+          : (
+              matrix as unknown as {
+                defaultProjectionData: {
+                  mainMatrix: ArrayLike<number>;
+                };
+              }
+            ).defaultProjectionData.mainMatrix;
+        this.camera.projectionMatrix.fromArray(projectionMatrix);
         this.renderer?.resetState();
         this.renderer?.render(this.scene, this.camera);
       },

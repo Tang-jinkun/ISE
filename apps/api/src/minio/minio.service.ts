@@ -28,6 +28,7 @@ export class MinioService {
       useSSL: false,
       accessKey,
       secretKey,
+      region: process.env.MINIO_REGION || 'us-east-1',
     });
     this.bucketName = process.env.MINIO_BUCKET || 'default';
   }

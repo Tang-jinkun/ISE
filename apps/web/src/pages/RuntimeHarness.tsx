@@ -1,28 +1,15 @@
 import { getScene } from '@/api/scene';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { mapboxToken } from '@/config/public-env';
 import { useSceneRuntime } from '@/hooks/useSceneRuntime';
+import { createBaseMap } from '@/lib/mapEngine';
 import { RUNTIME_CATALOG_CONFIG, RUNTIME_MAIN_CONFIG } from '@/runtime';
 import {
   sceneProjectConfigSchema,
   type SceneProjectConfig,
 } from '@ise/runtime-contracts';
 import { Pause, Play, RotateCcw } from 'lucide-react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-
-const FALLBACK_MAP_STYLE: mapboxgl.StyleSpecification = {
-  version: 8,
-  sources: {},
-  layers: [
-    {
-      id: 'fallback-background',
-      type: 'background',
-      paint: { 'background-color': '#0b1724' },
-    },
-  ],
-};
+import type mapboxgl from 'mapbox-gl';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -160,10 +147,8 @@ function RuntimeHarnessController({ config }: { config: SceneProjectConfig }) {
 
   useEffect(() => {
     if (!mapRootRef.current) return;
-    if (mapboxToken) mapboxgl.accessToken = mapboxToken;
-    const nextMap = new mapboxgl.Map({
+    const nextMap = createBaseMap({
       container: mapRootRef.current,
-      style: mapboxToken ? 'mapbox://styles/mapbox/satellite-v9' : FALLBACK_MAP_STYLE,
       center: [76.8165, 30.412],
       zoom: 9,
       attributionControl: false,

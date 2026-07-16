@@ -290,6 +290,12 @@ if ($selection.Accepted.artifactId -ne 'accepted-1' -or
   throw 'Expected exact correlated final artifact selection.'
 }
 Assert-FinalDomainInvariants $selection
+Assert-FinalDomainInvariants $selection 2
+
+$wrongActorCountRejected = $false
+try { Assert-FinalDomainInvariants $selection 3 }
+catch { $wrongActorCountRejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:' }
+if (-not $wrongActorCountRejected) { throw 'Expected the report-specific actor count invariant to reject drift.' }
 
 function Assert-InvariantRejected {
   param([scriptblock]$Mutate, [string]$Label)
@@ -312,6 +318,12 @@ Assert-InvariantRejected {
   param($value)
   $value.ResolvedScenePlan.data.diagnostics = @([pscustomobject]@{ code = 'TRAJECTORY_SYNTHESIZED' })
 } 'synthesized trajectory diagnostic'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.runtimePlan.diagnostics = @([pscustomobject]@{
+    code = 'ASSET_NOT_FOUND'; severity = 'error'; recoverable = $false
+  })
+} 'unrecoverable runtime diagnostic'
 Assert-InvariantRejected {
   param($value)
   $value.Compiled.data.runtimePlan.entities[1].entityId = 'actor:other'

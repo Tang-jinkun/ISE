@@ -238,6 +238,12 @@ function sceneRequirementByEvent(narrativePlan: NarrativePlan): Map<string, Scen
   return new Map(narrativePlan.sceneRequirements.map(requirement => [requirement.eventUnitId, requirement]))
 }
 
+function mediaIntentsForTemplate(template: SceneRequirement['preferredTemplate']): string[] {
+  if (template === 'attack_chain') return ['video']
+  if (template === 'return_and_summary' || template === 'status_explanation') return ['image']
+  return []
+}
+
 function assertNarrationBinding(input: BuildSceneBlueprintInput): void {
   if (
     input.narrationPlan.sourceEventPlanId !== input.eventPlan.planId
@@ -251,11 +257,15 @@ export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBluep
   const groups = [...fighterGroups(input.evidence), ...weaponGroups(input.eventPlan, input.evidence)]
   const eventUnits = new Map(input.eventPlan.eventUnits.map(unit => [unit.eventUnitId, unit]))
   const requirements = sceneRequirementByEvent(input.narrativePlan)
-  const sceneBeats = input.narrationPlan.beats.map(beat => {
+  const hasImageIntent = input.narrationPlan.beats.some(beat =>
+    mediaIntentsForTemplate(requirements.get(beat.eventUnitId)?.preferredTemplate).includes('image'))
+  const sceneBeats = input.narrationPlan.beats.map((beat, index) => {
     const unit = eventUnits.get(beat.eventUnitId)
     if (!unit) throw new Error(`UNKNOWN_EVENT_UNIT: ${beat.eventUnitId}`)
     const requirement = requirements.get(beat.eventUnitId)
     const actorRefs = actorRefsForUnit(unit, groups)
+    const mediaIntents = mediaIntentsForTemplate(requirement?.preferredTemplate)
+    if (!hasImageIntent && index === input.narrationPlan.beats.length - 1) mediaIntents.push('image')
     return {
       sceneBeatId: `scene-beat:${slug(beat.subtitleId)}`,
       subtitleId: beat.subtitleId,
@@ -266,7 +276,7 @@ export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBluep
       spatialConstraints: [...(requirement?.spatialRelations ?? [])],
       stateTransitions: [...(requirement?.stateChanges ?? [])],
       cameraIntent: requirement?.attentionRequirements[0] ?? `focus:${beat.attentionTarget}`,
-      mediaIntents: [],
+      mediaIntents,
       requiredFacts: [...(requirement?.requiredFacts ?? [])],
       forbiddenClaims: [...(requirement?.forbiddenClaims ?? [])],
       fidelity: fidelity(actorRefs, groups),

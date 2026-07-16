@@ -6,6 +6,11 @@ import { RUNTIME_MAIN_CONFIG } from '../src/runtime/testing/runtimeFixtures';
 
 const accessToken = process.env.ISE_E2E_ACCESS_TOKEN;
 const persistedSceneId = process.env.ISE_E2E_SCENE_ID;
+const mapCanvasSelector = 'canvas.maplibregl-canvas, canvas.mapboxgl-canvas';
+
+function mapCanvas(page: Page) {
+  return page.locator(mapCanvasSelector);
+}
 
 async function authenticate(page: Page) {
   if (!accessToken) {
@@ -41,7 +46,7 @@ async function seedAuthenticatedScene(page: Page, sceneId: string) {
 }
 
 async function expectNonBlankCanvas(page: Page) {
-  const canvas = page.locator('canvas.mapboxgl-canvas');
+  const canvas = mapCanvas(page);
   await expect(canvas).toBeVisible();
   await expect
     .poll(async () =>
@@ -253,7 +258,7 @@ function expectFiniteModelSnapshot(snapshot: RuntimeModelSnapshot) {
 }
 
 async function canvasPixels(page: Page) {
-  return page.locator('canvas.mapboxgl-canvas').evaluate((source) => {
+  return mapCanvas(page).evaluate((source) => {
     const probe = document.createElement('canvas');
     probe.width = 64;
     probe.height = 64;
@@ -290,39 +295,9 @@ async function previewRuntimeTime(page: Page) {
 }
 
 async function seekPreviewRuntime(page: Page, timeMs: number) {
-  const currentTimeMs = await previewRuntimeTime(page);
-  const playhead = page.locator('div:has(> svg > path[d="M0 0H12V6L6 12L0 6V0Z"])');
-  await expect(playhead).toBeVisible();
-  const bounds = await playhead.boundingBox();
-  if (!bounds) throw new Error('Preview timeline playhead is not measurable.');
-  const startX = bounds.x + bounds.width / 2;
-  const startY = bounds.y + bounds.height / 2;
-  await playhead.dispatchEvent('mousedown', {
-    button: 0,
-    buttons: 1,
-    clientX: startX,
-    clientY: startY,
-  });
-  await page.evaluate(
-    ({ clientX, clientY }) => {
-      window.dispatchEvent(new MouseEvent('mousemove', {
-        bubbles: true,
-        buttons: 1,
-        clientX,
-        clientY,
-      }));
-      window.dispatchEvent(new MouseEvent('mouseup', {
-        bubbles: true,
-        button: 0,
-        clientX,
-        clientY,
-      }));
-    },
-    {
-      clientX: startX + ((timeMs - currentTimeMs) / 1_000) * 10,
-      clientY: startY,
-    },
-  );
+  const seek = page.getByTestId('scene-runtime-seek');
+  await expect(seek).toBeVisible();
+  await seek.fill(String(timeMs / 1_000));
   await expect
     .poll(async () => Math.abs((await previewRuntimeTime(page)) - timeMs))
     .toBeLessThanOrEqual(1);
@@ -466,24 +441,24 @@ async function isolatePreviewModelPixels(
 
     let hidden: number[] = [];
     let shown: number[] = [];
-    map.removeLayer(layerId);
+    const originalVisibility = map.getLayoutProperty(layerId, 'visibility');
+    map.setLayoutProperty(layerId, 'visibility', 'none');
     try {
       await renderTwice();
-      if (map.getLayer(layerId)) {
-        throw new Error(`${layerId} was re-added before the hidden-frame capture.`);
-      }
       hidden = capture();
-      map.addLayer(layer);
+      map.setLayoutProperty(layerId, 'visibility', 'visible');
       await renderTwice();
       if (!map.getLayer(layerId)) {
-        throw new Error(`${layerId} was not restored for the visible-frame capture.`);
+        throw new Error(`${layerId} is missing for the visible-frame capture.`);
       }
       shown = capture();
     } finally {
-      if (!map.getLayer(layerId)) {
-        map.addLayer(layer);
-        await renderTwice();
-      }
+      map.setLayoutProperty(
+        layerId,
+        'visibility',
+        originalVisibility ?? 'visible',
+      );
+      await renderTwice();
     }
 
     let changedPixels = 0;
@@ -570,7 +545,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   const defaultRoutes = sceneConfig.entities.map((entity) => entity.defaultTrajectoryAssetId);
   const followEntityIds = samples.follows.map((item) => item.params.entityId);
   const followRoutes = samples.follows.map((item) => item.params.trajectoryAssetId);
-  expect(sceneConfig.entities.filter((entity) => entity.kind === 'aircraft').length).toBeGreaterThan(1);
+  expect(sceneConfig.entities.filter((entity) => entity.kind === 'aircraft')).toHaveLength(13);
   expect(new Set(entityIds).size).toBe(entityIds.length);
   expect(defaultRoutes.every((route): route is string => route !== undefined)).toBe(true);
   expect(new Set(defaultRoutes).size).toBe(defaultRoutes.length);
@@ -695,10 +670,10 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   const screenshotPath = testInfo.outputPath('persisted-runtime-dynamic-canvas.png');
   await page.screenshot({ path: screenshotPath });
   const canvasScreenshotPath = testInfo.outputPath('persisted-runtime-canvas.png');
-  await page.locator('canvas.mapboxgl-canvas').screenshot({ path: canvasScreenshotPath });
+  await mapCanvas(page).screenshot({ path: canvasScreenshotPath });
   const canvasBufferPath = testInfo.outputPath('persisted-runtime-canvas-buffer.png');
   const canvasDataUrl = await page
-    .locator('canvas.mapboxgl-canvas')
+    .locator(mapCanvasSelector)
     .evaluate((canvas) => canvas.toDataURL('image/png'));
   await writeFile(canvasBufferPath, Buffer.from(canvasDataUrl.split(',')[1]!, 'base64'));
   await testInfo.attach('persisted-runtime-dynamic-canvas', {
@@ -793,7 +768,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   await page.screenshot({ path: previewScreenshotPath });
   const previewCanvasPath = testInfo.outputPath('persisted-preview-canvas.png');
   const previewCanvasDataUrl = await page
-    .locator('canvas.mapboxgl-canvas')
+    .locator(mapCanvasSelector)
     .evaluate((canvas) => canvas.toDataURL('image/png'));
   await writeFile(
     previewCanvasPath,
