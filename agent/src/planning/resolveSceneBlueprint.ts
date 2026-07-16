@@ -9,10 +9,9 @@ import {
 } from '../contracts/resolvedScenePlan.ts'
 import {
   sceneBlueprintSchema,
-  type ActorGroup,
-  type ActorInstance,
   type SceneBlueprint,
 } from '../contracts/sceneBlueprint.ts'
+import { expandActorGroups } from '../compiler/actorExpansion.ts'
 import { assignActorRoutes } from '../services/actorRouteAssigner.ts'
 import { fingerprint } from '../services/fingerprint.ts'
 import { resolveFormationBundles } from '../services/formationBundleResolver.ts'
@@ -30,27 +29,6 @@ function compareText(left: string, right: string): number {
 
 function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort(compareText)
-}
-
-function groupSlug(group: ActorGroup): string {
-  const slug = group.groupId.replace(/^group:/, '').normalize('NFKC')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug || fingerprint(group.groupId).slice('sha256:'.length, 'sha256:'.length + 12)
-}
-
-function expandActors(groups: readonly ActorGroup[]): ActorInstance[] {
-  return [...groups]
-    .sort((left, right) => compareText(left.groupId, right.groupId))
-    .flatMap(group => Array.from({ length: group.quantityDecision.value }, (_, ordinal) => ({
-      actorInstanceId: ordinal === 0
-        ? `actor:${groupSlug(group)}:leader`
-        : `actor:${groupSlug(group)}:wingman-${ordinal}`,
-      actorGroupRef: group.groupId,
-      role: ordinal === 0 ? 'leader' as const : 'wingman' as const,
-      ordinal,
-    })))
 }
 
 function mappingDiagnostics(
@@ -80,7 +58,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   const blueprint = sceneBlueprintSchema.parse(input.blueprint)
   const assetRegistry = assetRegistrySnapshotSchema.parse(input.assetRegistry)
   const catalog = buildTrajectoryCatalog(assetRegistry)
-  const resolvedActors = expandActors(blueprint.actorGroups)
+  const resolvedActors = expandActorGroups(blueprint.actorGroups)
   const resolvedFormationBundles = resolveFormationBundles(
     blueprint.actorGroups,
     catalog,

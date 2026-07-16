@@ -1,5 +1,6 @@
 import type { EventPlan } from '../contracts/eventPlan.ts'
 import type { NarrativePlan } from '../contracts/narrativePlan.ts'
+import type { NarrationPlan } from '../contracts/narrationPlan.ts'
 import {
   runtimeCommandSchema,
   type CanonicalCommand,
@@ -14,6 +15,7 @@ import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
 export interface SchedulerInput {
   eventPlan: EventPlan
   narrativePlan: NarrativePlan
+  narrationPlan?: NarrationPlan
   commandDrafts: CommandDraft[]
   informationCardDrafts: InformationCardDraft[]
   capabilities: CapabilityManifest
@@ -25,6 +27,8 @@ export interface ScheduledPlan {
   informationCards: InformationCard[]
   totalDurationMs: number
 }
+
+export const SUBTITLE_VISUAL_LEAD_MS = 800
 
 export function subtitleDurationMs(text: string, importance: 'high' | 'medium' | 'low'): number {
   const spokenMs = Math.ceil([...text].filter(char => /\p{Script=Han}/u.test(char)).length / 4) * 1_000
@@ -42,20 +46,46 @@ function schedule(input: SchedulerInput, removeMediumObservation: boolean): Sche
   let cursorMs = 0
   for (const [unitIndex, eventUnit] of input.eventPlan.eventUnits.entries()) {
     const unitStartMs = cursorMs
-    const unitSubtitles = input.narrativePlan.subtitles.filter(item => item.eventUnitId === eventUnit.eventUnitId)
+    const unitSubtitles = input.narrationPlan
+      ? input.narrationPlan.beats
+        .filter(item => item.eventUnitId === eventUnit.eventUnitId)
+        .map(item => ({
+          subtitleId: item.subtitleId,
+          eventUnitId: item.eventUnitId,
+          text: item.text,
+          evidenceRefs: item.evidenceRefs,
+          importance: item.importance,
+          durationMs: item.estimatedDurationMs,
+        }))
+      : input.narrativePlan.subtitles
+        .filter(item => item.eventUnitId === eventUnit.eventUnitId)
+        .map(item => ({ ...item, durationMs: subtitleDurationMs(item.text, item.importance) }))
+    const visualLeadStarts: number[] = []
     for (const subtitle of unitSubtitles) {
-      let durationMs = subtitleDurationMs(subtitle.text, subtitle.importance)
+      let durationMs = subtitle.durationMs
       if (removeMediumObservation && subtitle.importance === 'medium') durationMs = Math.max(4_000, durationMs - 1_000)
-      subtitles.push({ ...subtitle, startMs: cursorMs, durationMs, position: 'bottom', maxWidthPct: 80 })
+      subtitles.push({
+        subtitleId: subtitle.subtitleId,
+        eventUnitId: subtitle.eventUnitId,
+        text: subtitle.text,
+        evidenceRefs: [...subtitle.evidenceRefs],
+        importance: subtitle.importance,
+        startMs: cursorMs,
+        durationMs,
+        position: 'bottom',
+        maxWidthPct: 80,
+      })
+      visualLeadStarts.push(cursorMs + SUBTITLE_VISUAL_LEAD_MS)
       cursorMs += durationMs
     }
+    const visualStartMs = visualLeadStarts.length > 0 ? Math.max(...visualLeadStarts) : unitStartMs
     let unitEndMs = cursorMs
     const drafts = input.commandDrafts.filter(item => item.eventUnitId === eventUnit.eventUnitId)
     for (const draft of drafts) {
       const minimum = input.capabilities.minimumDurations[draft.type]
       const durationMs = Math.max(minimum, draft.desiredDurationMs ?? minimum)
-      let startMs = unitStartMs
-      for (const dependency of draft.dependsOn) startMs = Math.max(startMs, commandEnds.get(dependency) ?? unitStartMs)
+      let startMs = visualStartMs
+      for (const dependency of draft.dependsOn) startMs = Math.max(startMs, commandEnds.get(dependency) ?? visualStartMs)
       if (draft.type === 'camera.transition') startMs = Math.max(startMs, cameraEnd)
       if (draft.type === 'model.set_state') startMs = Math.max(startMs, stateEnds.get(draft.targetId) ?? 0)
       const { desiredDurationMs: _desiredDurationMs, ...command } = draft
@@ -83,10 +113,12 @@ function schedule(input: SchedulerInput, removeMediumObservation: boolean): Sche
 
 export function scheduleNarrative(input: SchedulerInput): ScheduledPlan {
   let scheduled = schedule(input, false)
-  if (scheduled.totalDurationMs > input.narrativePlan.targetDurationMs) scheduled = schedule(input, true)
+  if (!input.narrationPlan && scheduled.totalDurationMs > input.narrativePlan.targetDurationMs) {
+    scheduled = schedule(input, true)
+  }
   if (scheduled.totalDurationMs > input.narrativePlan.targetDurationMs) {
     throw new CompilationError([diagnostic(
-      'RUNTIME_DURATION_EXCEEDED',
+      input.narrationPlan ? 'NARRATION_VISUAL_DURATION_CONFLICT' : 'RUNTIME_DURATION_EXCEEDED',
       `${scheduled.totalDurationMs} exceeds ${input.narrativePlan.targetDurationMs}`,
     )])
   }

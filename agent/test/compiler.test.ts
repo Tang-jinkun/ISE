@@ -8,14 +8,23 @@ import {
   runtimeCommandSchema,
 } from '../src/contracts/runtimePlan.ts'
 import type { AssetRegistryEntry, AssetRegistrySnapshot } from '../src/contracts/assetRegistry.ts'
-import { compileScene, type CompilerInput } from '../src/compiler/sceneCompiler.ts'
-import { subtitleDurationMs } from '../src/compiler/scheduler.ts'
+import {
+  compileLegacyScene as compileScene,
+  compileScene as compileFinalScene,
+  type LegacyCompilerInput as CompilerInput,
+} from '../src/compiler/sceneCompiler.ts'
+import {
+  SUBTITLE_VISUAL_LEAD_MS,
+  scheduleNarrative,
+  subtitleDurationMs,
+} from '../src/compiler/scheduler.ts'
 import { canonicalJson, fingerprint } from '../src/services/fingerprint.ts'
 import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
 import { templateNameSchema } from '../src/contracts/narrativePlan.ts'
 import { createCompilerTools } from '../src/tools/compilerTools.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
@@ -24,6 +33,12 @@ import {
   RESOLVED_SCENE_PLAN_ARTIFACT,
   SCENE_BLUEPRINT_ARTIFACT,
 } from '../src/contracts/artifactTypes.ts'
+import type { NarrationPlan } from '../src/contracts/narrationPlan.ts'
+import type { SceneBlueprint } from '../src/contracts/sceneBlueprint.ts'
+import { resolveSceneBlueprint } from '../src/planning/resolveSceneBlueprint.ts'
+import { compileChoreography } from '../src/compiler/choreographyCompiler.ts'
+import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
+import { capabilityManifest } from '../src/compiler/capabilityManifest.ts'
 
 const hash = `sha256:${'1'.repeat(64)}`
 
@@ -105,6 +120,338 @@ test('subtitle duration uses four Chinese characters per second and a four secon
 
 test('the same frozen inputs compile byte-identically', () => {
   assert.equal(canonicalJson(compileScene(input())), canonicalJson(compileScene(input())))
+})
+
+test('final narration scheduling starts visual commands after the exact exported subtitle lead', () => {
+  const source = input('status_explanation')
+  const narrationPlan: NarrationPlan = {
+    schemaVersion: 'ise.narration-plan/v1', narrationPlanId: 'narration-scheduler',
+    sourceEventPlanId: source.eventPlan.planId, sourceEventPlanFingerprint: fingerprint(source.eventPlan),
+    sourceNarrativePlanId: source.narrativePlan.narrativePlanId,
+    beats: [{
+      ...source.narrativePlan.subtitles[0]!, beatRole: 'setup', attentionTarget: 'JF-17',
+      estimatedDurationMs: 6_000,
+    }],
+    diagnostics: [],
+  }
+  const scheduled = scheduleNarrative({
+    eventPlan: source.eventPlan,
+    narrativePlan: source.narrativePlan,
+    narrationPlan,
+    commandDrafts: [{
+      commandId: 'cmd:lead', eventUnitId: 'unit-1', targetId: 'marker:lead', type: 'marker.show',
+      params: { coordinates: [74, 31], label: 'Lead', color: '#ffffff' },
+      dependsOn: [], onFailure: 'abort', evidenceRefs: ['ev-1'], desiredDurationMs: 4_000,
+    }],
+    informationCardDrafts: [],
+    capabilities: capabilityManifest,
+  })
+
+  assert.equal(SUBTITLE_VISUAL_LEAD_MS, 800)
+  assert.equal(scheduled.commands[0]!.startMs, scheduled.subtitles[0]!.startMs + SUBTITLE_VISUAL_LEAD_MS)
+  assert.equal(scheduled.subtitles[0]!.text, narrationPlan.beats[0]!.text)
+})
+
+test('final narration scheduling reports the stable conflict when lead and command minimums cannot fit', () => {
+  const source = input('status_explanation')
+  source.narrativePlan.targetDurationMs = 30_000
+  const narrationPlan: NarrationPlan = {
+    schemaVersion: 'ise.narration-plan/v1', narrationPlanId: 'narration-conflict',
+    sourceEventPlanId: source.eventPlan.planId, sourceEventPlanFingerprint: fingerprint(source.eventPlan),
+    sourceNarrativePlanId: source.narrativePlan.narrativePlanId,
+    beats: [{
+      ...source.narrativePlan.subtitles[0]!, beatRole: 'setup', attentionTarget: 'JF-17',
+      estimatedDurationMs: 4_000,
+    }],
+    diagnostics: [],
+  }
+
+  assert.throws(() => scheduleNarrative({
+    eventPlan: source.eventPlan,
+    narrativePlan: source.narrativePlan,
+    narrationPlan,
+    commandDrafts: [{
+      commandId: 'cmd:conflict', eventUnitId: 'unit-1', targetId: 'marker:conflict', type: 'marker.show',
+      params: { coordinates: [74, 31], label: 'Conflict', color: '#ffffff' },
+      dependsOn: [], onFailure: 'abort', evidenceRefs: ['ev-1'], desiredDurationMs: 30_000,
+    }],
+    informationCardDrafts: [],
+    capabilities: capabilityManifest,
+  }), (error: unknown) => error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'NARRATION_VISUAL_DURATION_CONFLICT'))
+})
+
+test('final narration scheduling never shortens a medium subtitle to fit the target', () => {
+  const source = input('status_explanation')
+  source.narrativePlan.targetDurationMs = 30_000
+  const narrationPlan: NarrationPlan = {
+    schemaVersion: 'ise.narration-plan/v1', narrationPlanId: 'narration-no-shortening',
+    sourceEventPlanId: source.eventPlan.planId, sourceEventPlanFingerprint: fingerprint(source.eventPlan),
+    sourceNarrativePlanId: source.narrativePlan.narrativePlanId,
+    beats: [{
+      ...source.narrativePlan.subtitles[0]!, importance: 'medium', beatRole: 'setup', attentionTarget: 'JF-17',
+      estimatedDurationMs: 30_500,
+    }],
+    diagnostics: [],
+  }
+
+  assert.throws(() => scheduleNarrative({
+    eventPlan: source.eventPlan,
+    narrativePlan: source.narrativePlan,
+    narrationPlan,
+    commandDrafts: [],
+    informationCardDrafts: [],
+    capabilities: capabilityManifest,
+  }), (error: unknown) => error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'NARRATION_VISUAL_DURATION_CONFLICT'))
+})
+
+function multiActorCompilerFixture() {
+  const eventPlan: EventPlan = {
+    schemaVersion: 'event-plan/v1',
+    planId: 'event-plan-indo-pak',
+    documentId: 'document-indo-pak',
+    version: 1,
+    eventUnits: [
+      {
+        eventUnitId: 'unit-deployment', title: 'Fighter deployment',
+        worldStateChange: 'Four fighter formations deployed from their registered bases',
+        participants: ['Su-30MKI', 'Rafale', 'JF-17'],
+        locationRefs: ['Adampur', 'Ambala', 'Minhas', 'Rafiki'],
+        evidenceRefs: ['ev-deployment'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Establish the formations', importance: 'high',
+      },
+      {
+        eventUnitId: 'unit-launch', title: 'Pakistan missile launch',
+        worldStateChange: 'A PL-15E missile launched', participants: ['PL-15E missile'],
+        locationRefs: ['Minhas'], evidenceRefs: ['ev-launch'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Show the launch', importance: 'high',
+      },
+      {
+        eventUnitId: 'unit-summary', title: 'Formation summary',
+        worldStateChange: 'The fighter formations returned to a summary view',
+        participants: ['Su-30MKI', 'Rafale', 'JF-17'],
+        locationRefs: ['Adampur', 'Ambala', 'Minhas', 'Rafiki'],
+        evidenceRefs: ['ev-summary'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Summarize the formation state', importance: 'medium',
+      },
+    ],
+    omittedEvidence: [], warnings: [],
+  }
+  const narrativePlan: NarrativePlan = {
+    schemaVersion: 'narrative-plan/v1', narrativePlanId: 'narrative-indo-pak',
+    sourceEventPlan: {
+      artifactId: 'accepted-indo-pak', planId: eventPlan.planId, version: 1,
+      fingerprint: fingerprint(eventPlan),
+    },
+    targetDurationMs: 180_000,
+    subtitles: [
+      { subtitleId: 'subtitle-deployment', eventUnitId: 'unit-deployment', text: 'Four formations deploy.', evidenceRefs: ['ev-deployment'], importance: 'high' },
+      { subtitleId: 'subtitle-launch', eventUnitId: 'unit-launch', text: 'A registered missile route is shown.', evidenceRefs: ['ev-launch'], importance: 'high' },
+      { subtitleId: 'subtitle-summary', eventUnitId: 'unit-summary', text: 'The replay returns to the summary.', evidenceRefs: ['ev-summary'], importance: 'medium' },
+    ],
+    sceneRequirements: [
+      {
+        requirementId: 'requirement-deployment', eventUnitId: 'unit-deployment',
+        focusEntities: ['Su-30MKI'], spatialRelations: ['registered bases'], stateChanges: ['deployment'],
+        motionRequirements: ['trajectory:adampur-vampire-1'], attentionRequirements: ['show all formations'],
+        requiredFacts: ['Four formations deployed'], forbiddenClaims: [], preferredTemplate: 'deployment',
+      },
+      {
+        requirementId: 'requirement-launch', eventUnitId: 'unit-launch',
+        focusEntities: ['PL-15E missile'], spatialRelations: ['Minhas'], stateChanges: ['attack'],
+        motionRequirements: [], attentionRequirements: ['show launch'], requiredFacts: ['missile launch'],
+        forbiddenClaims: ['confirmed target', 'confirmed outcome'], preferredTemplate: 'attack_chain',
+      },
+      {
+        requirementId: 'requirement-summary', eventUnitId: 'unit-summary',
+        focusEntities: ['Rafale'], spatialRelations: [], stateChanges: ['summary'], motionRequirements: [],
+        attentionRequirements: ['show summary'], requiredFacts: ['formation summary'], forbiddenClaims: [],
+        preferredTemplate: 'return_and_summary',
+      },
+    ],
+  }
+  const narrationPlan: NarrationPlan = {
+    schemaVersion: 'ise.narration-plan/v1', narrationPlanId: 'narration-indo-pak',
+    sourceEventPlanId: eventPlan.planId, sourceEventPlanFingerprint: fingerprint(eventPlan),
+    sourceNarrativePlanId: narrativePlan.narrativePlanId,
+    beats: narrativePlan.subtitles.map((subtitle, index) => ({
+      ...subtitle,
+      beatRole: index === 0 ? 'setup' as const : index === 1 ? 'action' as const : 'summary' as const,
+      attentionTarget: narrativePlan.sceneRequirements[index]!.attentionRequirements[0]!,
+      estimatedDurationMs: subtitleDurationMs(subtitle.text, subtitle.importance),
+    })),
+    diagnostics: [],
+  }
+  const actorGroups: SceneBlueprint['actorGroups'] = [
+    ['group:india-su30-adampur', 'Su-30MKI', 'india', 'Adampur', 2, 'fighter-formation', 'finger-four'],
+    ['group:india-rafale-ambala', 'Rafale', 'india', 'Ambala', 4, 'fighter-formation', 'finger-four'],
+    ['group:pakistan-jf17-minhas', 'JF-17', 'pakistan', 'Minhas', 4, 'fighter-formation', 'finger-four'],
+    ['group:pakistan-jf17-rafiki', 'JF-17', 'pakistan', 'Rafiki', 4, 'fighter-formation', 'finger-four'],
+    ['group:weapon-unit-launch', 'PL-15E', 'pakistan', 'Minhas', 1, 'weapon-launch', 'single'],
+  ].map(([groupId, semanticEntityRef, side, locationRef, quantity, role, formationPattern]) => ({
+    groupId: groupId as string,
+    semanticEntityRef: semanticEntityRef as string,
+    side: side as string,
+    locationRef: locationRef as string,
+    platformType: semanticEntityRef as string,
+    role: role as string,
+    quantityDecision: {
+      value: quantity as number, constraint: 'exact', source: 'evidence',
+      evidenceRefs: [role === 'weapon-launch' ? 'ev-launch' : 'ev-deployment'],
+      reason: 'Exact fixture quantity',
+    },
+    formationPattern: formationPattern as string,
+    leaderPolicy: role === 'weapon-launch' ? 'single-member' : 'stable-first-member',
+    behaviorProfile: role === 'weapon-launch' ? 'weapon-launch/v1' : 'fighter-formation/v1',
+    lifecycle: role === 'weapon-launch' ? 'event-scoped:unit-launch' : 'scene-persistent',
+  }))
+  const fighterGroupRefs = actorGroups.filter(group => group.role === 'fighter-formation').map(group => group.groupId)
+  const sceneBlueprint: SceneBlueprint = {
+    schemaVersion: 'ise.scene-blueprint/v1', blueprintId: 'blueprint-indo-pak',
+    sourceNarrationPlanId: narrationPlan.narrationPlanId,
+    sourceNarrationFingerprint: fingerprint(narrationPlan),
+    actorGroups,
+    sceneBeats: [
+      {
+        sceneBeatId: 'scene-beat-deployment', subtitleId: 'subtitle-deployment', eventUnitId: 'unit-deployment',
+        purpose: 'Establish formations', actorRefs: fighterGroupRefs, behaviorIntents: ['deployment'],
+        spatialConstraints: ['registered bases'], stateTransitions: ['deployed'], cameraIntent: 'show all formations',
+        mediaIntents: [], requiredFacts: ['Four formations deployed'], forbiddenClaims: [], fidelity: 'evidence', priority: 'high',
+      },
+      {
+        sceneBeatId: 'scene-beat-launch', subtitleId: 'subtitle-launch', eventUnitId: 'unit-launch',
+        purpose: 'Show launch', actorRefs: ['group:weapon-unit-launch'], behaviorIntents: ['launch'],
+        spatialConstraints: ['Minhas'], stateTransitions: ['launched'], cameraIntent: 'show launch',
+        mediaIntents: ['video'], requiredFacts: ['missile launch'], forbiddenClaims: ['confirmed target', 'confirmed outcome'],
+        fidelity: 'evidence', priority: 'high',
+      },
+      {
+        sceneBeatId: 'scene-beat-summary', subtitleId: 'subtitle-summary', eventUnitId: 'unit-summary',
+        purpose: 'Summarize formations', actorRefs: fighterGroupRefs, behaviorIntents: ['return'],
+        spatialConstraints: [], stateTransitions: ['summary'], cameraIntent: 'show summary', mediaIntents: ['image'],
+        requiredFacts: ['formation summary'], forbiddenClaims: [], fidelity: 'evidence', priority: 'medium',
+      },
+    ],
+    diagnostics: [],
+  }
+  const routeIds = [...new Set(indoPakTrajectoryScenario.bundles.flatMap(bundle => bundle.routeAssetRefs))]
+  const routeEntries: AssetRegistryEntry[] = routeIds.map((assetId, index) => ({
+    assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+    fingerprint: `sha256:${(index + 1).toString(16).padStart(64, '0')}`, size: 10,
+    availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+    mediaType: 'application/vnd.ise.trajectory+json',
+    trajectory: {
+      format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+      bounds: [[70 + index * 0.1, 28 + index * 0.05], [70.5 + index * 0.1, 28.4 + index * 0.05]],
+    },
+  }))
+  const modelEntries: AssetRegistryEntry[] = [
+    ['model:su30mki', 'Su-30MKI'], ['model:rafale', 'Rafale'], ['model:jf17', 'JF-17'], ['model:pl15e', 'PL-15E missile'],
+  ].map(([assetId, displayName]) => ({
+    assetId: assetId as `model:${string}`, kind: 'model', displayName: displayName!, aliases: [], fingerprint: hash,
+    size: 10, availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+    mediaType: 'model/gltf-binary',
+    model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: [assetId === 'model:pl15e' ? 'missile' : 'aircraft'] },
+  }))
+  const assetRegistry: AssetRegistrySnapshot = {
+    schemaVersion: 'asset-registry/v1', registryVersion: `sha256:${'8'.repeat(64)}`,
+    assets: [
+      ...routeEntries,
+      ...modelEntries,
+      {
+        assetId: 'image:summary', kind: 'image', displayName: 'Formation summary', aliases: ['summary'], fingerprint: hash,
+        size: 10, availability: 'available', criticality: 'optional', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'image/png', image: { width: 100, height: 100, fit: 'contain' },
+      },
+      {
+        assetId: 'video:engagement', kind: 'video', displayName: 'Missile launch', aliases: ['attack'], fingerprint: hash,
+        size: 10, availability: 'available', criticality: 'optional', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'video/mp4', video: { durationMs: 8_000, codec: 'h264' },
+      },
+    ],
+    diagnostics: [],
+  }
+  const resolvedScenePlan = resolveSceneBlueprint({ blueprint: sceneBlueprint, assetRegistry })
+  const choreographyPlan = compileChoreography({ narrationPlan, sceneBlueprint, resolvedScenePlan, assetRegistry })
+  return {
+    eventPlan, narrativePlan, narrationPlan, sceneBlueprint, resolvedScenePlan, choreographyPlan, assetRegistry,
+    input: {
+      eventPlanArtifactId: 'accepted-indo-pak', narrativePlanArtifactId: 'narrative-artifact-indo-pak',
+      narrationPlanArtifactId: 'narration-artifact-indo-pak', sceneBlueprintArtifactId: 'blueprint-artifact-indo-pak',
+      resolvedScenePlanArtifactId: 'resolved-artifact-indo-pak', choreographyPlanArtifactId: 'choreography-artifact-indo-pak',
+      assetRegistryArtifactId: 'registry-artifact-indo-pak', eventPlan, narrativePlan, narrationPlan,
+      sceneBlueprint, resolvedScenePlan, choreographyPlan, assetRegistry,
+    },
+  }
+}
+
+test('the final Indo-Pak compiler emits exact multi-actor choreography with media and subtitle lead', () => {
+  const fixture = multiActorCompilerFixture()
+  const plan = compileFinalScene(fixture.input)
+
+  assert.equal(canonicalJson(plan), canonicalJson(compileFinalScene(fixture.input)))
+  assert.deepEqual(plan.entities.map(entity => entity.entityId), fixture.resolvedScenePlan.resolvedActors.map(actor => actor.actorInstanceId))
+  assert.equal(plan.entities.length, 15)
+  const firstRoutes = new Set<string>()
+  for (const entity of plan.entities) {
+    const actor = fixture.resolvedScenePlan.resolvedActors.find(item => item.actorInstanceId === entity.entityId)!
+    const group = fixture.sceneBlueprint.actorGroups.find(item => item.groupId === actor.actorGroupRef)!
+    const formation = fixture.resolvedScenePlan.resolvedFormationBundles.find(item => item.actorGroupRef === actor.actorGroupRef)!
+    const scenario = indoPakTrajectoryScenario.bundles.find(item => item.bundleId === formation.bundleId)!
+    assert.equal(entity.modelAssetId, scenario.modelAssetRef)
+    assert.equal(entity.kind, group.role.includes('weapon') ? 'missile' : 'aircraft')
+    const actorCommands = plan.commands.filter(command => command.targetId === entity.entityId)
+    assert.equal(actorCommands.filter(command => command.type === 'model.spawn').length, 1, entity.entityId)
+    assert.equal(actorCommands.filter(command => command.type === 'model.hide').length, 1, entity.entityId)
+    const firstFollow = actorCommands.find(command => command.type === 'model.follow_path')
+    assert.ok(firstFollow, entity.entityId)
+    assert.equal(firstFollow.params.entityId, entity.entityId)
+    assert.equal(firstFollow.params.trajectoryAssetId, entity.defaultTrajectoryAssetId)
+    firstRoutes.add(firstFollow.params.trajectoryAssetId)
+  }
+  assert.equal(firstRoutes.size, plan.entities.length)
+  assert.equal(plan.diagnostics.some(item => item.code === 'TRAJECTORY_SYNTHESIZED'), false)
+  assert.equal(fixture.resolvedScenePlan.actorRouteAssignments.some(item => item.sourceKind === 'illustrative'), false)
+
+  const deploymentShot = fixture.choreographyPlan.shotPlan.find(shot => shot.subtitleId === 'subtitle-deployment')!
+  const bounds = deploymentShot.subjectRefs.map(actorId => {
+    const routeId = fixture.resolvedScenePlan.actorRouteAssignments.find(item => item.actorInstanceRef === actorId)!.trajectoryAssetRef
+    const route = fixture.assetRegistry.assets.find(asset => asset.assetId === routeId)
+    assert.ok(route?.kind === 'trajectory' && route.trajectory.bounds)
+    return route.trajectory.bounds
+  })
+  const union = [
+    [Math.min(...bounds.map(item => item[0][0])), Math.min(...bounds.map(item => item[0][1]))],
+    [Math.max(...bounds.map(item => item[1][0])), Math.max(...bounds.map(item => item[1][1]))],
+  ] as [[number, number], [number, number]]
+  const camera = plan.commands.find(command => command.type === 'camera.transition' && command.eventUnitId === 'unit-deployment')
+  if (camera?.type !== 'camera.transition') assert.fail('Expected deployment camera')
+  assert.deepEqual(camera.params.center, [(union[0][0] + union[1][0]) / 2, (union[0][1] + union[1][1]) / 2])
+  const longitudeSpan = (union[1][0] - union[0][0]) * Math.cos(camera.params.center[1] * Math.PI / 180)
+  const expectedZoom = Math.min(11, Math.max(4, Math.log2(360 / (Math.max(
+    longitudeSpan,
+    union[1][1] - union[0][1],
+    0.01,
+  ) * 2.5))))
+  assert.equal(camera.params.zoom, expectedZoom)
+
+  assert.deepEqual(plan.subtitles.map(item => [item.subtitleId, item.text, item.evidenceRefs]),
+    fixture.narrationPlan.beats.map(item => [item.subtitleId, item.text, item.evidenceRefs]))
+  for (const subtitle of plan.subtitles) {
+    assert.ok(plan.commands.filter(command => command.eventUnitId === subtitle.eventUnitId)
+      .every(command => command.startMs >= subtitle.startMs + 800))
+  }
+  assert.ok(plan.commands.some(command => command.type === 'image.show'))
+  assert.ok(plan.commands.some(command => command.type === 'video.play'))
+  const expectedSources = new Set([
+    'accepted-indo-pak', 'narrative-artifact-indo-pak', 'narration-artifact-indo-pak',
+    'blueprint-artifact-indo-pak', 'resolved-artifact-indo-pak', 'choreography-artifact-indo-pak',
+    'registry-artifact-indo-pak',
+  ])
+  assert.ok(plan.lineage.every(item => item.sourceArtifactIds.length === expectedSources.size
+    && item.sourceArtifactIds.every(id => expectedSources.has(id))))
 })
 
 test('all nine registered templates compile through the strict command schema', () => {
@@ -397,6 +744,26 @@ test('status explanation emits an image command when a semantic image alias matc
 
 function compilerToolFixture() {
   const source = input()
+  source.eventPlan.eventUnits[0]!.locationRefs = ['Minhas']
+  source.eventPlan.eventUnits[0]!.worldStateChange = 'Four JF-17 fighters departed Minhas'
+  source.narrativePlan.sceneRequirements[0]!.spatialRelations = ['Minhas']
+  source.narrativePlan.sceneRequirements[0]!.requiredFacts = ['Four JF-17 fighters departed Minhas']
+  const minhasBundle = indoPakTrajectoryScenario.bundles.find(bundle => bundle.bundleId === 'formation:pakistan-jf17-minhas')!
+  const model = source.assetRegistry.assets.find(asset => asset.kind === 'model')!
+  source.assetRegistry.assets = [
+    model,
+    ...minhasBundle.routeAssetRefs.map((assetId, index): AssetRegistryEntry => ({
+      assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+      fingerprint: `sha256:${(index + 11).toString(16).padStart(64, '0')}`, size: 10,
+      availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'application/vnd.ise.trajectory+json',
+      trajectory: {
+        format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+        startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+        bounds: [[72 + index * 0.1, 31], [72.5 + index * 0.1, 31.5]],
+      },
+    })),
+  ]
   const acceptedFingerprint = fingerprint(source.eventPlan)
   source.narrativePlan.sourceEventPlan.fingerprint = acceptedFingerprint
   const artifacts = new ArtifactStore()
@@ -418,9 +785,10 @@ function compilerToolFixture() {
         records: [{
           evidenceId: 'ev-1',
           sourceRef: 'docx:p1',
-          claim: 'JF-17 state changed near the border.',
+          claim: '4 JF-17 fighters departed Minhas.',
           kind: 'explicit_fact',
-          entities: ['JF-17'],
+          entities: ['JF-17', 'Minhas'],
+          locationExpression: 'Minhas',
           confidence: 1,
           ambiguities: [],
         }],
@@ -475,12 +843,14 @@ test('compiler tool returns resolved planning artifacts in dependency order with
     NARRATION_PLAN_ARTIFACT,
     SCENE_BLUEPRINT_ARTIFACT,
     RESOLVED_SCENE_PLAN_ARTIFACT,
+    CHOREOGRAPHY_PLAN_ARTIFACT,
     COMPILED_RUNTIME_ARTIFACT,
   ])
-  const [narration, blueprint, resolved, compiled] = result.artifacts!
+  const [narration, blueprint, resolved, choreography, compiled] = result.artifacts!
   assert.ok(compiled)
   assert.equal(compiled.metadata?.narrationPlanArtifactId, narration!.id)
   assert.equal(compiled.metadata?.sceneBlueprintArtifactId, blueprint!.id)
   assert.equal(compiled.metadata?.resolvedScenePlanArtifactId, resolved!.id)
-  assert.equal('choreographyPlanArtifactId' in (compiled.metadata ?? {}), false)
+  assert.equal(choreography?.metadata?.resolvedScenePlanArtifactId, resolved!.id)
+  assert.equal(compiled.metadata?.choreographyPlanArtifactId, choreography!.id)
 })

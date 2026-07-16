@@ -15,6 +15,7 @@ import { canonicalRuntimePlanSchema, type CanonicalRuntimePlan } from '../src/co
 import { capabilityManifest } from '../src/compiler/capabilityManifest.ts'
 import { createCompilerTools } from '../src/tools/compilerTools.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
+import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
 
 const hash = `sha256:${'1'.repeat(64)}`
 
@@ -63,8 +64,8 @@ function compilerContext(options: { movement?: boolean; missingTrajectory?: bool
   const eventPlan = {
     schemaVersion: 'event-plan/v1' as const, planId: 'plan-1', documentId: 'doc-1', version: 1,
     eventUnits: [{
-      eventUnitId: 'unit-1', title: 'Status', worldStateChange: 'JF-17 status', participants: ['JF-17'],
-      locationRefs: ['border'], evidenceRefs: ['ev-1'], inferenceRefs: [], uncertainties: [],
+      eventUnitId: 'unit-1', title: 'Minhas status', worldStateChange: 'Four JF-17 fighters departed Minhas', participants: ['JF-17'],
+      locationRefs: ['Minhas'], evidenceRefs: ['ev-1'], inferenceRefs: [], uncertainties: [],
       narrativePurpose: 'Explain', importance: 'high' as const,
     }], omittedEvidence: [], warnings: [],
   }
@@ -77,8 +78,8 @@ function compilerContext(options: { movement?: boolean; missingTrajectory?: bool
     id: 'evidence-1', type: EVIDENCE_IR_ARTIFACT, createdBy: 'tool', data: {
       schemaVersion: 'evidence-ir/v1', documentId: eventPlan.documentId,
       records: [{
-        evidenceId: 'ev-1', sourceRef: 'docx:p1', claim: 'JF-17 status', kind: 'explicit_fact',
-        entities: ['JF-17'], confidence: 1, ambiguities: [],
+        evidenceId: 'ev-1', sourceRef: 'docx:p1', claim: '4 JF-17 fighters departed Minhas.', kind: 'explicit_fact',
+        entities: ['JF-17', 'Minhas'], locationExpression: 'Minhas', confidence: 1, ambiguities: [],
       }],
     },
   })
@@ -90,9 +91,9 @@ function compilerContext(options: { movement?: boolean; missingTrajectory?: bool
       targetDurationMs: 180_000,
       subtitles: [{ subtitleId: 'subtitle-1', eventUnitId: 'unit-1', text: '状态说明', evidenceRefs: ['ev-1'], importance: 'high' }],
       sceneRequirements: [{
-        requirementId: 'requirement-1', eventUnitId: 'unit-1', focusEntities: ['JF-17'], spatialRelations: [],
+        requirementId: 'requirement-1', eventUnitId: 'unit-1', focusEntities: ['JF-17'], spatialRelations: ['Minhas'],
         stateChanges: [preferredTemplate], motionRequirements: options.movement ? ['route'] : [], attentionRequirements: [],
-        requiredFacts: ['JF-17 status'], forbiddenClaims: [], preferredTemplate,
+        requiredFacts: ['Four JF-17 fighters departed Minhas'], forbiddenClaims: [], preferredTemplate,
       }],
     },
   })
@@ -101,12 +102,19 @@ function compilerContext(options: { movement?: boolean; missingTrajectory?: bool
     availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
     mediaType: 'model/gltf-binary', model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
   }]
-  if (options.movement) registryAssets.push({
-    assetId: 'trajectory:jf17-1', kind: 'trajectory', displayName: 'JF-17 route', aliases: [], fingerprint: hash, size: 10,
-    availability: options.missingTrajectory ? 'missing' : 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+  const bundle = indoPakTrajectoryScenario.bundles.find(candidate => candidate.bundleId === 'formation:pakistan-jf17-minhas')!
+  registryAssets.push(...bundle.routeAssetRefs.map((assetId, index) => ({
+    assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+    fingerprint: `sha256:${(index + 31).toString(16).padStart(64, '0')}`, size: 10,
+    availability: options.missingTrajectory && index === 0 ? 'missing' : 'available',
+    criticality: 'required', fallbackAssetIds: [], allowFallback: false,
     mediaType: 'application/vnd.ise.trajectory+json',
-    trajectory: { format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt', startTimeMs: 0, endTimeMs: 1_000, monotonic: true },
-  })
+    trajectory: {
+      format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+      bounds: [[72 + index * 0.1, 31], [72.5 + index * 0.1, 31.5]],
+    },
+  })))
   artifacts.create({
     id: 'registry-artifact-1', type: ASSET_REGISTRY_ARTIFACT, createdBy: 'tool', data: {
       schemaVersion: 'asset-registry/v1', registryVersion: hash, assets: registryAssets, diagnostics: [],
@@ -151,6 +159,9 @@ test('compiled artifact contains its self-referencing validated config and exact
   const data = artifact.data as CompiledRuntimeArtifactData
   assert.equal(data.sceneProjectConfig.runtimePlanArtifactId, artifact.id)
   assert.deepEqual(sceneProjectConfigSchema.parse(data.sceneProjectConfig), data.sceneProjectConfig)
+  assert.equal(data.runtimePlan.entities.length, 4)
+  assert.deepEqual(data.sceneProjectConfig.entities.map(entity => entity.entityId), data.runtimePlan.entities.map(entity => entity.entityId))
+  assert.ok(data.sceneProjectConfig.entities.every(entity => entity.entityId.startsWith('actor:pakistan-jf17:')))
   assert.deepEqual(progress, ['narrative:10', 'assets:30', 'schedule:60', 'validate:85', 'adapt:100'])
 })
 
@@ -222,6 +233,6 @@ test('validate_replay_runtime rejects malformed and inconsistent compiled artifa
 
 test('failed recompile creates no artifact and preserves the last valid one', async () => {
   const context = compilerContext({ movement: true, missingTrajectory: true, lastValid: true })
-  await assert.rejects(createCompilerTools()[0]!.execute(compileInput, context), /REQUIRED_ASSET_MISSING/)
+  await assert.rejects(createCompilerTools()[0]!.execute(compileInput, context), /TRAJECTORY_SEMANTIC_MAPPING_UNRESOLVED/)
   assert.deepEqual(context.artifacts.list(COMPILED_RUNTIME_ARTIFACT).map(item => item.id), ['last-valid'])
 })

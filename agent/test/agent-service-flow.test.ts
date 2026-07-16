@@ -21,6 +21,8 @@ import { parseBattleReport } from '../src/services/documentParser.ts'
 import { fingerprint, sha256 } from '../src/services/fingerprint.ts'
 
 const hash = `sha256:${'2'.repeat(64)}`
+const flowSu30Entity = '\u82cf-30MKI'
+const flowRafaleEntity = '\u9635\u98ce'
 const flowTrajectoryIds = [
   ...Array.from({ length: 4 }, (_, index) => `adampur-vampire-${index + 1}`),
   ...Array.from({ length: 4 }, (_, index) => `ambala-rafale-${index + 1}`),
@@ -53,8 +55,9 @@ class FlowModel implements ModelAdapter {
     }
     if (this.#step === 2) {
       const units = this.evidenceIds.slice(0, 2).map((evidenceId, index) => ({
-        eventUnitId: `unit-${index + 1}`, title: `Event ${index + 1}`, worldStateChange: `JF-17 state ${index + 1}`,
-        participants: ['JF-17'], locationRefs: ['border'], evidenceRefs: [evidenceId], inferenceRefs: [],
+        eventUnitId: `unit-${index + 1}`, title: `Event ${index + 1}`, worldStateChange: `Fighter formation state ${index + 1}`,
+        participants: [flowSu30Entity, flowRafaleEntity, 'JF-17'],
+        locationRefs: ['Adampur', 'Ambala', 'Minhas', 'Rafiki'], evidenceRefs: [evidenceId], inferenceRefs: [],
         uncertainties: [], narrativePurpose: `Explain ${index + 1}`, importance: index === 0 ? 'high' as const : 'medium' as const,
       }))
       return { content: '', toolCalls: [{
@@ -112,7 +115,18 @@ class FlowNest implements NestGateway {
         mediaType: 'model/gltf-binary',
         model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
       },
-      ...flowTrajectoryIds.map(routeId => ({
+      ...[
+        ['model:su30mki', 'Su-30MKI'],
+        ['model:rafale', 'Rafale'],
+      ].map(([assetId, displayName]) => ({
+        assetId, kind: 'model', displayName, aliases: [], fingerprint: hash,
+        sourceRelativePath: `assets/${assetId!.slice('model:'.length)}.glb`,
+        objectName: `models/${assetId!.slice('model:'.length)}.glb`, size: 10,
+        availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'model/gltf-binary',
+        model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+      })),
+      ...flowTrajectoryIds.map((routeId, index) => ({
         assetId: `trajectory:${routeId}`,
         kind: 'trajectory',
         displayName: routeId,
@@ -133,6 +147,7 @@ class FlowNest implements NestGateway {
           startTimeMs: 0,
           endTimeMs: 180_000,
           monotonic: true,
+          bounds: [[70 + index * 0.1, 28 + index * 0.05], [70.5 + index * 0.1, 28.4 + index * 0.05]],
         },
       })),
     ]

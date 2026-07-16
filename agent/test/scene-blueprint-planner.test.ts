@@ -5,13 +5,14 @@ import type { EventPlan } from '../src/contracts/eventPlan.ts'
 import type { NarrativePlan } from '../src/contracts/narrativePlan.ts'
 import type { AssetRegistryEntry, AssetRegistrySnapshot } from '../src/contracts/assetRegistry.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
-import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
+import { CompilationError, diagnostic } from '../src/services/runtimeDiagnostics.ts'
 import { buildNarrationPlan } from '../src/planning/narrationPlanner.ts'
 import { resolveQuantity } from '../src/planning/quantityResolver.ts'
 import { buildSceneBlueprint } from '../src/planning/sceneBlueprintPlanner.ts'
 import { resolveSceneBlueprint } from '../src/planning/resolveSceneBlueprint.ts'
 import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
 import { buildTrajectoryCatalog } from '../src/services/trajectoryCatalog.ts'
+import { compileChoreography } from '../src/compiler/choreographyCompiler.ts'
 
 function evidence(records: EvidenceIR['records']): EvidenceIR {
   return { schemaVersion: 'evidence-ir/v1', documentId: 'doc-indo-pak', records }
@@ -571,4 +572,127 @@ test('resolveSceneBlueprint propagates route capacity exhaustion instead of synt
     (error: unknown) => error instanceof CompilationError
       && error.diagnostics.some(item => item.code === 'TRAJECTORY_BUNDLE_CAPACITY_EXCEEDED'),
   )
+})
+
+test('compileChoreography preserves every resolved actor with stable beat-bounded lifecycles', () => {
+  const fixture = resolvedFixture()
+  const first = compileChoreography({
+    narrationPlan: buildNarrationPlan(planningFixture()),
+    sceneBlueprint: fixture.blueprint,
+    resolvedScenePlan: fixture.resolved,
+    assetRegistry: fixture.assetRegistry,
+  })
+  const second = compileChoreography({
+    narrationPlan: buildNarrationPlan(planningFixture()),
+    sceneBlueprint: fixture.blueprint,
+    resolvedScenePlan: fixture.resolved,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  assert.equal(JSON.stringify(first), JSON.stringify(second))
+  assert.deepEqual(first.actorInstances, fixture.resolved.resolvedActors)
+  assert.equal(first.actorLifecycles.length, fixture.resolved.resolvedActors.length)
+  for (const actor of fixture.resolved.resolvedActors) {
+    const references = fixture.blueprint.sceneBeats
+      .filter(beat => beat.actorRefs.includes(actor.actorGroupRef))
+      .map(beat => beat.sceneBeatId)
+    assert.ok(references.length > 0, actor.actorInstanceId)
+    assert.deepEqual(
+      first.actorLifecycles.filter(item => item.actorInstanceRef === actor.actorInstanceId),
+      [{
+        actorInstanceRef: actor.actorInstanceId,
+        firstSceneBeatRef: references[0],
+        lastSceneBeatRef: references.at(-1),
+      }],
+    )
+  }
+  assert.equal(first.sourceResolvedScenePlanFingerprint, fingerprint(fixture.resolved))
+})
+
+test('compileChoreography gives every actor catalog-route motion and same-group formation segments', () => {
+  const fixture = resolvedFixture()
+  const choreography = compileChoreography({
+    narrationPlan: buildNarrationPlan(planningFixture()),
+    sceneBlueprint: fixture.blueprint,
+    resolvedScenePlan: fixture.resolved,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  for (const actor of fixture.resolved.resolvedActors) {
+    const assignment = fixture.resolved.actorRouteAssignments.find(
+      item => item.actorInstanceRef === actor.actorInstanceId,
+    )
+    assert.ok(assignment)
+    assert.equal(assignment.sourceKind, 'catalog')
+    assert.ok(choreography.motionSegments.some(segment =>
+      segment.actorInstanceRef === actor.actorInstanceId
+      && segment.routeAssignmentRef === assignment.segmentId))
+  }
+  assert.equal(
+    new Set(fixture.resolved.actorRouteAssignments.map(item => item.trajectoryAssetRef)).size,
+    fixture.resolved.resolvedActors.length,
+  )
+  for (const formation of choreography.formationSegments) {
+    const groups = new Set(formation.actorInstanceRefs.map(actorId =>
+      fixture.resolved.resolvedActors.find(actor => actor.actorInstanceId === actorId)?.actorGroupRef))
+    assert.equal(groups.size, 1)
+    assert.ok(formation.actorInstanceRefs.length > 1)
+  }
+  assert.ok(choreography.formationSegments.length > 0)
+  assert.deepEqual(choreography.weaponEngagements, [])
+})
+
+test('compileChoreography binds one shot and exact 800ms visual lead to every narration beat', () => {
+  const planning = planningFixture()
+  const narrationPlan = buildNarrationPlan(planning)
+  const fixture = resolvedFixture()
+  const choreography = compileChoreography({
+    narrationPlan,
+    sceneBlueprint: fixture.blueprint,
+    resolvedScenePlan: fixture.resolved,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  assert.equal(choreography.shotPlan.length, narrationPlan.beats.length)
+  for (const beat of narrationPlan.beats) {
+    const sceneBeat = fixture.blueprint.sceneBeats.find(item => item.subtitleId === beat.subtitleId)
+    assert.ok(sceneBeat)
+    const expectedSubjects = fixture.resolved.resolvedActors
+      .filter(actor => sceneBeat.actorRefs.includes(actor.actorGroupRef))
+      .map(actor => actor.actorInstanceId)
+    assert.deepEqual(
+      choreography.shotPlan.find(shot => shot.subtitleId === beat.subtitleId)?.subjectRefs,
+      expectedSubjects,
+    )
+    assert.deepEqual(
+      choreography.timeConstraints.filter(constraint => constraint.subjectRef === beat.subtitleId),
+      [{
+        constraintId: `time:${beat.subtitleId}:subtitle-visual-lead`,
+        subjectRef: beat.subtitleId,
+        kind: 'subtitle-visual-lead',
+        valueMs: 800,
+      }],
+    )
+  }
+})
+
+test('compileChoreography rejects synthesized trajectory diagnostics instead of hiding them', () => {
+  const planning = planningFixture()
+  const narrationPlan = buildNarrationPlan(planning)
+  const fixture = resolvedFixture()
+  const resolvedScenePlan = {
+    ...fixture.resolved,
+    diagnostics: [
+      ...fixture.resolved.diagnostics,
+      diagnostic('TRAJECTORY_SYNTHESIZED', 'Synthetic route is forbidden'),
+    ],
+  }
+
+  assert.throws(() => compileChoreography({
+    narrationPlan,
+    sceneBlueprint: fixture.blueprint,
+    resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  }), (error: unknown) => error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID'))
 })

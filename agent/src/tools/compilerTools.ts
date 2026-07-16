@@ -4,8 +4,10 @@ import type { AgentContext, AgentTool, Artifact, ArtifactInput } from '@ise/agen
 import { BaseRuntimeAdapter } from '../adapters/baseRuntimeAdapter.ts'
 import { capabilityManifest } from '../compiler/capabilityManifest.ts'
 import { compileScene } from '../compiler/sceneCompiler.ts'
+import { compileChoreography } from '../compiler/choreographyCompiler.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
@@ -90,9 +92,16 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
       const narrationPlan = buildNarrationPlan({ eventPlan, narrativePlan })
       const sceneBlueprint = buildSceneBlueprint({ eventPlan, narrativePlan, narrationPlan, evidence })
       const resolvedScenePlan = resolveSceneBlueprint({ blueprint: sceneBlueprint, assetRegistry })
+      const choreographyPlan = compileChoreography({
+        narrationPlan,
+        sceneBlueprint,
+        resolvedScenePlan,
+        assetRegistry,
+      })
       const narrationArtifactId = randomUUID()
       const sceneBlueprintArtifactId = randomUUID()
       const resolvedScenePlanArtifactId = randomUUID()
+      const choreographyPlanArtifactId = randomUUID()
       const narrationArtifact = {
         id: narrationArtifactId,
         type: NARRATION_PLAN_ARTIFACT,
@@ -134,13 +143,33 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
           lineage: [sceneBlueprintArtifactId, registryArtifact.id],
         },
       } satisfies ArtifactInput<typeof resolvedScenePlan> & { id: string }
+      const choreographyArtifact = {
+        id: choreographyPlanArtifactId,
+        type: CHOREOGRAPHY_PLAN_ARTIFACT,
+        createdBy: 'tool' as const,
+        logicalKey: `choreography-plan:${choreographyPlan.choreographyPlanId}`,
+        data: choreographyPlan,
+        metadata: {
+          fingerprint: fingerprint(choreographyPlan),
+          resolvedScenePlanArtifactId,
+          lineage: [resolvedScenePlanArtifactId],
+        },
+      } satisfies ArtifactInput<typeof choreographyPlan> & { id: string }
       options.onCompileProgress?.({ stage: 'schedule', percentage: 60 })
       const runtimePlan = canonicalRuntimePlanSchema.parse(compileScene({
         eventPlanArtifactId: acceptedArtifact.id,
         narrativePlanArtifactId: narrativeArtifact.id,
+        narrationPlanArtifactId: narrationArtifactId,
+        sceneBlueprintArtifactId,
+        resolvedScenePlanArtifactId,
+        choreographyPlanArtifactId,
         assetRegistryArtifactId: registryArtifact.id,
         eventPlan,
         narrativePlan,
+        narrationPlan,
+        sceneBlueprint,
+        resolvedScenePlan,
+        choreographyPlan,
         assetRegistry,
       }))
       options.onCompileProgress?.({ stage: 'validate', percentage: 85 })
@@ -161,6 +190,7 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
           narrationPlanArtifactId: narrationArtifactId,
           sceneBlueprintArtifactId,
           resolvedScenePlanArtifactId,
+          choreographyPlanArtifactId,
           assetRegistryArtifactId: registryArtifact.id,
           capabilityManifestVersion: capabilityManifest.version,
           assetRegistryVersion: assetRegistry.registryVersion,
@@ -177,7 +207,7 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
       options.onCompileProgress?.({ stage: 'adapt', percentage: 100 })
       return {
         content: JSON.stringify({ artifactId, valid: true, diagnostics: runtimePlan.diagnostics }),
-        artifacts: [narrationArtifact, sceneBlueprintArtifact, resolvedSceneArtifact, artifact],
+        artifacts: [narrationArtifact, sceneBlueprintArtifact, resolvedSceneArtifact, choreographyArtifact, artifact],
       }
     },
   }

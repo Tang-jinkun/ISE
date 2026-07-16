@@ -14,6 +14,7 @@ import { PersistentArtifactStore } from '../src/persistence/persistentArtifactSt
 import {
   COMPILED_RUNTIME_ARTIFACT,
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   DOCUMENT_IR_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
@@ -30,6 +31,7 @@ import { fingerprint } from '../src/services/fingerprint.ts'
 import { EventBroker } from '../src/session/eventBroker.ts'
 import { SessionAgentRunner } from '../src/session/sessionAgentRunner.ts'
 import { createCompilerTools, type CompilerToolOptions } from '../src/tools/compilerTools.ts'
+import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
 
 class TestNestGateway implements NestGateway {
   readonly file: AuthorizedFile = {
@@ -45,7 +47,31 @@ class TestNestGateway implements NestGateway {
     if (fileId !== this.file.fileId) throw new Error('ATTACHMENT_NOT_FOUND')
     return { ...this.file, bytes: Buffer.from(this.file.bytes) }
   }
-  async listAssetMetadata(): Promise<unknown> { return [] }
+  async listAssetMetadata(): Promise<unknown> {
+    const hash = `sha256:${'6'.repeat(64)}`
+    const bundle = indoPakTrajectoryScenario.bundles.find(
+      candidate => candidate.bundleId === 'formation:pakistan-jf17-minhas',
+    )!
+    return [
+      {
+        assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [], fingerprint: hash,
+        size: 10, availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'model/gltf-binary',
+        model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+      },
+      ...bundle.routeAssetRefs.map((assetId, index) => ({
+        assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+        fingerprint: `sha256:${(index + 21).toString(16).padStart(64, '0')}`, size: 10,
+        availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'application/vnd.ise.trajectory+json',
+        trajectory: {
+          format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+          startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+          bounds: [[72 + index * 0.1, 31], [72.5 + index * 0.1, 31.5]],
+        },
+      })),
+    ]
+  }
 }
 
 class BlockingModel implements ModelAdapter {
@@ -195,9 +221,9 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
     documentId: 'terminal-document',
     version: 1,
     eventUnits: [{
-      eventUnitId: 'terminal-unit', title: 'Terminal', worldStateChange: 'Terminal state',
-      participants: ['Unit'], locationRefs: [], evidenceRefs: ['terminal-evidence'], inferenceRefs: [],
-      uncertainties: [], narrativePurpose: 'Terminal test', importance: 'low' as const,
+      eventUnitId: 'terminal-unit', title: 'Minhas deployment', worldStateChange: 'Four JF-17 fighters departed Minhas',
+      participants: ['JF-17'], locationRefs: ['Minhas'], evidenceRefs: ['terminal-evidence'], inferenceRefs: [],
+      uncertainties: [], narrativePurpose: 'Show the formation deployment', importance: 'low' as const,
     }],
     omittedEvidence: [], warnings: [],
   }
@@ -221,9 +247,10 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
       records: [{
         evidenceId: 'terminal-evidence',
         sourceRef: 'docx:p1',
-        claim: 'Terminal state',
+        claim: '4 JF-17 fighters departed Minhas.',
         kind: 'explicit_fact',
-        entities: ['Unit'],
+        entities: ['JF-17', 'Minhas'],
+        locationExpression: 'Minhas',
         confidence: 1,
         ambiguities: [],
       }],
@@ -251,7 +278,7 @@ test('downstream run objective includes the exact accepted tuple and EventPlan s
   assert.match(objective, new RegExp(acceptedArtifactId))
   assert.match(objective, /"planId":"terminal-plan"/)
   assert.match(objective, new RegExp(String(accepted.metadata?.fingerprint)))
-  assert.match(objective, /"title":"Terminal"/)
+  assert.match(objective, /"title":"Minhas deployment"/)
 
   f.runner.interrupt(f.session.id, 'user-1')
   await waitForTerminal(f.repositories, f.session.id)
@@ -352,21 +379,21 @@ function persistNarrative(
       subtitles: [{
         subtitleId: 'terminal-subtitle',
         eventUnitId: 'terminal-unit',
-        text: 'Terminal state',
+        text: 'Four JF-17 fighters depart Minhas.',
         evidenceRefs: ['terminal-evidence'],
         importance: 'low',
       }],
       sceneRequirements: [{
         requirementId: 'terminal-requirement',
         eventUnitId: 'terminal-unit',
-        focusEntities: ['Unit'],
-        spatialRelations: [],
-        stateChanges: ['status explanation'],
-        motionRequirements: [],
-        attentionRequirements: ['show status'],
-        requiredFacts: ['Terminal state'],
+        focusEntities: ['JF-17'],
+        spatialRelations: ['Minhas'],
+        stateChanges: ['deployment'],
+        motionRequirements: ['registered routes'],
+        attentionRequirements: ['show all formation actors'],
+        requiredFacts: ['Four JF-17 fighters departed Minhas'],
         forbiddenClaims: [],
-        preferredTemplate: 'status_explanation',
+        preferredTemplate: 'deployment',
       }],
     },
   })
@@ -376,7 +403,29 @@ function persistNarrative(
 function persistAssetRegistry(
   f: Awaited<ReturnType<typeof terminalFixture>>,
 ): { artifactId: string; registryVersion: string } {
-  const snapshot = createAssetRegistrySnapshot([])
+  const hash = `sha256:${'6'.repeat(64)}`
+  const bundle = indoPakTrajectoryScenario.bundles.find(
+    candidate => candidate.bundleId === 'formation:pakistan-jf17-minhas',
+  )!
+  const snapshot = createAssetRegistrySnapshot([
+    {
+      assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [], fingerprint: hash,
+      size: 10, availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'model/gltf-binary',
+      model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+    },
+    ...bundle.routeAssetRefs.map((assetId, index) => ({
+      assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+      fingerprint: `sha256:${(index + 41).toString(16).padStart(64, '0')}`, size: 10,
+      availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'application/vnd.ise.trajectory+json',
+      trajectory: {
+        format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+        startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+        bounds: [[72 + index * 0.1, 31], [72.5 + index * 0.1, 31.5]],
+      },
+    })),
+  ])
   const artifact = new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
     id: 'terminal-asset-registry',
     type: ASSET_REGISTRY_ARTIFACT,
@@ -691,6 +740,7 @@ test('approved compilation selects exact EvidenceIR and atomically persists orde
     NARRATION_PLAN_ARTIFACT,
     SCENE_BLUEPRINT_ARTIFACT,
     RESOLVED_SCENE_PLAN_ARTIFACT,
+    CHOREOGRAPHY_PLAN_ARTIFACT,
     COMPILED_RUNTIME_ARTIFACT,
   ]
   assert.equal(observedInput.evidenceArtifactId, matchingEvidence.id)

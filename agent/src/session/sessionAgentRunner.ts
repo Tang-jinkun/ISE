@@ -11,6 +11,7 @@ import {
 } from '../contracts/artifactTypes.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
   NARRATION_PLAN_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
@@ -367,6 +368,7 @@ export class SessionAgentRunner {
       NARRATION_PLAN_ARTIFACT,
       SCENE_BLUEPRINT_ARTIFACT,
       RESOLVED_SCENE_PLAN_ARTIFACT,
+      CHOREOGRAPHY_PLAN_ARTIFACT,
       COMPILED_RUNTIME_ARTIFACT,
     ]
     const expectedTypeSet = new Set<string>(expectedTypes)
