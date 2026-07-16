@@ -95,6 +95,45 @@ test('storage-less public catalog entries cross the Nest boundary without leakin
   assert.equal(/sourceRelativePath|objectName|url|token/i.test(JSON.stringify(registry)), false)
 })
 
+test('public trajectory curation crosses the Agent catalog boundary unchanged', () => {
+  const curation = {
+    policyId: 'trajectory.shift-suffix/v1' as const,
+    expectedSourceFingerprint: hash,
+    startIndex: 91,
+    deltaMs: 2_000,
+  }
+  const registry = createAssetRegistrySnapshot([{
+    assetId: 'trajectory:ambala-su30mki-1',
+    kind: 'trajectory',
+    displayName: 'AMBALA Su-30MKI 1',
+    aliases: [],
+    fingerprint: hash,
+    size: 10,
+    mediaType: 'application/vnd.ise.trajectory+json',
+    availability: 'available',
+    criticality: 'required',
+    fallbackAssetIds: [],
+    allowFallback: false,
+    trajectory: {
+      format: 'ise-trajectory/v1',
+      timeUnit: 'ms',
+      coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 0,
+      endTimeMs: 120_000,
+      monotonic: true,
+      curation,
+    },
+  }])
+  const entry = registry.assets[0]
+  assert.equal(entry?.kind, 'trajectory')
+  if (entry?.kind !== 'trajectory') assert.fail('Expected trajectory entry')
+  assert.deepEqual(entry.trajectory.curation, curation)
+  assert.equal(assetRegistryEntrySchema.safeParse({
+    ...entry,
+    trajectory: { ...entry.trajectory, curation: { ...curation, unexpected: true } },
+  }).success, false)
+})
+
 test('fallback resolution exhausts declared branches and reports failure from the root asset', () => {
   const registry = new AssetRegistry(snapshot([
     imageEntry('image:root', {
