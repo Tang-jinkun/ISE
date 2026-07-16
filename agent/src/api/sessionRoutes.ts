@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { NestGateway } from '../adapters/nestGateway.ts'
-import type { AgentArtifactView, AttachmentView, SessionView } from './contracts.ts'
+import type { AgentArtifactView, AgentMessageView, AgentTurnView, AttachmentView, SessionView } from './contracts.ts'
 import {
   attachFileSchema,
   emptyObjectSchema,
@@ -11,6 +11,7 @@ import type { AgentRepositories, PersistedAttachmentRecord } from '../persistenc
 import type { EventBroker } from '../session/eventBroker.ts'
 import { writeSseSession } from '../session/eventBroker.ts'
 import type { SessionAgentRunner } from '../session/sessionAgentRunner.ts'
+import { projectTurnActivities } from '../session/turnActivities.ts'
 
 export interface SessionRouteOptions {
   repositories: AgentRepositories
@@ -46,6 +47,11 @@ function toAttachmentView(row: PersistedAttachmentRecord): AttachmentView {
     size: row.size,
     fingerprint: row.fingerprint as `sha256:${string}`,
   }
+}
+
+function toMessageView(row: ReturnType<AgentRepositories['messages']['get']>): AgentMessageView | undefined {
+  if (!row) return undefined
+  return { id: row.id, role: row.role, content: row.content, createdAt: row.createdAt }
 }
 
 export function toArtifactView(row: ReturnType<AgentRepositories['artifacts']['listLedger']>[number]): AgentArtifactView {
@@ -99,6 +105,27 @@ export async function registerSessionRoutes(app: FastifyInstance, options: Sessi
     return reply.status(202).send(options.runner.enqueue({
       sessionId: sessionId(request), subject, authorization, content: input.content,
     }))
+  })
+
+  app.get('/sessions/:sessionId/turns', async (request) => {
+    const { subject } = await requestIdentity(request, options.nest)
+    const id = sessionId(request)
+    options.repositories.sessions.requireOwned(id, subject)
+    const turns: AgentTurnView[] = options.repositories.runs.listBySession(id).map(run => ({
+      id: run.id,
+      status: run.status,
+      kind: run.kind,
+      ...(run.userMessageId ? { userMessage: toMessageView(options.repositories.messages.get(run.userMessageId)) } : {}),
+      ...(run.assistantMessageId
+        ? { assistantMessage: toMessageView(options.repositories.messages.get(run.assistantMessageId)) }
+        : {}),
+      ...(run.outcome ? { outcome: run.outcome } : {}),
+      activities: projectTurnActivities(options.repositories.events.listByRun(id, run.id), run.status),
+      createdAt: run.createdAt,
+      ...(run.startedAt ? { startedAt: run.startedAt } : {}),
+      ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
+    }))
+    return { turns }
   })
 
   app.get('/sessions/:sessionId/artifacts', async (request) => {

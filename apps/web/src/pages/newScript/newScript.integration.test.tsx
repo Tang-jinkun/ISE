@@ -370,6 +370,49 @@ describe('NewScript real Agent flow', () => {
     });
   });
 
+  it('renders one durable Agent turn with collapsed activity and a separate final answer', async () => {
+    renderNewScript();
+    setObjective('生成港口态势场景');
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      useAgentSessionStore.getState().replaceTurns('session-1', [{
+        id: 'run-1',
+        status: 'completed',
+        kind: 'generate',
+        userMessage: {
+          id: 'user-1', role: 'user', content: '生成港口态势场景',
+          createdAt: '2026-07-16T00:00:00.000Z'
+        },
+        assistantMessage: {
+          id: 'assistant-1', role: 'assistant', content: '事件计划已生成，请审核。',
+          createdAt: '2026-07-16T00:00:01.000Z'
+        },
+        outcome: { status: 'completed', finalAnswer: '事件计划已生成，请审核。' },
+        activities: [
+          {
+            id: 'thinking-1', type: 'thinking', status: 'completed',
+            text: '我先检查当前报告中的证据。'
+          },
+          {
+            id: 'tool-1', type: 'tool', status: 'completed',
+            name: 'inspect_report_evidence', summary: '报告证据检查完成'
+          }
+        ],
+        createdAt: '2026-07-16T00:00:00.000Z'
+      }]);
+    });
+
+    expect(screen.getAllByText('生成港口态势场景')).toHaveLength(1);
+    expect(screen.getByText('事件计划已生成，请审核。')).toBeInTheDocument();
+    const activityToggle = screen.getByRole('button', { name: /执行过程.*2 步/ });
+    expect(screen.queryByText('报告证据检查完成')).not.toBeInTheDocument();
+    fireEvent.click(activityToggle);
+    expect(screen.getByText('报告证据检查完成')).toBeInTheDocument();
+    expect(screen.queryByText('智能体已开始生成场景')).not.toBeInTheDocument();
+  });
+
   it('retains text and the pending DOCX when sending fails', async () => {
     mocks.sendAgentMessage.mockRejectedValueOnce(new Error('智能体暂时不可用'));
 
@@ -617,14 +660,26 @@ describe('NewScript real Agent flow', () => {
     renderNewScript();
     await uploadReport('梳理可见战场态势');
     hydrateArtifacts([eventPlanArtifact, compiledArtifact]);
-    emitAgentEvent({
-      id: '1',
-      type: 'tool.progress',
-      data: {
-        toolName: 'extract-events',
-        summary: '已梳理关键事件',
-        hiddenReasoning: '不得保存'
-      }
+    act(() => {
+      useAgentSessionStore.getState().replaceTurns('session-1', [{
+        id: 'run-1',
+        status: 'completed',
+        kind: 'generate',
+        userMessage: {
+          id: 'user-1', role: 'user', content: '梳理可见战场态势',
+          createdAt: '2026-07-16T00:00:00.000Z'
+        },
+        assistantMessage: {
+          id: 'assistant-1', role: 'assistant', content: '已梳理关键事件',
+          createdAt: '2026-07-16T00:00:01.000Z'
+        },
+        outcome: { status: 'completed', finalAnswer: '已梳理关键事件' },
+        activities: [{
+          id: 'tool-1', type: 'tool', status: 'completed',
+          name: 'extract-events', summary: '内部工具进度'
+        }],
+        createdAt: '2026-07-16T00:00:00.000Z'
+      }]);
     });
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }));

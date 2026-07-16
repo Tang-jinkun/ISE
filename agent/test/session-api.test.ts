@@ -17,6 +17,7 @@ import {
   DOCUMENT_IR_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
+  EVENT_PLAN_DRAFT_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
   type CompiledRuntimeArtifactData,
 } from '../src/contracts/artifactTypes.ts'
@@ -456,6 +457,76 @@ test('session ownership is checked on session, artifacts, and SSE', async () => 
   database.close()
 })
 
+test('turns endpoint returns linked public messages and persisted outcome', async () => {
+  const f = await fixture()
+  const sessionId = await createSession(f.app)
+  const user = f.repositories.messages.append(sessionId, 'user', '这个场景有多长？')
+  const run = f.repositories.runs.createQueued(sessionId, 'answer', undefined, {
+    kind: 'answer',
+    userMessageId: user.id,
+  })
+  f.repositories.runs.markRunning(run.id)
+  const assistant = f.repositories.messages.append(sessionId, 'assistant', '场景时长为 180 秒。')
+  f.repositories.runs.finish(run.id, 'completed', undefined, {
+    assistantMessageId: assistant.id,
+    outcome: { status: 'completed', finalAnswer: assistant.content },
+  })
+  f.repositories.events.append(sessionId, run.id, 'model.streaming', {
+    runId: run.id, text: '我先检查当前场景。', hiddenReasoning: 'secret',
+  })
+  f.repositories.events.append(sessionId, run.id, 'model.streaming', {
+    runId: run.id, text: '已取得时长证据。',
+  })
+  f.repositories.events.append(sessionId, run.id, 'tool.started', {
+    runId: run.id, toolCallId: 'tool-1', toolName: 'inspect_replay_assets', summary: '检查场景资源',
+  })
+  f.repositories.events.append(sessionId, run.id, 'tool.completed', {
+    runId: run.id, toolCallId: 'tool-1', toolName: 'inspect_replay_assets', summary: '检查完成',
+  })
+
+  const response = await f.app.inject({
+    method: 'GET',
+    url: `/sessions/${sessionId}/turns`,
+    headers: bearer('user-1'),
+  })
+
+  assert.equal(response.statusCode, 200)
+  assert.deepEqual(response.json(), {
+    turns: [{
+      id: run.id,
+      status: 'completed',
+      kind: 'answer',
+      userMessage: {
+        id: user.id,
+        role: 'user',
+        content: user.content,
+        createdAt: user.createdAt,
+      },
+      assistantMessage: {
+        id: assistant.id,
+        role: 'assistant',
+        content: assistant.content,
+        createdAt: assistant.createdAt,
+      },
+      outcome: { status: 'completed', finalAnswer: assistant.content },
+      activities: [
+        {
+          id: 'thinking-1', type: 'thinking', status: 'completed',
+          text: '我先检查当前场景。已取得时长证据。',
+        },
+        {
+          id: 'tool-1', type: 'tool', status: 'completed', name: 'inspect_replay_assets',
+          summary: '检查完成',
+        },
+      ],
+      createdAt: run.createdAt,
+      startedAt: f.repositories.runs.get(run.id)!.startedAt,
+      finishedAt: f.repositories.runs.get(run.id)!.finishedAt,
+    }],
+  })
+  f.database.close()
+})
+
 test('attachment is validated remotely before its stable metadata is persisted', async () => {
   const { app, database } = await fixture()
   const sessionId = await createSession(app)
@@ -491,7 +562,10 @@ test('a text-only message seeds user brief evidence before the run starts', asyn
   assert.ok(evidence)
   assert.equal((document.data as { paragraphs: Array<{ text: string }> }).paragraphs[0]?.text, 'generate event plan')
   assert.equal((evidence.data as { records: Array<{ claim: string }> }).records[0]?.claim, 'generate event plan')
-  assert.match(repositories.runs.get(queued.json().runId)?.objective ?? '', /Active artifact IDs: \[[^\]]+\]/)
+  const queuedRun = repositories.runs.get(queued.json().runId)!
+  assert.match(queuedRun.objective, /Active artifact IDs: \[[^\]]+\]/)
+  assert.equal(queuedRun.kind, 'generate')
+  assert.equal(repositories.messages.get(queuedRun.userMessageId!)?.content, 'generate event plan')
   const second = await app.inject({
     method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'), payload: { content: 'second' },
   })
@@ -544,6 +618,86 @@ test('ordinary model success without a current draft or compiled artifact fails 
     .filter(item => item.type === COMPILED_RUNTIME_ARTIFACT && !item.superseded).map(item => item.id), ['last-valid'])
   assert.equal(repositories.messages.listRecent(sessionId).some(message => message.content.includes(secretAnswer)), false)
   assert.equal(/Bearer|top-secret|provider body/i.test(JSON.stringify({ events, error: run.error })), false)
+  await app.close()
+  database.close()
+})
+
+test('a factual question about an existing scene completes as an answer turn without new artifacts', async () => {
+  const finalAnswer = '当前场景总时长为 180 秒。'
+  const { app, database, repositories } = await fixture({ complete: async () => ({ content: finalAnswer }) })
+  const sessionId = await createSession(app)
+  new PersistentArtifactStore(sessionId, repositories.artifacts).create({
+    id: 'existing-runtime', type: COMPILED_RUNTIME_ARTIFACT, createdBy: 'tool',
+    logicalKey: 'compiled-runtime:existing', data: { sceneProjectConfig: { totalDurationMs: 180_000 } },
+  })
+
+  const queued = await app.inject({
+    method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'),
+    payload: { content: '这个场景有多长？' },
+  })
+  await waitForTerminal(repositories, sessionId)
+
+  const run = repositories.runs.get(queued.json().runId)!
+  assert.equal(run.kind, 'answer')
+  assert.match(run.objective, /Current scene evidence snapshot:/)
+  assert.match(run.objective, /"totalDurationMs":180000/)
+  assert.equal(run.status, 'completed')
+  assert.equal(run.outcome?.finalAnswer, finalAnswer)
+  assert.equal(repositories.messages.get(run.assistantMessageId!)?.content, finalAnswer)
+  assert.deepEqual(repositories.artifacts.listByRun(sessionId, run.id), [])
+  assert.equal(repositories.events.after(sessionId, '0').at(-1)?.data.finalAnswer, finalAnswer)
+  await app.close()
+  database.close()
+})
+
+test('a mutation request about an existing scene remains a generation turn', async () => {
+  const { app, database, repositories } = await fixture({ complete: async () => ({ content: '已经调整。' }) })
+  const sessionId = await createSession(app)
+  new PersistentArtifactStore(sessionId, repositories.artifacts).create({
+    id: 'existing-runtime', type: COMPILED_RUNTIME_ARTIFACT, createdBy: 'tool',
+    logicalKey: 'compiled-runtime:existing', data: { sceneProjectConfig: { totalDurationMs: 180_000 } },
+  })
+
+  const queued = await app.inject({
+    method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'),
+    payload: { content: '把第二段视频延后 3 秒' },
+  })
+  await waitForTerminal(repositories, sessionId)
+
+  const run = repositories.runs.get(queued.json().runId)!
+  assert.equal(run.kind, 'generate')
+  assert.equal(run.status, 'failed')
+  assert.equal(run.error?.code, 'RUN_OUTPUT_MISSING')
+  await app.close()
+  database.close()
+})
+
+test('an answer turn preserves a pending EventPlan review', async () => {
+  const { app, database, repositories } = await fixture({
+    complete: async () => ({ content: '当前草稿包含一个事件单元。' }),
+  })
+  const sessionId = await createSession(app)
+  new PersistentArtifactStore(sessionId, repositories.artifacts).create({
+    id: 'draft-for-review', type: EVENT_PLAN_DRAFT_ARTIFACT, createdBy: 'agent',
+    logicalKey: 'event-plan:draft', data: { eventUnits: [{ eventUnitId: 'event-1' }] },
+  })
+  const pending = repositories.reviews.createPending({
+    sessionId,
+    artifactId: 'draft-for-review',
+    artifactVersion: 1,
+    fingerprint: `sha256:${'a'.repeat(64)}`,
+  })
+  repositories.sessions.transition(sessionId, ['idle'], 'awaiting_review')
+
+  const queued = await app.inject({
+    method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'),
+    payload: { content: '当前草稿有几个事件？' },
+  })
+  await waitForTerminal(repositories, sessionId)
+
+  assert.equal(repositories.runs.get(queued.json().runId)?.status, 'completed')
+  assert.equal(repositories.sessions.get(sessionId)?.status, 'awaiting_review')
+  assert.equal(repositories.reviews.listPending(sessionId)[0]?.id, pending.id)
   await app.close()
   database.close()
 })
@@ -763,6 +917,16 @@ test('successful completed, failed, and interrupt paths publish one ordered term
     assert.equal(terminals[0]!.type, outcome === 'completed' ? 'run.completed' : 'run.failed', outcome)
     assert.ok(BigInt(terminals[0]!.id) > BigInt(durable.find(event => event.type === 'run.started')!.id), outcome)
     assert.equal(live.values.filter(event => ['run.completed', 'run.failed'].includes(event.type)).length, 1, outcome)
+    if (outcome === 'completed') {
+      const completedRun = f.repositories.runs.get(queued.runId)!
+      assert.equal(completedRun.outcome?.status, 'completed')
+      assert.ok(completedRun.outcome?.finalAnswer)
+      assert.equal(
+        f.repositories.messages.get(completedRun.assistantMessageId!)?.content,
+        completedRun.outcome?.finalAnswer,
+      )
+      assert.equal(terminals[0]!.data.finalAnswer, completedRun.outcome?.finalAnswer)
+    }
     await live.stop()
     f.database.close()
   }

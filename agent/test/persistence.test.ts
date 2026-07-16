@@ -37,6 +37,41 @@ test('only one queued or running run exists per session', async () => {
   database.close()
 })
 
+test('runs persist durable turn message links, request kind, and outcome', async () => {
+  const { database, repositories } = await memoryRepositories()
+  const session = repositories.sessions.create('user-1')
+  const userMessage = repositories.messages.append(session.id, 'user', '这个场景有多长？')
+  const run = repositories.runs.createQueued(session.id, 'answer from evidence', undefined, {
+    kind: 'answer',
+    userMessageId: userMessage.id,
+  })
+  repositories.runs.markRunning(run.id)
+  const assistantMessage = repositories.messages.append(session.id, 'assistant', '场景时长为 180 秒。')
+  repositories.runs.finish(run.id, 'completed', undefined, {
+    assistantMessageId: assistantMessage.id,
+    outcome: {
+      status: 'completed',
+      finalAnswer: assistantMessage.content,
+      metadata: { evidenceCount: 1 },
+    },
+  })
+
+  assert.deepEqual(repositories.runs.listBySession(session.id), [{
+    ...repositories.runs.get(run.id),
+    kind: 'answer',
+    userMessageId: userMessage.id,
+    assistantMessageId: assistantMessage.id,
+    outcome: {
+      status: 'completed',
+      finalAnswer: '场景时长为 180 秒。',
+      metadata: { evidenceCount: 1 },
+    },
+  }])
+  assert.equal(repositories.messages.get(userMessage.id)?.content, '这个场景有多长？')
+  assert.equal(repositories.messages.get(assistantMessage.id)?.role, 'assistant')
+  database.close()
+})
+
 test('event ids are durable and replay in ascending order', async (t) => {
   const path = await databasePath(t)
   const firstDatabase = await AgentDatabase.open(path, 'sql.js')

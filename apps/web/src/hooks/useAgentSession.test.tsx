@@ -7,6 +7,7 @@ import {
   AgentHttpError,
   AgentProtocolError,
   listAgentArtifacts,
+  listAgentTurns,
   streamAgentEvents,
 } from '@/api/agent';
 import { useAgentSessionStore } from '@/stores/agentSessionStore';
@@ -17,11 +18,13 @@ vi.mock('@/api/agent', async (importOriginal) => {
   return {
     ...actual,
     listAgentArtifacts: vi.fn(),
+    listAgentTurns: vi.fn(),
     streamAgentEvents: vi.fn(),
   };
 });
 
 const listArtifactsMock = vi.mocked(listAgentArtifacts);
+const listTurnsMock = vi.mocked(listAgentTurns);
 const streamEventsMock = vi.mocked(streamAgentEvents);
 
 const compiledConfig: SceneProjectConfig = {
@@ -92,8 +95,10 @@ describe('useAgentSession', () => {
   beforeEach(() => {
     useAgentSessionStore.setState(useAgentSessionStore.getInitialState(), true);
     listArtifactsMock.mockReset();
+    listTurnsMock.mockReset();
     streamEventsMock.mockReset();
     listArtifactsMock.mockResolvedValue({ artifacts: [] });
+    listTurnsMock.mockResolvedValue({ turns: [] });
     streamEventsMock.mockImplementation((_sessionId, options) => pendingStream(options?.signal));
   });
 
@@ -142,6 +147,43 @@ describe('useAgentSession', () => {
     expect(listArtifactsMock).toHaveBeenNthCalledWith(1, 'session-1');
     expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
     expect(useAgentSessionStore.getState().artifacts).toHaveProperty('draft-1');
+  });
+
+  it('hydrates durable turns and refreshes them at run boundaries', async () => {
+    const runningTurn = {
+      id: 'run-1', status: 'running' as const, kind: 'generate' as const,
+      userMessage: {
+        id: 'user-1', role: 'user' as const, content: '生成场景',
+        createdAt: '2026-07-16T00:00:00.000Z'
+      },
+      activities: [],
+      createdAt: '2026-07-16T00:00:00.000Z'
+    };
+    const completedTurn = {
+      ...runningTurn,
+      status: 'completed' as const,
+      assistantMessage: {
+        id: 'assistant-1', role: 'assistant' as const, content: '事件计划已生成。',
+        createdAt: '2026-07-16T00:00:01.000Z'
+      },
+      outcome: { status: 'completed' as const, finalAnswer: '事件计划已生成。' }
+    };
+    listTurnsMock
+      .mockResolvedValueOnce({ turns: [] })
+      .mockResolvedValueOnce({ turns: [runningTurn] })
+      .mockResolvedValueOnce({ turns: [completedTurn] });
+    streamEventsMock.mockImplementation(() => eventStream([
+      { id: '1', type: 'run.started', data: { runId: 'run-1', status: 'running' } },
+      {
+        id: '2', type: 'run.completed',
+        data: { runId: 'run-1', status: 'completed', finalAnswer: '事件计划已生成。' }
+      }
+    ]));
+
+    renderHook(() => useAgentSession('session-1'));
+
+    await waitFor(() => expect(listTurnsMock).toHaveBeenCalledTimes(3));
+    expect(useAgentSessionStore.getState().turns).toEqual([completedTurn]);
   });
 
   it('reads Last-Event-ID only from the current same-session state', async () => {

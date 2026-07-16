@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Artifact } from '@ise/agent-core'
+import type { Artifact, TurnOutcome } from '@ise/agent-core'
 import type { AuthorizedFile } from '../adapters/nestGateway.ts'
 import type { PublicAgentEventType, SessionStatus } from '../api/contracts.ts'
 import { agentError } from '../api/errors.ts'
@@ -93,14 +93,21 @@ export class MessageRepository {
     ).run([record.id, sessionId, role, content, record.createdAt]))
     return record
   }
+  get(id: string): MessageRecord | undefined {
+    const row = this.database.prepare('SELECT * FROM session_messages WHERE id = ?').get([id])
+    return row ? this.toRecord(row) : undefined
+  }
   listRecent(sessionId: string, limit = 12): MessageRecord[] {
     return this.database.prepare(
       'SELECT * FROM session_messages WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?',
-    ).all([sessionId, limit]).reverse().map(row => ({
+    ).all([sessionId, limit]).reverse().map(row => this.toRecord(row))
+  }
+  private toRecord(row: Record<string, unknown>): MessageRecord {
+    return {
       id: requiredString(row.id), sessionId: requiredString(row.session_id),
       role: requiredString(row.role) as 'user' | 'assistant', content: requiredString(row.content),
       createdAt: requiredString(row.created_at),
-    }))
+    }
   }
 }
 
@@ -145,6 +152,8 @@ export interface RunRecord {
   id: string; sessionId: string; objective: string; status: RunStatusRow
   startedAt?: string; finishedAt?: string; error?: Record<string, unknown>
   expectedAccepted?: { artifactId: string; version: number; fingerprint: string }
+  kind: 'generate' | 'answer'; userMessageId?: string; assistantMessageId?: string
+  outcome?: TurnOutcome
   createdAt: string
 }
 export class RunRepository {
@@ -153,17 +162,19 @@ export class RunRepository {
     sessionId: string,
     objective: string,
     expectedAccepted?: { artifactId: string; version: number; fingerprint: string },
+    turn?: { kind: 'generate' | 'answer'; userMessageId?: string },
   ): RunRecord {
     const id = randomUUID()
     try {
       this.database.transaction(() => this.database.prepare(
         `INSERT INTO runs(
           id,session_id,objective,status,expected_accepted_artifact_id,expected_accepted_version,
-          expected_accepted_fingerprint,created_at
-        ) VALUES(?,?,?,?,?,?,?,?)`,
+          expected_accepted_fingerprint,request_kind,user_message_id,created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?)`,
       ).run([
         id, sessionId, objective, 'queued', expectedAccepted?.artifactId ?? null,
-        expectedAccepted?.version ?? null, expectedAccepted?.fingerprint ?? null, now(),
+        expectedAccepted?.version ?? null, expectedAccepted?.fingerprint ?? null,
+        turn?.kind ?? 'generate', turn?.userMessageId ?? null, now(),
       ]))
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) throw agentError(409, 'ACTIVE_RUN_EXISTS')
@@ -175,6 +186,11 @@ export class RunRepository {
     const row = this.database.prepare('SELECT * FROM runs WHERE id = ?').get([id])
     return row ? this.toRecord(row) : undefined
   }
+  listBySession(sessionId: string): RunRecord[] {
+    return this.database.prepare(
+      'SELECT * FROM runs WHERE session_id = ? ORDER BY created_at ASC, id ASC',
+    ).all([sessionId]).map(row => this.toRecord(row))
+  }
   markRunning(id: string): RunRecord {
     const result = this.database.transaction(() => this.database.prepare(
       `UPDATE runs SET status = 'running', started_at = ? WHERE id = ? AND status = 'queued'`,
@@ -182,10 +198,19 @@ export class RunRepository {
     if (result.changes !== 1) throw agentError(409, 'RUN_STATE_CONFLICT')
     return this.get(id)!
   }
-  finish(id: string, status: 'completed' | 'failed' | 'cancelled', error?: Record<string, unknown>): RunRecord {
+  finish(
+    id: string,
+    status: 'completed' | 'failed' | 'cancelled',
+    error?: Record<string, unknown>,
+    turn?: { assistantMessageId?: string; outcome?: TurnOutcome },
+  ): RunRecord {
     const result = this.database.transaction(() => this.database.prepare(
-      `UPDATE runs SET status = ?, finished_at = ?, error_json = ? WHERE id = ? AND status IN ('queued','running')`,
-    ).run([status, now(), error === undefined ? null : json(error), id]))
+      `UPDATE runs SET status = ?, finished_at = ?, error_json = ?, assistant_message_id = ?, outcome_json = ?
+       WHERE id = ? AND status IN ('queued','running')`,
+    ).run([
+      status, now(), error === undefined ? null : json(error), turn?.assistantMessageId ?? null,
+      turn?.outcome === undefined ? null : json(turn.outcome), id,
+    ]))
     if (result.changes !== 1) throw agentError(409, 'RUN_STATE_CONFLICT')
     return this.get(id)!
   }
@@ -201,6 +226,10 @@ export class RunRepository {
         version: requiredNumber(row.expected_accepted_version),
         fingerprint: requiredString(row.expected_accepted_fingerprint),
       } } : {}),
+      kind: optionalString(row.request_kind) === 'answer' ? 'answer' : 'generate',
+      ...(optionalString(row.user_message_id) ? { userMessageId: optionalString(row.user_message_id) } : {}),
+      ...(optionalString(row.assistant_message_id) ? { assistantMessageId: optionalString(row.assistant_message_id) } : {}),
+      ...(optionalString(row.outcome_json) ? { outcome: parseJson<TurnOutcome>(row.outcome_json) } : {}),
       createdAt: requiredString(row.created_at),
     }
   }
@@ -224,6 +253,11 @@ export class EventRepository {
   after(sessionId: string, lastId: string): EventRecord[] {
     return this.database.prepare('SELECT * FROM events WHERE session_id = ? AND id > ? ORDER BY id ASC')
       .all([sessionId, Number(lastId)]).map(row => this.toRecord(row))
+  }
+  listByRun(sessionId: string, runId: string): EventRecord[] {
+    return this.database.prepare(
+      'SELECT * FROM events WHERE session_id = ? AND run_id = ? ORDER BY id ASC',
+    ).all([sessionId, runId]).map(row => this.toRecord(row))
   }
   private toRecord(row: Record<string, unknown>): EventRecord {
     return {

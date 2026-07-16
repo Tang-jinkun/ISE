@@ -7,6 +7,7 @@ import {
   createAgentSession,
   interruptAgentSession,
   listAgentArtifacts,
+  listAgentTurns,
   rejectAgentReview,
   reviseEventPlan,
   sendAgentMessage,
@@ -172,6 +173,34 @@ describe('Agent REST client', () => {
     await expect(listAgentArtifacts('session-1')).resolves.toEqual(response);
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringMatching(/\/sessions\/session-1\/artifacts$/),
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('returns durable turns from the session turns endpoint', async () => {
+    const response = {
+      turns: [{
+        id: 'run-1',
+        status: 'completed',
+        kind: 'answer',
+        userMessage: {
+          id: 'message-user-1', role: 'user', content: '这个场景有多长？',
+          createdAt: '2026-07-16T00:00:00.000Z'
+        },
+        assistantMessage: {
+          id: 'message-assistant-1', role: 'assistant', content: '场景时长为 180 秒。',
+          createdAt: '2026-07-16T00:00:01.000Z'
+        },
+        outcome: { status: 'completed', finalAnswer: '场景时长为 180 秒。' },
+        activities: [],
+        createdAt: '2026-07-16T00:00:00.000Z'
+      }]
+    };
+    mockJsonResponse(200, response);
+
+    await expect(listAgentTurns('session-1')).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringMatching(/\/sessions\/session-1\/turns$/),
       expect.objectContaining({ method: 'GET' })
     );
   });

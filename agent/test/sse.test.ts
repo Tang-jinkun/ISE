@@ -37,15 +37,24 @@ test('replay then live delivery has no gap or duplicate', async () => {
   database.close()
 })
 
-test('public sink drops model and hidden runtime events and projects public fields', async () => {
+test('public sink exposes allowlisted narration and tool lifecycle without hidden fields', async () => {
   const { database, repositories, session, broker } = await fixture()
   const sink = new PublicEventSink(session.id, broker)
-  await sink.emit(coreEvent('model.streaming', { token: 'secret' }))
+  await sink.emit(coreEvent('model.streaming', { text: '正在检查证据。', token: 'secret' }))
   await sink.emit(coreEvent('model.responded', { prompt: 'secret' }))
   await sink.emit(coreEvent('tool.started', { tool: 'inspect_report_evidence', input: { authorization: 'secret' } }))
+  await sink.emit(coreEvent('tool.completed', {
+    tool: 'inspect_report_evidence', output: { authorization: 'secret' }, message: '检查完成',
+  }))
   const recorded = repositories.events.after(session.id, '0')
-  assert.deepEqual(recorded.map(event => event.type), ['tool.started'])
-  assert.deepEqual(recorded[0]?.data, {
+  assert.deepEqual(recorded.map(event => event.type), [
+    'model.streaming', 'tool.started', 'tool.completed',
+  ])
+  assert.deepEqual(recorded[0]?.data, { runId: 'run-1', text: '正在检查证据。' })
+  assert.deepEqual(recorded[1]?.data, {
+    runId: 'run-1', toolCallId: 'call-1', toolName: 'inspect_report_evidence', summary: 'summary',
+  })
+  assert.deepEqual(recorded[2]?.data, {
     runId: 'run-1', toolCallId: 'call-1', toolName: 'inspect_report_evidence', summary: 'summary',
   })
   assert.equal(JSON.stringify(recorded).includes('secret'), false)

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { TurnOutcome } from '@ise/agent-core'
 import { eventPlanSchema, type EventPlan } from '../contracts/eventPlan.ts'
 
 export const sessionStatusSchema = z.enum([
@@ -31,6 +32,36 @@ export type AttachmentView = {
 
 export type QueuedRunResponse = { runId: string; status: 'queued' }
 
+export type AgentMessageView = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+}
+
+export type AgentTurnActivity = {
+  id: string
+  type: 'thinking' | 'tool' | 'diagnostic'
+  status: 'running' | 'completed' | 'failed'
+  text?: string
+  name?: string
+  summary?: string
+  percentage?: number
+}
+
+export type AgentTurnView = {
+  id: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  kind: 'generate' | 'answer'
+  userMessage?: AgentMessageView
+  assistantMessage?: AgentMessageView
+  outcome?: TurnOutcome
+  activities: AgentTurnActivity[]
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
 export type AgentArtifactView = {
   artifactId: string
   type: string
@@ -57,8 +88,9 @@ export type RevisionRequest = {
 }
 
 export const publicAgentEventTypeSchema = z.enum([
-  'run.started', 'tool.started', 'tool.progress', 'artifact.created', 'review.requested',
-  'review.resolved', 'compile.progress', 'run.completed', 'run.failed',
+  'run.started', 'model.streaming', 'tool.started', 'tool.progress', 'tool.completed', 'tool.failed',
+  'diagnostic.created', 'artifact.created', 'review.requested', 'review.resolved', 'compile.progress',
+  'run.completed', 'run.failed',
 ])
 export type PublicAgentEventType = z.infer<typeof publicAgentEventTypeSchema>
 

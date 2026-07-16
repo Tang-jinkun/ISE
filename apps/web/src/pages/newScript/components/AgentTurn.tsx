@@ -1,0 +1,93 @@
+import type { AgentTurnActivity, AgentTurnView } from '@/api/agent';
+import { cn } from '@/lib/utils';
+import {
+  AlertTriangle,
+  Bot,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  LoaderCircle,
+  Wrench,
+} from 'lucide-react';
+import { useState } from 'react';
+import { ChatContent } from './ChatContent';
+
+function activityLabel(activity: AgentTurnActivity): string {
+  if (activity.type === 'thinking') return activity.text ?? '正在分析当前请求';
+  if (activity.type === 'diagnostic') return activity.summary ?? '执行状态已更新';
+  return activity.summary ?? activity.name ?? '正在调用工具';
+}
+
+function ActivityIcon({ activity }: { activity: AgentTurnActivity }) {
+  if (activity.status === 'failed') return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
+  if (activity.status === 'running') return <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-600 dark:text-cyan-300" />;
+  if (activity.type === 'tool') return <Wrench className="h-3.5 w-3.5 text-muted-foreground" />;
+  return <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />;
+}
+
+export function AgentTurn({ turn }: { turn: AgentTurnView }) {
+  const isRunning = turn.status === 'queued' || turn.status === 'running';
+  const [expanded, setExpanded] = useState(isRunning);
+  const stepCount = turn.activities.length;
+  const activityName = isRunning
+    ? `执行过程，正在执行 ${stepCount} 步`
+    : `执行过程，已完成 ${stepCount} 步`;
+  const answer = turn.assistantMessage?.content ?? turn.outcome?.finalAnswer ?? '';
+
+  return (
+    <div className="flex gap-3" data-agent-turn={turn.id}>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+        <Bot className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
+      </div>
+      <div className="min-w-0 max-w-[88%] flex-1 space-y-2">
+        {stepCount > 0 && (
+          <div className="overflow-hidden rounded-lg border border-border bg-muted/35">
+            <button
+              type="button"
+              aria-label={activityName}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              <span className="font-medium text-foreground">执行过程</span>
+              <span className="ml-auto">{isRunning ? '执行中' : `已完成 ${stepCount} 步`}</span>
+            </button>
+            {expanded && (
+              <div className="border-t border-border px-3 py-2.5">
+                <div className="space-y-2 border-l border-border pl-3">
+                  {turn.activities.map((activity) => (
+                    <div key={activity.id} className="flex min-w-0 items-start gap-2 text-xs">
+                      <span className="mt-0.5 shrink-0"><ActivityIcon activity={activity} /></span>
+                      <div className="min-w-0 flex-1">
+                        <div className={cn('leading-5', activity.status === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>
+                          {activityLabel(activity)}
+                        </div>
+                        {activity.type === 'tool' && activity.name && (
+                          <div className="mt-0.5 truncate font-mono text-[10px] text-cyan-700 dark:text-cyan-300">
+                            {activity.name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {answer ? (
+          <div className="rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-foreground shadow-sm">
+            <ChatContent content={answer} />
+          </div>
+        ) : isRunning ? (
+          <div aria-label="智能体正在处理" className="flex h-9 items-center gap-1.5 px-1">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500/60 [animation-delay:-0.3s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500/60 [animation-delay:-0.15s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-500/60" />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

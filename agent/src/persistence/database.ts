@@ -39,6 +39,10 @@ export class AgentDatabase implements SqliteDatabaseAdapter {
       ['expected_accepted_artifact_id', 'TEXT'],
       ['expected_accepted_version', 'INTEGER'],
       ['expected_accepted_fingerprint', 'TEXT'],
+      ['request_kind', "TEXT NOT NULL DEFAULT 'generate'"],
+      ['user_message_id', 'TEXT'],
+      ['assistant_message_id', 'TEXT'],
+      ['outcome_json', 'TEXT'],
     ] as const) {
       if (!columns.has(name)) this.exec(`ALTER TABLE runs ADD COLUMN ${name} ${type}`)
     }

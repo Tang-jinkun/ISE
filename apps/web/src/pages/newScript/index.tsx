@@ -16,10 +16,7 @@ import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { message } from '@/components/ui/message';
 import { useAgentSession } from '@/hooks/useAgentSession';
 import { cn } from '@/lib/utils';
-import {
-  type AgentActivity,
-  useAgentSessionStore
-} from '@/stores/agentSessionStore';
+import { useAgentSessionStore } from '@/stores/agentSessionStore';
 import {
   ArrowLeft,
   ArrowRight,
@@ -40,22 +37,42 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { selectArtifactExports } from './artifactExports';
 import { ArtifactExportControls } from './components/ArtifactExportControls';
-import { ChatContent } from './components/ChatContent';
+import { AgentTurn } from './components/AgentTurn';
 import { DataImportButton } from './components/DataImportButton';
 import { EventPlanReview } from './components/EventPlanReview';
 import { NarrativePanel } from './components/NarrativePanel';
 import { ParamsPanel } from './components/ParamsPanel';
 import { ResourcePanel } from './components/ResourcePanel';
 import { SceneModal } from './components/SceneModal';
-import { ThinkingProcess } from './components/ThinkingProcess';
 
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  thinking?: string;
+  runId?: string;
   time: string;
 };
+
+function UserMessageBubble({ content, time }: { content: string; time: string }) {
+  return (
+    <div className="flex justify-end gap-3">
+      <div className="max-w-[85%] rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2.5 text-cyan-950 shadow-sm dark:text-cyan-50">
+        <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div>
+        <div className="mt-1.5 text-[10px] text-cyan-900 dark:text-cyan-100/70">{time}</div>
+      </div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+        <User className="h-4 w-4 text-foreground" />
+      </div>
+    </div>
+  );
+}
+
+function messageTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
 
 const DEFAULT_TARGET_DURATION_MS = 180_000;
 
@@ -79,33 +96,6 @@ const reviewBody = ({
   version,
   fingerprint
 }: ReviewTuple) => ({ artifactId, version, fingerprint });
-
-const activitySummary = (activity: AgentActivity): string | null => {
-  switch (activity.type) {
-    case 'run.started':
-      return '智能体已开始生成场景';
-    case 'tool.started':
-    case 'tool.progress':
-      return typeof activity.data.summary === 'string'
-        ? activity.data.summary
-        : '正在处理报告内容';
-    case 'artifact.created':
-      return '已生成新的场景产物';
-    case 'review.requested':
-      return '事件计划等待审核';
-    case 'review.resolved':
-      return '事件计划审核已提交';
-    case 'compile.progress':
-      return typeof activity.data.message === 'string'
-        ? activity.data.message
-        : '正在编译场景配置';
-    case 'run.completed':
-      return '场景配置已生成';
-    case 'run.failed':
-      return '场景生成失败';
-  }
-  return null;
-};
 
 function AgentSessionBridge({ sessionId }: { sessionId: string }) {
   useAgentSession(sessionId);
@@ -221,7 +211,7 @@ export default function Script() {
   const [agentSessionId, setAgentSessionId] = useState('');
   const sessionState = useAgentSessionStore();
   const isCurrentSession = sessionState.sessionId === agentSessionId;
-  const activities = isCurrentSession ? sessionState.activities : [];
+  const turns = isCurrentSession ? sessionState.turns : [];
   const artifacts = isCurrentSession ? sessionState.artifacts : {};
   const activeReview = isCurrentSession ? sessionState.activeReview : null;
   const compiledConfig = isCurrentSession
@@ -446,11 +436,17 @@ export default function Script() {
     }
     if (saving) return;
     const conversation = [
-      ...messages.map(({ role, content }) => ({ role, content })),
-      ...activities.flatMap((activity) => {
-        const content = activitySummary(activity);
-        return content ? [{ role: 'assistant' as const, content }] : [];
-      })
+      ...turns.flatMap((turn) => [
+        ...(turn.userMessage
+          ? [{ role: 'user' as const, content: turn.userMessage.content }]
+          : []),
+        ...(turn.assistantMessage?.content
+          ? [{ role: 'assistant' as const, content: turn.assistantMessage.content }]
+          : [])
+      ]),
+      ...messages
+        .filter((item) => !item.runId || !turns.some((turn) => turn.id === item.runId))
+        .map(({ role, content }) => ({ role, content }))
     ].filter(({ content }) => content.trim().length > 0);
     if (!agentSessionId || conversation.length === 0) {
       message.error('请先导入报告并生成可保存的对话');
@@ -542,36 +538,19 @@ export default function Script() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const activityMessages = useMemo<ChatMessage[]>(
-    () =>
-      activities.flatMap((activity) => {
-        const content = activitySummary(activity);
-        return content
-          ? [
-              {
-                id: `agent-event-${activity.id}`,
-                role: 'assistant' as const,
-                content,
-                time: nowText()
-              }
-            ]
-          : [];
-      }),
-    [activities]
-  );
-  const visibleMessages = useMemo(
-    () => [...messages, ...activityMessages],
-    [activityMessages, messages]
+  const pendingMessages = useMemo(
+    () => messages.filter((item) => !item.runId || !turns.some((turn) => turn.id === item.runId)),
+    [messages, turns]
   );
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [visibleMessages.length]);
+  }, [pendingMessages.length, turns.length]);
 
-  const appendUserMessage = (content: string) => {
+  const appendUserMessage = (content: string, runId: string) => {
     setMessages((current) => [
       ...current,
-      { id: uid('m'), role: 'user', content, time: nowText() }
+      { id: uid('m'), role: 'user', content, runId, time: nowText() }
     ]);
   };
 
@@ -599,11 +578,11 @@ export default function Script() {
         useAgentSessionStore.getState().open(sessionId);
         setAgentSessionId(sessionId);
       }
-      await sendAgentMessage(sessionId, {
+      const queued = await sendAgentMessage(sessionId, {
         content: hasSentInitialMessage ? text : buildGenerationObjective(text)
       });
       setHasSentInitialMessage(true);
-      appendUserMessage(text);
+      appendUserMessage(text, queued.runId);
       setInput('');
       setPendingAttachment(null);
     } catch (error) {
@@ -819,54 +798,19 @@ export default function Script() {
 
             {/* Chat Messages Area */}
             <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4 thin-scrollbar border border-border rounded-xl bg-background/50">
-              {visibleMessages.map((m) => (
-                <div
-                  key={m.id}
-                  className={cn(
-                    'flex gap-3',
-                    m.role === 'user' ? 'justify-end' : 'justify-start'
+              {turns.map((turn) => (
+                <div key={turn.id} className="space-y-4">
+                  {turn.userMessage && (
+                    <UserMessageBubble
+                      content={turn.userMessage.content}
+                      time={messageTime(turn.userMessage.createdAt)}
+                    />
                   )}
-                >
-                  {m.role === 'assistant' && (
-                    <div className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center shrink-0">
-                      <Bot className="h-4 w-4 text-cyan-600 dark:text-cyan-300" />
-                    </div>
-                  )}
-                  <div
-                    className={cn(
-                      'max-w-[85%] rounded-2xl border px-3 py-2.5 shadow-sm',
-                      m.role === 'user'
-                        ? 'border-cyan-500/20 bg-cyan-500/10 text-cyan-950 dark:text-cyan-50'
-                        : 'border-border bg-muted/50 text-foreground'
-                    )}
-                  >
-                    {m.thinking && <ThinkingProcess content={m.thinking} />}
-                    {m.role === 'assistant' && !m.content && !m.thinking ? (
-                      <div className="flex items-center gap-1.5 h-6 px-1">
-                        <div className="w-1.5 h-1.5 bg-cyan-500/60 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                        <div className="w-1.5 h-1.5 bg-cyan-500/60 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                        <div className="w-1.5 h-1.5 bg-cyan-500/60 rounded-full animate-bounce" />
-                      </div>
-                    ) : (
-                      <ChatContent content={m.content} />
-                    )}
-                    <div
-                      className={cn(
-                        'mt-1.5 text-[10px] flex items-center justify-between',
-                        m.role === 'user'
-                          ? 'text-cyan-900 dark:text-cyan-100/70'
-                          : 'text-muted-foreground'
-                      )}
-                    >
-                      <span>{m.time}</span>
-                    </div>
-                  </div>
-                  {m.role === 'user' && (
-                    <div className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center shrink-0">
-                      <User className="h-4 w-4 text-foreground" />
-                    </div>
-                  )}
+                  <AgentTurn turn={turn} />
                 </div>
+              ))}
+              {pendingMessages.map((item) => (
+                <UserMessageBubble key={item.id} content={item.content} time={item.time} />
               ))}
               {operationError && (
                 <p role="alert" className="text-xs text-destructive">

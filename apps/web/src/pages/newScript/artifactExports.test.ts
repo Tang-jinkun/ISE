@@ -65,6 +65,7 @@ function completedState(
     sessionId: 'session-1',
     status: 'completed',
     activities: [],
+    turns: [],
     artifacts: {
       [accepted.artifactId]: accepted,
       [compiled.artifactId]: compiled
@@ -76,6 +77,7 @@ function completedState(
     open: () => undefined,
     applyEvent: () => undefined,
     replaceArtifacts: () => undefined,
+    replaceTurns: () => undefined,
     ingestArtifacts: () => undefined,
     setActiveReview: () => undefined,
     recordDiagnostic: () => undefined,

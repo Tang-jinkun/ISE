@@ -4,6 +4,7 @@ import {
   AgentHttpError,
   AgentProtocolError,
   listAgentArtifacts,
+  listAgentTurns,
   streamAgentEvents,
 } from '@/api/agent';
 import { useAgentSessionStore } from '@/stores/agentSessionStore';
@@ -125,6 +126,17 @@ export function useAgentSession(sessionId: string) {
       }
     };
 
+    const hydrateTurns = async () => {
+      try {
+        const response = await listAgentTurns(sessionId);
+        if (!isCurrent()) return;
+        useAgentSessionStore.getState().replaceTurns(sessionId, response.turns);
+      } catch {
+        if (!isCurrent()) return;
+        useAgentSessionStore.getState().recordDiagnostic(sessionId, hydrationDiagnostic);
+      }
+    };
+
     const consume = async () => {
       const current = useAgentSessionStore.getState();
       const lastEventId = current.sessionId === sessionId ? current.lastEventId : undefined;
@@ -134,6 +146,10 @@ export function useAgentSession(sessionId: string) {
       })) {
         if (!isCurrent()) return;
         useAgentSessionStore.getState().applyEvent(sessionId, event);
+        if (event.type === 'run.started' || event.type === 'run.completed' || event.type === 'run.failed') {
+          await hydrateTurns();
+          if (!isCurrent()) return;
+        }
         if (event.type === 'artifact.created' || event.type === 'review.requested') {
           await hydrate();
           if (!isCurrent()) return;
@@ -145,7 +161,7 @@ export function useAgentSession(sessionId: string) {
     };
 
     const run = async () => {
-      await hydrate();
+      await Promise.all([hydrate(), hydrateTurns()]);
       if (!isCurrent()) return;
       const error = await consumeWithRetry(consume, controller.signal);
       if (!error || !isCurrent()) return;

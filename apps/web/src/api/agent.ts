@@ -79,8 +79,12 @@ export type RevisionRequest = {
 
 export type PublicAgentEventType =
   | 'run.started'
+  | 'model.streaming'
   | 'tool.started'
   | 'tool.progress'
+  | 'tool.completed'
+  | 'tool.failed'
+  | 'diagnostic.created'
   | 'artifact.created'
   | 'review.requested'
   | 'review.resolved'
@@ -92,6 +96,41 @@ export type AgentEvent = {
   id: string;
   type: PublicAgentEventType;
   data: Record<string, unknown>;
+};
+
+export type AgentMessageView = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+};
+
+export type AgentTurnActivity = {
+  id: string;
+  type: 'thinking' | 'tool' | 'diagnostic';
+  status: 'running' | 'completed' | 'failed';
+  text?: string;
+  name?: string;
+  summary?: string;
+  percentage?: number;
+};
+
+export type AgentTurnView = {
+  id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  kind: 'generate' | 'answer';
+  userMessage?: AgentMessageView;
+  assistantMessage?: AgentMessageView;
+  outcome?: {
+    status: 'completed' | 'awaiting_user' | 'awaiting_dependency' | 'failed';
+    finalAnswer: string;
+    diagnostics?: Array<{ code: string; message: string; severity: 'info' | 'warning' | 'error' }>;
+    metadata?: Record<string, unknown>;
+  };
+  activities: AgentTurnActivity[];
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
 };
 
 export class AgentHttpError extends Error {
@@ -126,8 +165,12 @@ type StreamAgentEventOptions = {
 
 const PUBLIC_AGENT_EVENT_TYPES = new Set<PublicAgentEventType>([
   'run.started',
+  'model.streaming',
   'tool.started',
   'tool.progress',
+  'tool.completed',
+  'tool.failed',
+  'diagnostic.created',
   'artifact.created',
   'review.requested',
   'review.resolved',
@@ -248,6 +291,13 @@ export const listAgentArtifacts = (
 ): Promise<AgentArtifactListResponse> =>
   agentRequest<AgentArtifactListResponse>(
     `/sessions/${pathSegment(sessionId)}/artifacts`
+  );
+
+export const listAgentTurns = (
+  sessionId: string
+): Promise<{ turns: AgentTurnView[] }> =>
+  agentRequest<{ turns: AgentTurnView[] }>(
+    `/sessions/${pathSegment(sessionId)}/turns`
   );
 
 export const approveAgentReview = (

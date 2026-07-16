@@ -36,12 +36,37 @@ export class PublicEventSink implements AgentEventSink {
           status: 'running',
         })
         return
+      case 'model.streaming': {
+        const text = optionalString(event.data?.text)
+        if (!text) return
+        this.broker.append(this.sessionId, runId, 'model.streaming', { runId, text })
+        return
+      }
       case 'tool.started':
         this.broker.append(this.sessionId, runId, 'tool.started', {
           runId,
           toolCallId: requiredString(event.toolCallId),
           toolName: requiredString(event.data?.tool),
           summary: event.summary,
+        })
+        return
+      case 'tool.completed':
+      case 'tool.failed': {
+        const toolName = optionalString(event.data?.tool)
+        this.broker.append(this.sessionId, runId, event.eventType, {
+          runId,
+          toolCallId: requiredString(event.toolCallId),
+          ...(toolName ? { toolName } : {}),
+          summary: event.summary,
+        })
+        return
+      }
+      case 'diagnostic.created':
+        this.broker.append(this.sessionId, runId, 'diagnostic.created', {
+          runId,
+          code: optionalString(event.data?.code) ?? 'AGENT_DIAGNOSTIC',
+          severity: event.status === 'failed' ? 'error' : 'warning',
+          summary: event.status === 'failed' ? '智能体执行遇到错误' : '智能体已调整执行方式',
         })
         return
       case 'tool.progress': {
@@ -75,6 +100,14 @@ export class PublicEventSink implements AgentEventSink {
           runId,
           status: 'failed',
           diagnostics: publicFailureDiagnostics(event.data?.diagnostics),
+        })
+        return
+      case 'run.completed':
+        if (!this.includeTerminalEvents) return
+        this.broker.append(this.sessionId, runId, 'run.completed', {
+          runId,
+          status: 'completed',
+          finalAnswer: event.summary,
         })
         return
       default:

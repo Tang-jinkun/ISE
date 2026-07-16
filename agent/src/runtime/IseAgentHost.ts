@@ -4,6 +4,7 @@ import {
   DomainStateStore,
   PermissionManager,
   type AgentEventSink,
+  type AgentContext,
   type AgentRunResult,
   type ArtifactRepository,
   type DomainStateRepository,
@@ -29,6 +30,7 @@ export interface IseAgentHostOptions {
   artifacts?: ArtifactRepository
   domainState?: DomainStateRepository
   signal?: AbortSignal
+  toolFilter?: (tool: ReturnType<ToolRegistry['list']>[number], context: AgentContext) => boolean
 }
 
 export class IseAgentHost {
@@ -45,6 +47,7 @@ export class IseAgentHost {
       domainState: this.options.domainState ?? new DomainStateStore(),
       eventSink: this.options.eventSink,
       signal: this.options.signal,
+      toolFilter: this.options.toolFilter,
       profile: IseAgentProfile,
       permissions: new PermissionManager({
         approve: (tool, input) => this.options.approve?.(tool.name, input) ?? 'deny',

@@ -5,7 +5,8 @@ import {
   sceneProjectConfigSchema,
 } from '@ise/runtime-contracts';
 import { create } from 'zustand';
-import type { AgentArtifactView, AgentEvent, ReviewTuple, SessionStatus } from '@/api/agent';
+import type { AgentArtifactView, AgentEvent, AgentTurnView, ReviewTuple, SessionStatus } from '@/api/agent';
+import { applyAgentEventToTurns } from '@/pages/newScript/agentTurns';
 
 const COMPILED_RUNTIME_ARTIFACT = 'ise.canonical-runtime-plan/v1';
 const CANONICAL_EVENT_ID = /^(0|[1-9]\d*)$/;
@@ -18,6 +19,7 @@ export type AgentSessionState = {
   status: SessionStatus;
   lastEventId?: string;
   activities: AgentActivity[];
+  turns: AgentTurnView[];
   artifacts: Record<string, AgentArtifactView>;
   activeReview: AgentReviewView | null;
   diagnostics: Diagnostic[];
@@ -26,6 +28,7 @@ export type AgentSessionState = {
   open(sessionId: string): void;
   applyEvent(sessionId: string, event: AgentEvent): void;
   replaceArtifacts(sessionId: string, artifacts: AgentArtifactView[]): void;
+  replaceTurns(sessionId: string, turns: AgentTurnView[]): void;
   ingestArtifacts(sessionId: string, artifacts: AgentArtifactView[]): void;
   setActiveReview(sessionId: string, review: ReviewTuple): void;
   recordDiagnostic(
@@ -41,6 +44,7 @@ type SessionData = Pick<
   | 'status'
   | 'lastEventId'
   | 'activities'
+  | 'turns'
   | 'artifacts'
   | 'activeReview'
   | 'diagnostics'
@@ -53,6 +57,7 @@ const emptySession = (sessionId: string | null): SessionData => ({
   status: 'idle',
   lastEventId: undefined,
   activities: [],
+  turns: [],
   artifacts: {},
   activeReview: null,
   diagnostics: [],
@@ -128,16 +133,34 @@ function sanitizeEvent(event: AgentEvent): AgentActivity {
         ['status', stringField(data, 'status')],
       ]);
       break;
+    case 'model.streaming':
+      publicData = definedFields([
+        ['runId', stringField(data, 'runId')],
+        ['text', stringField(data, 'text')],
+      ]);
+      break;
     case 'tool.started':
     case 'tool.progress':
+    case 'tool.completed':
+    case 'tool.failed':
       publicData = definedFields([
         ['runId', stringField(data, 'runId')],
         ['toolCallId', stringField(data, 'toolCallId')],
         ['toolName', stringField(data, 'toolName')],
         ['summary', stringField(data, 'summary')],
+        ['message', stringField(data, 'message')],
+        ['percentage', numberField(data, 'percentage')],
         ['current', numberField(data, 'current')],
         ['total', numberField(data, 'total')],
         ['progress', numberField(data, 'progress')],
+      ]);
+      break;
+    case 'diagnostic.created':
+      publicData = definedFields([
+        ['runId', stringField(data, 'runId')],
+        ['code', stringField(data, 'code')],
+        ['severity', stringField(data, 'severity')],
+        ['summary', stringField(data, 'summary')],
       ]);
       break;
     case 'artifact.created':
@@ -178,6 +201,7 @@ function sanitizeEvent(event: AgentEvent): AgentActivity {
         ['runId', stringField(data, 'runId')],
         ['status', stringField(data, 'status')],
         ['runtimeArtifactId', stringField(data, 'runtimeArtifactId')],
+        ['finalAnswer', stringField(data, 'finalAnswer')],
       ]);
       break;
     case 'run.failed':
@@ -238,6 +262,7 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
       const next: Partial<AgentSessionState> = {
         lastEventId: event.id,
         activities: [...state.activities, activity],
+        turns: applyAgentEventToTurns(state.turns, activity),
       };
 
       if (event.type === 'run.started' || event.type === 'compile.progress') {
@@ -279,6 +304,9 @@ export const useAgentSessionStore = create<AgentSessionState>((set) => ({
         compiledConfig: compiledConfigFrom(nextArtifacts, state.latestCompletedRuntimeArtifactId),
       };
     }),
+
+  replaceTurns: (sessionId, turns) =>
+    set((state) => state.sessionId === sessionId ? { turns: structuredClone(turns) } : state),
 
   ingestArtifacts: (sessionId, artifacts) =>
     set((state) => {

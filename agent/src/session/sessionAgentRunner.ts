@@ -39,6 +39,7 @@ import { sha256 } from '../services/fingerprint.ts'
 import { EventBroker } from './eventBroker.ts'
 import { PublicEventSink } from './publicEventSink.ts'
 import { SessionAttachmentReader } from './sessionAttachmentReader.ts'
+import { classifyRequestKind, type SessionRequestKind } from './requestKind.ts'
 
 export interface SessionAgentRunnerOptions {
   repositories: AgentRepositories
@@ -71,11 +72,14 @@ export class SessionAgentRunner {
   }): QueuedRunResponse {
     const run = this.options.repositories.transaction(() => {
       this.options.repositories.sessions.requireOwned(input.sessionId, input.subject)
+      const kind = classifyRequestKind(input.content, this.hasSceneArtifacts(input.sessionId))
       const message = this.options.repositories.messages.append(input.sessionId, 'user', input.content)
       this.seedTextBriefIfNeeded(input.sessionId, message.id, input.content)
       const created = this.options.repositories.runs.createQueued(
         input.sessionId,
-        this.buildBoundedObjective(input.sessionId, input.content),
+        this.buildBoundedObjective(input.sessionId, input.content, kind),
+        undefined,
+        { kind, userMessageId: message.id },
       )
       this.options.repositories.sessions.transition(
         input.sessionId,
@@ -196,6 +200,7 @@ export class SessionAgentRunner {
         domainState: new PersistentDomainStateStore(run.sessionId, this.options.repositories.sessions),
         eventSink: new PublicEventSink(run.sessionId, this.events, run.id, false),
         signal: controller.signal,
+        toolFilter: tool => run.kind !== 'answer' || tool.risk === 'read',
       }).run(run.objective)
       if (compiledArtifactInvalid) throw new CompiledArtifactInvalidError()
       if (result.goal.status !== 'completed') {
@@ -233,6 +238,10 @@ export class SessionAgentRunner {
     draft?: Artifact,
   ): Promise<void> {
     if (!compiled && !draft) {
+      if (run.kind === 'answer') {
+        this.finishAnswer(run, result)
+        return
+      }
       await this.finishFromThrownError(
         run.id,
         new CompilationError([diagnostic('RUN_OUTPUT_MISSING', 'Current run produced no validated output')]),
@@ -244,23 +253,60 @@ export class SessionAgentRunner {
     if (compiled) {
       const { sceneProjectConfig } = this.validatedCompiledData(run, compiled)
       this.options.repositories.transaction(() => {
-        if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
-        this.options.repositories.runs.finish(run.id, 'completed')
+        const assistant = summary?.trim()
+          ? this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
+          : undefined
+        this.options.repositories.runs.finish(run.id, 'completed', undefined, {
+          ...(assistant ? { assistantMessageId: assistant.id } : {}),
+          ...(result.turnOutcome ? { outcome: result.turnOutcome } : {}),
+        })
         this.options.repositories.sessions.transition(run.sessionId, ['running'], 'completed')
         this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.completed', {
           runId: run.id,
           status: 'completed',
           runtimeArtifactId: compiled.id,
           sceneProjectConfig,
+          ...(summary?.trim() ? { finalAnswer: summary.trim() } : {}),
         })
       })
       return
     }
     this.options.repositories.transaction(() => {
-      if (summary?.trim()) this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
-      this.options.repositories.runs.finish(run.id, 'completed')
+      const assistant = summary?.trim()
+        ? this.options.repositories.messages.append(run.sessionId, 'assistant', summary.trim())
+        : undefined
+      this.options.repositories.runs.finish(run.id, 'completed', undefined, {
+        ...(assistant ? { assistantMessageId: assistant.id } : {}),
+        ...(result.turnOutcome ? { outcome: result.turnOutcome } : {}),
+      })
       if (draft && this.#draftObserver) this.#draftObserver({ sessionId: run.sessionId, runId: run.id, draft })
       else this.options.repositories.sessions.transition(run.sessionId, ['running'], draft ? 'awaiting_review' : 'completed')
+      this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.completed', {
+        runId: run.id,
+        status: draft ? 'awaiting_review' : 'completed',
+        ...(summary?.trim() ? { finalAnswer: summary.trim() } : {}),
+      })
+    })
+  }
+
+  private finishAnswer(run: RunRecord, result: AgentRunResult): void {
+    const finalAnswer = result.turnOutcome?.finalAnswer?.trim() || result.goal.finalSummary?.trim()
+    if (!finalAnswer) throw new CompilationError([diagnostic('RUN_OUTPUT_MISSING', 'Answer turn produced no final answer')])
+    const nextSessionStatus = this.options.repositories.reviews.listPending(run.sessionId).length > 0
+      ? 'awaiting_review'
+      : 'completed'
+    this.options.repositories.transaction(() => {
+      const assistant = this.options.repositories.messages.append(run.sessionId, 'assistant', finalAnswer)
+      this.options.repositories.runs.finish(run.id, 'completed', undefined, {
+        assistantMessageId: assistant.id,
+        ...(result.turnOutcome ? { outcome: result.turnOutcome } : {}),
+      })
+      this.options.repositories.sessions.transition(run.sessionId, ['running'], nextSessionStatus)
+      this.appendTerminalAfterCommit(run.sessionId, run.id, 'run.completed', {
+        runId: run.id,
+        status: nextSessionStatus,
+        finalAnswer,
+      })
     })
   }
 
@@ -329,19 +375,31 @@ export class SessionAgentRunner {
       }),
     })[0]!
     const context = this.toolContext(run, artifacts)
+    const toolCallId = `compile-${run.id}`
     this.events.append(run.sessionId, run.id, 'tool.started', {
       runId: run.id,
-      toolCallId: `compile-${run.id}`,
+      toolCallId,
       toolName: compileTool.name,
       summary: 'Compile validated replay runtime',
     })
-    const result = await compileTool.execute({
-      eventPlanArtifactId: narrativePlan.sourceEventPlan.artifactId,
-      narrativePlanArtifactId: narrativeArtifact.id,
-      assetRegistryArtifactId: registryArtifact.id,
-      capabilityManifestVersion: capabilityManifest.version,
-      assetRegistryVersion: snapshot.registryVersion,
-    }, context)
+    let result
+    try {
+      result = await compileTool.execute({
+        eventPlanArtifactId: narrativePlan.sourceEventPlan.artifactId,
+        narrativePlanArtifactId: narrativeArtifact.id,
+        assetRegistryArtifactId: registryArtifact.id,
+        capabilityManifestVersion: capabilityManifest.version,
+        assetRegistryVersion: snapshot.registryVersion,
+      }, context)
+    } catch (error) {
+      this.events.append(run.sessionId, run.id, 'tool.failed', {
+        runId: run.id,
+        toolCallId,
+        toolName: compileTool.name,
+        summary: 'Replay runtime compilation failed',
+      })
+      throw error
+    }
     if (result.artifacts?.length !== 1 || result.artifacts[0]!.type !== COMPILED_RUNTIME_ARTIFACT) {
       throw new CompilationError([diagnostic('COMPILED_ARTIFACT_MISSING', 'Compiler returned no playable artifact')])
     }
@@ -352,6 +410,12 @@ export class SessionAgentRunner {
       artifactId: compiled.id,
       artifactType: compiled.type,
       logicalKey: compiled.logicalKey,
+    })
+    this.events.append(run.sessionId, run.id, 'tool.completed', {
+      runId: run.id,
+      toolCallId,
+      toolName: compileTool.name,
+      summary: 'Replay runtime compilation completed',
     })
     return compiled
   }
@@ -455,7 +519,7 @@ export class SessionAgentRunner {
     this.options.repositories.artifacts.replaceLedger(run.sessionId, ledger)
   }
 
-  private buildBoundedObjective(sessionId: string, content: string): string {
+  private buildBoundedObjective(sessionId: string, content: string, kind: SessionRequestKind): string {
     const messages = this.options.repositories.messages.listRecent(sessionId, 12)
       .map(message => ({ role: message.role, content: message.content }))
     const artifactIds = this.options.repositories.artifacts.listLedger(sessionId)
@@ -463,11 +527,48 @@ export class SessionAgentRunner {
     const attachmentIds = this.options.repositories.attachments.list(sessionId).map(item => item.fileId).sort()
     return [
       'Handle the current ISE session objective using only registered tools and active artifacts.',
+      kind === 'answer'
+        ? 'Request mode: answer. Read active evidence and answer naturally. Do not create, revise, accept, or compile scene artifacts.'
+        : 'Request mode: generate. Produce the validated artifact required by the user request before finishing.',
       `Current message: ${content}`,
       `Visible messages: ${JSON.stringify(messages)}`,
       `Active artifact IDs: ${JSON.stringify(artifactIds)}`,
+      ...(kind === 'answer'
+        ? [`Current scene evidence snapshot: ${JSON.stringify(this.sceneEvidenceSnapshot(sessionId))}`]
+        : []),
       `Attachment file IDs: ${JSON.stringify(attachmentIds)}`,
     ].join('\n')
+  }
+
+  private sceneEvidenceSnapshot(sessionId: string): Array<{
+    artifactId: string
+    type: string
+    version: number
+    data: unknown
+  }> {
+    const sceneTypes = [
+      EVENT_PLAN_DRAFT_ARTIFACT,
+      EVENT_PLAN_ACCEPTED_ARTIFACT,
+      NARRATIVE_PLAN_ARTIFACT,
+      COMPILED_RUNTIME_ARTIFACT,
+    ]
+    const active = this.options.repositories.artifacts.listLedger(sessionId)
+      .filter(artifact => !artifact.superseded)
+    return sceneTypes.flatMap(type => {
+      const artifact = active.filter(item => item.type === type).at(-1)
+      return artifact ? [{ artifactId: artifact.id, type: artifact.type, version: artifact.version, data: artifact.data }] : []
+    })
+  }
+
+  private hasSceneArtifacts(sessionId: string): boolean {
+    const sceneTypes = new Set([
+      EVENT_PLAN_DRAFT_ARTIFACT,
+      EVENT_PLAN_ACCEPTED_ARTIFACT,
+      NARRATIVE_PLAN_ARTIFACT,
+      COMPILED_RUNTIME_ARTIFACT,
+    ])
+    return this.options.repositories.artifacts.listLedger(sessionId)
+      .some(artifact => !artifact.superseded && sceneTypes.has(artifact.type))
   }
 
   private seedTextBriefIfNeeded(sessionId: string, messageId: string, content: string): void {

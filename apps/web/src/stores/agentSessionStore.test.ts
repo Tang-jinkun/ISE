@@ -75,6 +75,55 @@ describe('useAgentSessionStore', () => {
     });
   });
 
+  it('hydrates durable turns and folds live events into the matching run', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+    store.replaceTurns('session-1', [{
+      id: 'run-1',
+      status: 'running',
+      kind: 'generate',
+      userMessage: {
+        id: 'user-1', role: 'user', content: '生成场景', createdAt: '2026-07-16T00:00:00.000Z'
+      },
+      activities: [],
+      createdAt: '2026-07-16T00:00:00.000Z'
+    }]);
+
+    store.applyEvent('session-1', event('1', 'model.streaming', {
+      runId: 'run-1', text: '我先检查报告。', hiddenReasoning: 'secret'
+    }));
+    store.applyEvent('session-1', event('2', 'tool.started', {
+      runId: 'run-1', toolCallId: 'tool-1', toolName: 'inspect_report_evidence',
+      summary: '检查报告证据'
+    }));
+    store.applyEvent('session-1', event('3', 'tool.progress', {
+      runId: 'run-1', toolCallId: 'tool-1', toolName: 'inspect_report_evidence',
+      message: '正在检查', percentage: 40
+    }));
+    store.applyEvent('session-1', event('4', 'tool.completed', {
+      runId: 'run-1', toolCallId: 'tool-1', toolName: 'inspect_report_evidence',
+      summary: '检查完成'
+    }));
+    store.applyEvent('session-1', event('5', 'run.completed', {
+      runId: 'run-1', status: 'completed', finalAnswer: '事件计划已生成。'
+    }));
+
+    expect(useAgentSessionStore.getState().turns).toEqual([expect.objectContaining({
+      id: 'run-1',
+      status: 'completed',
+      assistantMessage: expect.objectContaining({ content: '事件计划已生成。' }),
+      outcome: expect.objectContaining({ finalAnswer: '事件计划已生成。' }),
+      activities: [
+        { id: 'thinking-1', type: 'thinking', status: 'completed', text: '我先检查报告。' },
+        {
+          id: 'tool-1', type: 'tool', status: 'completed', name: 'inspect_report_evidence',
+          summary: '检查完成', percentage: 40
+        }
+      ]
+    })]);
+    expect(JSON.stringify(useAgentSessionStore.getState().turns)).not.toContain('secret');
+  });
+
   it('ignores duplicate, older, and non-canonical numeric event IDs', () => {
     const store = useAgentSessionStore.getState();
     store.open('session-1');

@@ -181,7 +181,13 @@ test('DOCX to revision to exact approval to compiled scene survives event reconn
   const compiled = f.repositories.artifacts.get(flow.sessionId, completed.data.runtimeArtifactId as string)!
   assert.deepEqual((compiled.data as CompiledRuntimeArtifactData).sceneProjectConfig, completed.data.sceneProjectConfig)
   assert.equal(JSON.stringify(compiled).includes('https://'), false)
-  assert.ok(f.repositories.events.after(flow.sessionId, flow.requested.id).every(event => BigInt(event.id) > BigInt(flow.requested.id)))
+  const downstreamEvents = f.repositories.events.after(flow.sessionId, flow.requested.id)
+  assert.ok(downstreamEvents.every(event => BigInt(event.id) > BigInt(flow.requested.id)))
+  const compileStarted = downstreamEvents.find(event =>
+    event.type === 'tool.started' && event.data.toolName === 'compile_replay_runtime')
+  assert.ok(compileStarted)
+  assert.ok(downstreamEvents.some(event =>
+    event.type === 'tool.completed' && event.data.toolCallId === compileStarted.data.toolCallId))
   await f.app.close()
   f.database.close()
 })
