@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { trajectoryCurationSchema, trajectoryRepairMetadataSchema } from '@ise/runtime-contracts'
 import { compilationDiagnosticSchema } from '../services/runtimeDiagnostics.ts'
 
 const common = {
@@ -37,6 +38,8 @@ export const assetRegistryEntrySchema = z.discriminatedUnion('kind', [
       startTimeMs: z.number().int().nonnegative(),
       endTimeMs: z.number().int().nonnegative(),
       monotonic: z.literal(true),
+      curation: trajectoryCurationSchema.optional(),
+      repair: trajectoryRepairMetadataSchema.optional(),
       bounds: z.tuple([
         z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),
         z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),

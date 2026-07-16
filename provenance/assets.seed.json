@@ -266,6 +266,146 @@
       }
     },
     {
+      "displayName": "ADAMPUR Vampire-1",
+      "aliases": [
+        "Vampire-1"
+      ],
+      "fingerprint": "sha256:95f674daa14f2690017780de28ef32fa1c84986b1be8d43a02ecb2826cad0908",
+      "sourceRelativePath": "json/ADAMPUR Vampire-1.json",
+      "objectName": "demo-assets/trajectory/adampur-vampire-1.json",
+      "size": 35140,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:adampur-vampire-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 184000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.95885934058175,
+            29.452157654546472
+          ],
+          [
+            75.92721999029027,
+            31.383095286007556
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "ADAMPUR Vampire-2",
+      "aliases": [
+        "Vampire-2"
+      ],
+      "fingerprint": "sha256:8bf02b4441aedd2179d21a53efbb7b638af03447675c82a3ccec313b57945343",
+      "sourceRelativePath": "json/ADAMPUR Vampire-2.json",
+      "objectName": "demo-assets/trajectory/adampur-vampire-2.json",
+      "size": 35117,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:adampur-vampire-2",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 182000,
+        "monotonic": true,
+        "bounds": [
+          [
+            75.17421471605579,
+            29.607782698491288
+          ],
+          [
+            76.1069340868212,
+            31.485664177238476
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "ADAMPUR Vampire-3",
+      "aliases": [
+        "Vampire-3"
+      ],
+      "fingerprint": "sha256:735e387813e47024c2d16aeff4cb4ad81d233a81a5f78d68a0bedb349c1d3dcd",
+      "sourceRelativePath": "json/ADAMPUR Vampire-3.json",
+      "objectName": "demo-assets/trajectory/adampur-vampire-3.json",
+      "size": 34904,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:adampur-vampire-3",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 180000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.90303102258773,
+            29.42565958554501
+          ],
+          [
+            75.86831962790829,
+            31.35417927269592
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "ADAMPUR Vampire-4",
+      "aliases": [
+        "Vampire-4"
+      ],
+      "fingerprint": "sha256:03aed1d26b05d3e20f80dc5802da9a14145d5065666b7a19b9f95c06d5a7dd43",
+      "sourceRelativePath": "json/ADAMPUR Vampire-4.json",
+      "objectName": "demo-assets/trajectory/adampur-vampire-4.json",
+      "size": 34593,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:adampur-vampire-4",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 178000,
+        "monotonic": true,
+        "bounds": [
+          [
+            75.28079071373787,
+            29.661698848865573
+          ],
+          [
+            76.20707055327102,
+            31.53481966394456
+          ]
+        ]
+      }
+    },
+    {
       "displayName": "AMBALA Rafale-1",
       "aliases": [
         "Rafale-1",
@@ -307,6 +447,111 @@
       }
     },
     {
+      "displayName": "AMBALA Rafale-2",
+      "aliases": [
+        "Rafale-2"
+      ],
+      "fingerprint": "sha256:642902bcec997fb0704af758215791a05a2512b5b9cfec7b1c2902d56a5326da",
+      "sourceRelativePath": "json/AMBALA Rafale-2.json",
+      "objectName": "demo-assets/trajectory/ambala-rafale-2.json",
+      "size": 19227,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:ambala-rafale-2",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 180000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.58825915665427,
+            29.90904763726196
+          ],
+          [
+            76.74656191317862,
+            31.635831736853877
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "AMBALA Rafale-3",
+      "aliases": [
+        "Rafale-3"
+      ],
+      "fingerprint": "sha256:296f67d0824e9bcf7c1aef2ff1afc3a069ee51a7ff136435c862e957a15f0567",
+      "sourceRelativePath": "json/AMBALA Rafale-3.json",
+      "objectName": "demo-assets/trajectory/ambala-rafale-3.json",
+      "size": 18157,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:ambala-rafale-3",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 180000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.61348216518533,
+            30.195888393716583
+          ],
+          [
+            76.77026342667712,
+            31.898091540416505
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "AMBALA Rafale-4",
+      "aliases": [
+        "Rafale-4"
+      ],
+      "fingerprint": "sha256:d05552f9a68a50d0c701a31fd85e4453ca669f66f2d3f843f4a7a647e9afb204",
+      "sourceRelativePath": "json/AMBALA Rafale-4.json",
+      "objectName": "demo-assets/trajectory/ambala-rafale-4.json",
+      "size": 18087,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:ambala-rafale-4",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 178000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.58259082258328,
+            29.842583184825298
+          ],
+          [
+            76.7329465817004,
+            31.537657586474037
+          ]
+        ]
+      }
+    },
+    {
       "displayName": "AMBALA Su-30MKI-1",
       "aliases": [
         "Su-30MKI-1",
@@ -315,11 +560,11 @@
         "苏-30MKI编队航迹",
         "阿达姆普尔航迹"
       ],
-      "fingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
+      "fingerprint": "sha256:c656957c2d30f0c2f6d980e8c419f8567c41700a82bd7800ffbea8ccefc77d26",
       "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
       "objectName": "demo-assets/trajectory/ambala-su30mki-1.json",
-      "size": 28072,
-      "availability": "invalid",
+      "size": 19451,
+      "availability": "available",
       "criticality": "optional",
       "fallbackAssetIds": [],
       "allowFallback": false,
@@ -331,7 +576,7 @@
         "timeUnit": "ms",
         "coordinateOrder": "lng-lat-alt",
         "startTimeMs": 0,
-        "endTimeMs": 0,
+        "endTimeMs": 181000,
         "monotonic": true,
         "bounds": [
           [
@@ -341,6 +586,99 @@
           [
             76.67433416686985,
             31.544147203542252
+          ]
+        ],
+        "curation": {
+          "policyId": "trajectory.shift-suffix/v1",
+          "expectedSourceFingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
+          "startIndex": 91,
+          "deltaMs": 2000
+        },
+        "repair": {
+          "sourceFingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
+          "repairRuleVersion": "trajectory.shift-suffix/v1",
+          "affectedSampleRange": [
+            91,
+            181
+          ],
+          "boundaryTimesBeforeMs": [
+            90000,
+            89000
+          ],
+          "boundaryTimesAfterMs": [
+            90000,
+            91000
+          ],
+          "offsetMs": 2000
+        }
+      }
+    },
+    {
+      "displayName": "AMBALA Su-30MKI-2",
+      "aliases": [
+        "Su-30MKI-2"
+      ],
+      "fingerprint": "sha256:12f24f507d5f522bfccc059059f9fa9e0a1ca2524d57a433d1f57de7c1b5fcbe",
+      "sourceRelativePath": "json/AMBALA Su-30MKI-2.json",
+      "objectName": "demo-assets/trajectory/ambala-su30mki-2.json",
+      "size": 27370,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:ambala-su30mki-2",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 176000,
+        "monotonic": true,
+        "bounds": [
+          [
+            75.35064146286743,
+            29.678121901633894
+          ],
+          [
+            76.82632863923942,
+            30.0677527273978
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "India missile 1",
+      "aliases": [
+        "India missile route"
+      ],
+      "fingerprint": "sha256:07aa0f3aa731f873f4a3899fd9644b60ad96d76a054877e0ebe9479d04e2d6f1",
+      "sourceRelativePath": "json/印方导弹1.json",
+      "objectName": "demo-assets/trajectory/india-missile-1.json",
+      "size": 5440,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:india-missile-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 30000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.54003399811131,
+            29.482080957203344
+          ],
+          [
+            75.90581401335153,
+            30.952738347200103
           ]
         ]
       }
@@ -388,6 +726,111 @@
       }
     },
     {
+      "displayName": "MINAS J-10CE-2",
+      "aliases": [
+        "J-10CE-2"
+      ],
+      "fingerprint": "sha256:b4b1bf80e6506e3c99ec6aebd7d4f697be0039bcd14182e7a3e1e00c64ab8e6b",
+      "sourceRelativePath": "json/MINAS J-10CE-2.json",
+      "objectName": "demo-assets/trajectory/minhas-j10ce-2.json",
+      "size": 28952,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:minhas-j10ce-2",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 173000,
+        "monotonic": true,
+        "bounds": [
+          [
+            71.76814990982069,
+            31.66144947090803
+          ],
+          [
+            74.26371113540417,
+            34.075209875403
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "MINAS J-10CE-3",
+      "aliases": [
+        "J-10CE-3"
+      ],
+      "fingerprint": "sha256:807a3a7b03d64da2da1a9debe79a9882084a747317fbce664922d56846b08e61",
+      "sourceRelativePath": "json/MINAS J-10CE-3.json",
+      "objectName": "demo-assets/trajectory/minhas-j10ce-3.json",
+      "size": 28775,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:minhas-j10ce-3",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 171000,
+        "monotonic": true,
+        "bounds": [
+          [
+            71.87674168493875,
+            31.411022255578064
+          ],
+          [
+            74.35968054106938,
+            33.81935372224039
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "MINAS J-10CE-4",
+      "aliases": [
+        "J-10CE-4"
+      ],
+      "fingerprint": "sha256:f96480886905cdce812a052b1d9eafc723dcb278908a2b4783a7da548214ff79",
+      "sourceRelativePath": "json/MINAS J-10CE-4.json",
+      "objectName": "demo-assets/trajectory/minhas-j10ce-4.json",
+      "size": 28992,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:minhas-j10ce-4",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 170000,
+        "monotonic": true,
+        "bounds": [
+          [
+            71.70908955445404,
+            31.728983273231076
+          ],
+          [
+            74.21358617363025,
+            34.140548017640626
+          ]
+        ]
+      }
+    },
+    {
       "displayName": "巴方导弹1",
       "aliases": [
         "Pakistan missile route",
@@ -422,6 +865,181 @@
           [
             74.54003399811131,
             32.42339573719686
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "Pakistan strike missile 2",
+      "aliases": [
+        "Pakistan missile 2"
+      ],
+      "fingerprint": "sha256:7c9ca446dec948e52594fa511cc0b61efb7ea177e8b9bb1ec5b976dfc9cd0d3b",
+      "sourceRelativePath": "json/巴方打击导弹2.json",
+      "objectName": "demo-assets/trajectory/pakistan-strike-missile-2.json",
+      "size": 2152,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:pakistan-strike-missile-2",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 10000,
+        "monotonic": true,
+        "bounds": [
+          [
+            74.34155677403001,
+            30.395005910420608
+          ],
+          [
+            75.26201261894998,
+            31.484798927790926
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "RAFIKI J-10CE-1",
+      "aliases": [
+        "J-10CE-1"
+      ],
+      "fingerprint": "sha256:a27893ebd41f5ffe53500f30a63c7a5f7087bb2cc1a056a3454a8ab54ec57e66",
+      "sourceRelativePath": "json/RAFIKI J-10CE-1.json",
+      "objectName": "demo-assets/trajectory/rafiki-j10ce-1.json",
+      "size": 28665,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:rafiki-j10ce-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 168000,
+        "monotonic": true,
+        "bounds": [
+          [
+            72.39816597467104,
+            30.713402556046542
+          ],
+          [
+            74.39038354578287,
+            31.49186566255853
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "RAFIKI J-10CE-2",
+      "aliases": [
+        "J-10CE-2"
+      ],
+      "fingerprint": "sha256:e866c064b2372ae935097f5c020c6b8a7c85af25a0ad23ce37bc8d0fec333bdb",
+      "sourceRelativePath": "json/RAFIKI J-10CE-2.json",
+      "objectName": "demo-assets/trajectory/rafiki-j10ce-2.json",
+      "size": 28823,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:rafiki-j10ce-2",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 167000,
+        "monotonic": true,
+        "bounds": [
+          [
+            72.26593391024423,
+            30.882502100783256
+          ],
+          [
+            74.25344394947223,
+            31.660324081479438
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "RAFIKI J-10CE-3",
+      "aliases": [
+        "J-10CE-3"
+      ],
+      "fingerprint": "sha256:36bdb86001d78361fe31f4902736f398e17837a4b1c1146aae4b16afbe7d4c26",
+      "sourceRelativePath": "json/RAFIKI J-10CE-3.json",
+      "objectName": "demo-assets/trajectory/rafiki-j10ce-3.json",
+      "size": 28592,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:rafiki-j10ce-3",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 166000,
+        "monotonic": true,
+        "bounds": [
+          [
+            72.48475113988731,
+            30.665181517413128
+          ],
+          [
+            74.47536114777733,
+            31.456935801778517
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "RAFIKI J-10CE-4",
+      "aliases": [
+        "J-10CE-4"
+      ],
+      "fingerprint": "sha256:48c92199b8cf1ba1198bc11bd419298242d6aee7522879a6fb1072f1f7f4c289",
+      "sourceRelativePath": "json/RAFIKI J-10CE-4.json",
+      "objectName": "demo-assets/trajectory/rafiki-j10ce-4.json",
+      "size": 28884,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:rafiki-j10ce-4",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 165000,
+        "monotonic": true,
+        "bounds": [
+          [
+            72.19624662878456,
+            30.915047009587404
+          ],
+          [
+            74.19215496314955,
+            31.701350756609795
           ]
         ]
       }

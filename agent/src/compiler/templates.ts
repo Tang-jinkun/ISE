@@ -29,6 +29,31 @@ export interface TemplateExpansion {
 
 export type TemplateExpander = (context: TemplateContext) => TemplateExpansion
 
+export type CameraProfile = 'deployment' | 'interception' | 'counterattack'
+
+export function cameraParamsForBounds(
+  [[west, south], [east, north]]: [[number, number], [number, number]],
+  profile: CameraProfile,
+) {
+  const center: [number, number] = [(west + east) / 2, (south + north) / 2]
+  const longitudeSpan = (east - west) * Math.cos(center[1] * Math.PI / 180)
+  const span = Math.max(longitudeSpan, north - south, 0.01)
+  const baseZoom = Math.min(11, Math.max(4, Math.log2(360 / (span * 2.5))))
+  const profiles = {
+    deployment: { zoomOffset: 0, pitch: 38, bearing: 0 },
+    interception: { zoomOffset: 0.4, pitch: 48, bearing: 15 },
+    counterattack: { zoomOffset: 1.25, pitch: 60, bearing: 40 },
+  } as const
+  const view = profiles[profile]
+  return {
+    center,
+    zoom: Math.min(24, baseZoom + view.zoomOffset),
+    pitch: view.pitch,
+    bearing: view.bearing,
+    easing: 'easeInOut' as const,
+  }
+}
+
 function safeId(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'item'
 }
@@ -65,28 +90,11 @@ function builder(context: TemplateContext) {
     commands.push(follow)
     return { spawn, follow }
   }
-  const camera = (profile: 'deployment' | 'interception' | 'counterattack') => {
+  const camera = (profile: CameraProfile) => {
     if (!context.trajectoryBounds) throw new Error('REQUIRED_TRAJECTORY_BOUNDS_MISSING')
-    const [[west, south], [east, north]] = context.trajectoryBounds
-    const center: [number, number] = [(west + east) / 2, (south + north) / 2]
-    const longitudeSpan = (east - west) * Math.cos(center[1] * Math.PI / 180)
-    const span = Math.max(longitudeSpan, north - south, 0.01)
-    const baseZoom = Math.min(11, Math.max(4, Math.log2(360 / (span * 2.5))))
-    const profiles = {
-      deployment: { zoomOffset: 0, pitch: 38, bearing: 0 },
-      interception: { zoomOffset: 0.4, pitch: 48, bearing: 15 },
-      counterattack: { zoomOffset: 1.25, pitch: 60, bearing: 40 },
-    } as const
-    const view = profiles[profile]
     commands.push({
       ...common('camera:main'), type: 'camera.transition',
-      params: {
-        center,
-        zoom: Math.min(24, baseZoom + view.zoomOffset),
-        pitch: view.pitch,
-        bearing: view.bearing,
-        easing: 'easeInOut',
-      },
+      params: cameraParamsForBounds(context.trajectoryBounds, profile),
       desiredDurationMs: 1_500,
     })
   }
@@ -199,4 +207,21 @@ export function inferTemplateFromStateChange(requirement: SceneRequirement): Tem
 export function expandRequirement(requirement: SceneRequirement, context: Omit<TemplateContext, 'requirement'>): TemplateExpansion {
   const template = requirement.preferredTemplate ?? inferTemplateFromStateChange(requirement)
   return restrictedTemplates[template]({ ...context, requirement })
+}
+
+const supplementalTemplates = new Set<TemplateName>([
+  'attack_chain', 'electronic_warfare', 'return_and_summary', 'status_explanation',
+])
+
+export function expandSupplementalRequirement(
+  requirement: SceneRequirement,
+  context: Omit<TemplateContext, 'requirement'>,
+): TemplateExpansion {
+  const template = requirement.preferredTemplate ?? inferTemplateFromStateChange(requirement)
+  if (!supplementalTemplates.has(template)) return { commands: [], informationCards: [] }
+  const expanded = restrictedTemplates[template]({ ...context, requirement })
+  return {
+    commands: expanded.commands.filter(command => !command.type.startsWith('model.') && command.type !== 'camera.transition'),
+    informationCards: expanded.informationCards,
+  }
 }

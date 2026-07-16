@@ -4,17 +4,27 @@ import type { AgentContext, AgentTool, Artifact, ArtifactInput } from '@ise/agen
 import { BaseRuntimeAdapter } from '../adapters/baseRuntimeAdapter.ts'
 import { capabilityManifest } from '../compiler/capabilityManifest.ts'
 import { compileScene } from '../compiler/sceneCompiler.ts'
+import { compileChoreography } from '../compiler/choreographyCompiler.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
+  EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
+  NARRATION_PLAN_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
+  RESOLVED_SCENE_PLAN_ARTIFACT,
+  SCENE_BLUEPRINT_ARTIFACT,
   type CompiledRuntimeArtifactData,
 } from '../contracts/artifactTypes.ts'
 import { assetRegistrySnapshotSchema } from '../contracts/assetRegistry.ts'
+import { evidenceIrSchema } from '../contracts/evidence.ts'
 import { eventPlanSchema } from '../contracts/eventPlan.ts'
 import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
 import { canonicalRuntimePlanSchema, type CanonicalRuntimePlan } from '../contracts/runtimePlan.ts'
+import { buildNarrationPlan } from '../planning/narrationPlanner.ts'
+import { resolveSceneBlueprint } from '../planning/resolveSceneBlueprint.ts'
+import { buildSceneBlueprint } from '../planning/sceneBlueprintPlanner.ts'
 import { fingerprint } from '../services/fingerprint.ts'
 import {
   CompiledArtifactInvalidError,
@@ -34,6 +44,7 @@ export interface CompilerToolOptions {
 
 const compileInputSchema = z.strictObject({
   eventPlanArtifactId: z.string().min(1),
+  evidenceArtifactId: z.string().min(1),
   narrativePlanArtifactId: z.string().min(1),
   assetRegistryArtifactId: z.string().min(1),
   capabilityManifestVersion: z.literal('ise-capabilities/v1'),
@@ -70,18 +81,95 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
         || narrativePlan.sourceEventPlan.version !== eventPlan.version
         || narrativePlan.sourceEventPlan.fingerprint !== acceptedFingerprint
       ) throw new Error('NarrativePlan source EventPlan mismatch')
+      const evidenceArtifact = requireArtifact(context, requested.evidenceArtifactId, EVIDENCE_IR_ARTIFACT)
+      const evidence = evidenceIrSchema.parse(evidenceArtifact.data)
+      if (evidence.documentId !== eventPlan.documentId) throw new Error('EvidenceIR source document mismatch')
       options.onCompileProgress?.({ stage: 'assets', percentage: 30 })
       const registryArtifact = requireArtifact(context, requested.assetRegistryArtifactId, ASSET_REGISTRY_ARTIFACT)
       const assetRegistry = assetRegistrySnapshotSchema.parse(registryArtifact.data)
       if (assetRegistry.registryVersion !== requested.assetRegistryVersion) throw new Error('AssetRegistry version mismatch')
       if (requested.capabilityManifestVersion !== capabilityManifest.version) throw new Error('CapabilityManifest version mismatch')
+      const narrationPlan = buildNarrationPlan({ eventPlan, narrativePlan })
+      const sceneBlueprint = buildSceneBlueprint({ eventPlan, narrativePlan, narrationPlan, evidence })
+      const resolvedScenePlan = resolveSceneBlueprint({ blueprint: sceneBlueprint, assetRegistry })
+      const choreographyPlan = compileChoreography({
+        narrationPlan,
+        sceneBlueprint,
+        resolvedScenePlan,
+        assetRegistry,
+      })
+      const narrationArtifactId = randomUUID()
+      const sceneBlueprintArtifactId = randomUUID()
+      const resolvedScenePlanArtifactId = randomUUID()
+      const choreographyPlanArtifactId = randomUUID()
+      const narrationArtifact = {
+        id: narrationArtifactId,
+        type: NARRATION_PLAN_ARTIFACT,
+        createdBy: 'tool' as const,
+        logicalKey: `narration-plan:${narrationPlan.narrationPlanId}`,
+        data: narrationPlan,
+        metadata: {
+          fingerprint: fingerprint(narrationPlan),
+          eventPlanArtifactId: acceptedArtifact.id,
+          narrativePlanArtifactId: narrativeArtifact.id,
+          lineage: [acceptedArtifact.id, narrativeArtifact.id],
+        },
+      } satisfies ArtifactInput<typeof narrationPlan> & { id: string }
+      const sceneBlueprintArtifact = {
+        id: sceneBlueprintArtifactId,
+        type: SCENE_BLUEPRINT_ARTIFACT,
+        createdBy: 'tool' as const,
+        logicalKey: `scene-blueprint:${sceneBlueprint.blueprintId}`,
+        data: sceneBlueprint,
+        metadata: {
+          fingerprint: fingerprint(sceneBlueprint),
+          narrationPlanArtifactId: narrationArtifactId,
+          evidenceArtifactId: evidenceArtifact.id,
+          lineage: [narrationArtifactId, evidenceArtifact.id],
+        },
+      } satisfies ArtifactInput<typeof sceneBlueprint> & { id: string }
+      const resolvedSceneArtifact = {
+        id: resolvedScenePlanArtifactId,
+        type: RESOLVED_SCENE_PLAN_ARTIFACT,
+        createdBy: 'tool' as const,
+        logicalKey: `resolved-scene-plan:${resolvedScenePlan.resolvedScenePlanId}`,
+        data: resolvedScenePlan,
+        metadata: {
+          fingerprint: fingerprint(resolvedScenePlan),
+          sceneBlueprintArtifactId,
+          assetRegistryArtifactId: registryArtifact.id,
+          trajectoryCatalogFingerprint: resolvedScenePlan.trajectoryCatalogFingerprint,
+          scenarioMappingFingerprint: resolvedScenePlan.scenarioMappingFingerprint,
+          lineage: [sceneBlueprintArtifactId, registryArtifact.id],
+        },
+      } satisfies ArtifactInput<typeof resolvedScenePlan> & { id: string }
+      const choreographyArtifact = {
+        id: choreographyPlanArtifactId,
+        type: CHOREOGRAPHY_PLAN_ARTIFACT,
+        createdBy: 'tool' as const,
+        logicalKey: `choreography-plan:${choreographyPlan.choreographyPlanId}`,
+        data: choreographyPlan,
+        metadata: {
+          fingerprint: fingerprint(choreographyPlan),
+          resolvedScenePlanArtifactId,
+          lineage: [resolvedScenePlanArtifactId],
+        },
+      } satisfies ArtifactInput<typeof choreographyPlan> & { id: string }
       options.onCompileProgress?.({ stage: 'schedule', percentage: 60 })
       const runtimePlan = canonicalRuntimePlanSchema.parse(compileScene({
         eventPlanArtifactId: acceptedArtifact.id,
         narrativePlanArtifactId: narrativeArtifact.id,
+        narrationPlanArtifactId: narrationArtifactId,
+        sceneBlueprintArtifactId,
+        resolvedScenePlanArtifactId,
+        choreographyPlanArtifactId,
         assetRegistryArtifactId: registryArtifact.id,
         eventPlan,
         narrativePlan,
+        narrationPlan,
+        sceneBlueprint,
+        resolvedScenePlan,
+        choreographyPlan,
         assetRegistry,
       }))
       options.onCompileProgress?.({ stage: 'validate', percentage: 85 })
@@ -97,7 +185,12 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
         data: { runtimePlan, sceneProjectConfig: adapted },
         metadata: {
           eventPlanArtifactId: acceptedArtifact.id,
+          evidenceArtifactId: evidenceArtifact.id,
           narrativePlanArtifactId: narrativeArtifact.id,
+          narrationPlanArtifactId: narrationArtifactId,
+          sceneBlueprintArtifactId,
+          resolvedScenePlanArtifactId,
+          choreographyPlanArtifactId,
           assetRegistryArtifactId: registryArtifact.id,
           capabilityManifestVersion: capabilityManifest.version,
           assetRegistryVersion: assetRegistry.registryVersion,
@@ -114,7 +207,7 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
       options.onCompileProgress?.({ stage: 'adapt', percentage: 100 })
       return {
         content: JSON.stringify({ artifactId, valid: true, diagnostics: runtimePlan.diagnostics }),
-        artifacts: [artifact],
+        artifacts: [narrationArtifact, sceneBlueprintArtifact, resolvedSceneArtifact, choreographyArtifact, artifact],
       }
     },
   }

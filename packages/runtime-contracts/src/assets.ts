@@ -5,6 +5,24 @@ export const assetIdSchema = z.string().regex(
 );
 export const fingerprintSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 
+export const trajectoryCurationSchema = z.strictObject({
+  policyId: z.literal('trajectory.shift-suffix/v1'),
+  expectedSourceFingerprint: fingerprintSchema,
+  startIndex: z.number().int().positive(),
+  deltaMs: z.number().int().positive(),
+});
+export type TrajectoryCuration = z.infer<typeof trajectoryCurationSchema>;
+
+export const trajectoryRepairMetadataSchema = z.strictObject({
+  sourceFingerprint: fingerprintSchema,
+  repairRuleVersion: z.string().min(1),
+  affectedSampleRange: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
+  boundaryTimesBeforeMs: z.tuple([z.number().int(), z.number().int()]),
+  boundaryTimesAfterMs: z.tuple([z.number().int(), z.number().int()]),
+  offsetMs: z.number().int(),
+});
+export type TrajectoryRepairMetadata = z.infer<typeof trajectoryRepairMetadataSchema>;
+
 const canonicalNonBlankString = z.string().regex(/^\S(?:[\s\S]*\S)?$/);
 const safeRelativePath = z.string().regex(
   /^(?!\s)(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*\/\/)(?!.*\/$)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).*\S$/
@@ -33,7 +51,9 @@ export const trajectoryAssetMetadataSchema = z.strictObject({
     z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)])
   ]).refine(([[west, south], [east, north]]) => west <= east && south <= north, {
     message: 'bounds must be ordered southwest to northeast'
-  }).optional()
+  }).optional(),
+  curation: trajectoryCurationSchema.optional(),
+  repair: trajectoryRepairMetadataSchema.optional(),
 }).refine(value => value.endTimeMs >= value.startTimeMs, {
   message: 'endTimeMs must be greater than or equal to startTimeMs',
   path: ['endTimeMs']

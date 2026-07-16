@@ -11,7 +11,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "tsx --test test/scene.test.ts test/assets.test.ts test/trajectory.test.ts test/prepare-asset.test.ts test/browser-entrypoint.test.ts test/validate-asset-seed.test.ts",
+    "test": "tsx --test test/scene.test.ts test/assets.test.ts test/trajectory.test.ts test/trajectory-curation.test.ts test/prepare-asset.test.ts test/browser-entrypoint.test.ts test/validate-asset-seed.test.ts",
     "typecheck": "tsc --noEmit",
     "validate:assets": "tsx src/validateAssetSeedCli.ts"
   },

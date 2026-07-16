@@ -19,10 +19,16 @@ jest.mock(
   () => jest.requireActual('../../../../packages/runtime-contracts/src/trajectory.ts'),
   { virtual: true },
 );
+jest.mock(
+  '../../../../packages/runtime-contracts/src/trajectoryCuration.js',
+  () => jest.requireActual('../../../../packages/runtime-contracts/src/trajectoryCuration.ts'),
+  { virtual: true },
+);
 jest.mock('@ise/runtime-contracts', () => ({
   ...jest.requireActual('../../../../packages/runtime-contracts/src/assets.ts'),
   ...jest.requireActual('../../../../packages/runtime-contracts/src/trajectory.ts'),
   ...jest.requireActual('../../../../packages/runtime-contracts/src/prepareAssetForUpload.ts'),
+  ...jest.requireActual('../../../../packages/runtime-contracts/src/trajectoryCuration.ts'),
 }));
 
 const temporaryDirectories: string[] = [];
@@ -148,6 +154,12 @@ async function fixture() {
       displayName: 'AMBALA Su-30MKI-1',
       aliases: ['Su-30MKI-1'],
       criticality: 'optional',
+      trajectoryCuration: {
+        policyId: 'trajectory.shift-suffix/v1',
+        expectedSourceFingerprint: sha256(reversedTrajectoryBytes),
+        startIndex: 1,
+        deltaMs: 2000,
+      },
     },
   ];
   await writeJson(sourceMapPath, {
@@ -232,7 +244,7 @@ afterEach(async () => {
 });
 
 describe('buildAssetManifest', () => {
-  it('hashes prepared bytes and marks reversed optional trajectories invalid', async () => {
+  it('hashes prepared bytes and curates the reversed optional trajectory', async () => {
     const base = await fixture();
 
     const manifest = await buildAssetManifest(base.options);
@@ -251,11 +263,24 @@ describe('buildAssetManifest', () => {
       },
     });
     expect(reversed).toMatchObject({
-      availability: 'invalid',
+      availability: 'available',
       criticality: 'optional',
-      fingerprint: sha256(base.reversedTrajectoryBytes),
-      size: base.reversedTrajectoryBytes.byteLength,
+      fingerprint: sha256(base.canonicalTrajectoryBytes),
+      size: base.canonicalTrajectoryBytes.byteLength,
       trajectory: {
+        curation: {
+          policyId: 'trajectory.shift-suffix/v1',
+          startIndex: 1,
+          deltaMs: 2000,
+        },
+        repair: {
+          sourceFingerprint: sha256(base.reversedTrajectoryBytes),
+          repairRuleVersion: 'trajectory.shift-suffix/v1',
+          affectedSampleRange: [1, 1],
+          boundaryTimesBeforeMs: [0, -1000],
+          boundaryTimesAfterMs: [0, 1000],
+          offsetMs: 2000,
+        },
         bounds: [[76.8, 30.4], [76.82, 30.41]],
       },
     });
@@ -385,7 +410,7 @@ describe('buildAssetManifest', () => {
 });
 
 describe('asset-source-map.json', () => {
-  it('contains exactly the 22 frozen IDs and Unicode source-relative paths', async () => {
+  it('contains exactly the 39 frozen IDs and Unicode source-relative paths', async () => {
     const sourceMap = JSON.parse(
       await readFile(resolve(__dirname, '../../../../provenance/asset-source-map.json'), 'utf8'),
     ) as { assets: Array<{ assetId: string; sourceRelativePath: string }> };
@@ -413,10 +438,27 @@ describe('asset-source-map.json', () => {
       'image:airport': '素材/机场.png',
       'image:aew-illustration': '素材/预警机插图.png',
       'trajectory:ambala-rafale-1': 'json/AMBALA Rafale-1.json',
+      'trajectory:adampur-vampire-1': 'json/ADAMPUR Vampire-1.json',
+      'trajectory:adampur-vampire-2': 'json/ADAMPUR Vampire-2.json',
+      'trajectory:adampur-vampire-3': 'json/ADAMPUR Vampire-3.json',
+      'trajectory:adampur-vampire-4': 'json/ADAMPUR Vampire-4.json',
+      'trajectory:ambala-rafale-2': 'json/AMBALA Rafale-2.json',
+      'trajectory:ambala-rafale-3': 'json/AMBALA Rafale-3.json',
+      'trajectory:ambala-rafale-4': 'json/AMBALA Rafale-4.json',
+      'trajectory:ambala-su30mki-2': 'json/AMBALA Su-30MKI-2.json',
       'trajectory:minhas-j10ce-1': 'json/MINAS J-10CE-1.json',
+      'trajectory:minhas-j10ce-2': 'json/MINAS J-10CE-2.json',
+      'trajectory:minhas-j10ce-3': 'json/MINAS J-10CE-3.json',
+      'trajectory:minhas-j10ce-4': 'json/MINAS J-10CE-4.json',
+      'trajectory:rafiki-j10ce-1': 'json/RAFIKI J-10CE-1.json',
+      'trajectory:rafiki-j10ce-2': 'json/RAFIKI J-10CE-2.json',
+      'trajectory:rafiki-j10ce-3': 'json/RAFIKI J-10CE-3.json',
+      'trajectory:rafiki-j10ce-4': 'json/RAFIKI J-10CE-4.json',
       'trajectory:pakistan-missile-1': 'json/巴方导弹1.json',
+      'trajectory:pakistan-strike-missile-2': 'json/巴方打击导弹2.json',
+      'trajectory:india-missile-1': 'json/印方导弹1.json',
       'trajectory:ambala-su30mki-1': 'json/AMBALA Su-30MKI-1.json',
     });
-    expect(sourceMap.assets).toHaveLength(22);
+    expect(sourceMap.assets).toHaveLength(39);
   });
 });

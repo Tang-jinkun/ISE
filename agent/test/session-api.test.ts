@@ -15,11 +15,15 @@ import { PersistentArtifactStore } from '../src/persistence/persistentArtifactSt
 import {
   COMPILED_RUNTIME_ARTIFACT,
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   DOCUMENT_IR_ARTIFACT,
   EVIDENCE_IR_ARTIFACT,
   EVENT_PLAN_ACCEPTED_ARTIFACT,
   EVENT_PLAN_DRAFT_ARTIFACT,
+  NARRATION_PLAN_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
+  RESOLVED_SCENE_PLAN_ARTIFACT,
+  SCENE_BLUEPRINT_ARTIFACT,
   type CompiledRuntimeArtifactData,
 } from '../src/contracts/artifactTypes.ts'
 import { canonicalRuntimePlanSchema } from '../src/contracts/runtimePlan.ts'
@@ -29,6 +33,7 @@ import { fingerprint } from '../src/services/fingerprint.ts'
 import { EventBroker } from '../src/session/eventBroker.ts'
 import { SessionAgentRunner } from '../src/session/sessionAgentRunner.ts'
 import { createCompilerTools, type CompilerToolOptions } from '../src/tools/compilerTools.ts'
+import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
 
 class TestNestGateway implements NestGateway {
   readonly file: AuthorizedFile = {
@@ -44,7 +49,31 @@ class TestNestGateway implements NestGateway {
     if (fileId !== this.file.fileId) throw new Error('ATTACHMENT_NOT_FOUND')
     return { ...this.file, bytes: Buffer.from(this.file.bytes) }
   }
-  async listAssetMetadata(): Promise<unknown> { return [] }
+  async listAssetMetadata(): Promise<unknown> {
+    const hash = `sha256:${'6'.repeat(64)}`
+    const bundle = indoPakTrajectoryScenario.bundles.find(
+      candidate => candidate.bundleId === 'formation:pakistan-jf17-minhas',
+    )!
+    return [
+      {
+        assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [], fingerprint: hash,
+        size: 10, availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'model/gltf-binary',
+        model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+      },
+      ...bundle.routeAssetRefs.map((assetId, index) => ({
+        assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+        fingerprint: `sha256:${(index + 21).toString(16).padStart(64, '0')}`, size: 10,
+        availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'application/vnd.ise.trajectory+json',
+        trajectory: {
+          format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+          startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+          bounds: [[72 + index * 0.1, 31], [72.5 + index * 0.1, 31.5]],
+        },
+      })),
+    ]
+  }
 }
 
 class BlockingModel implements ModelAdapter {
@@ -194,9 +223,9 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
     documentId: 'terminal-document',
     version: 1,
     eventUnits: [{
-      eventUnitId: 'terminal-unit', title: 'Terminal', worldStateChange: 'Terminal state',
-      participants: ['Unit'], locationRefs: [], evidenceRefs: ['terminal-evidence'], inferenceRefs: [],
-      uncertainties: [], narrativePurpose: 'Terminal test', importance: 'low' as const,
+      eventUnitId: 'terminal-unit', title: 'Minhas deployment', worldStateChange: 'Four JF-17 fighters departed Minhas',
+      participants: ['JF-17'], locationRefs: ['Minhas'], evidenceRefs: ['terminal-evidence'], inferenceRefs: [],
+      uncertainties: [], narrativePurpose: 'Show the formation deployment', importance: 'low' as const,
     }],
     omittedEvidence: [], warnings: [],
   }
@@ -208,6 +237,26 @@ function prepareAcceptedRun(f: Awaited<ReturnType<typeof terminalFixture>>): str
     logicalKey: 'accepted-event-plan:terminal-plan',
     data: plan,
     metadata: { planId: plan.planId, documentId: plan.documentId, version: 1, fingerprint: fingerprint(plan) },
+  })
+  new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
+    id: `terminal-evidence-${f.session.id}`,
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: `evidence:${plan.documentId}`,
+    data: {
+      schemaVersion: 'evidence-ir/v1',
+      documentId: plan.documentId,
+      records: [{
+        evidenceId: 'terminal-evidence',
+        sourceRef: 'docx:p1',
+        claim: '4 JF-17 fighters departed Minhas.',
+        kind: 'explicit_fact',
+        entities: ['JF-17', 'Minhas'],
+        locationExpression: 'Minhas',
+        confidence: 1,
+        ambiguities: [],
+      }],
+    },
   })
   f.repositories.sessions.transition(f.session.id, ['idle'], 'awaiting_review')
   return accepted.id
@@ -231,7 +280,7 @@ test('downstream run objective includes the exact accepted tuple and EventPlan s
   assert.match(objective, new RegExp(acceptedArtifactId))
   assert.match(objective, /"planId":"terminal-plan"/)
   assert.match(objective, new RegExp(String(accepted.metadata?.fingerprint)))
-  assert.match(objective, /"title":"Terminal"/)
+  assert.match(objective, /"title":"Minhas deployment"/)
 
   f.runner.interrupt(f.session.id, 'user-1')
   await waitForTerminal(f.repositories, f.session.id)
@@ -332,21 +381,21 @@ function persistNarrative(
       subtitles: [{
         subtitleId: 'terminal-subtitle',
         eventUnitId: 'terminal-unit',
-        text: 'Terminal state',
+        text: 'Four JF-17 fighters depart Minhas.',
         evidenceRefs: ['terminal-evidence'],
         importance: 'low',
       }],
       sceneRequirements: [{
         requirementId: 'terminal-requirement',
         eventUnitId: 'terminal-unit',
-        focusEntities: ['Unit'],
-        spatialRelations: [],
-        stateChanges: ['status explanation'],
-        motionRequirements: [],
-        attentionRequirements: ['show status'],
-        requiredFacts: ['Terminal state'],
+        focusEntities: ['JF-17'],
+        spatialRelations: ['Minhas'],
+        stateChanges: ['deployment'],
+        motionRequirements: ['registered routes'],
+        attentionRequirements: ['show all formation actors'],
+        requiredFacts: ['Four JF-17 fighters departed Minhas'],
         forbiddenClaims: [],
-        preferredTemplate: 'status_explanation',
+        preferredTemplate: 'deployment',
       }],
     },
   })
@@ -356,7 +405,29 @@ function persistNarrative(
 function persistAssetRegistry(
   f: Awaited<ReturnType<typeof terminalFixture>>,
 ): { artifactId: string; registryVersion: string } {
-  const snapshot = createAssetRegistrySnapshot([])
+  const hash = `sha256:${'6'.repeat(64)}`
+  const bundle = indoPakTrajectoryScenario.bundles.find(
+    candidate => candidate.bundleId === 'formation:pakistan-jf17-minhas',
+  )!
+  const snapshot = createAssetRegistrySnapshot([
+    {
+      assetId: 'model:jf17', kind: 'model', displayName: 'JF-17', aliases: [], fingerprint: hash,
+      size: 10, availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'model/gltf-binary',
+      model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+    },
+    ...bundle.routeAssetRefs.map((assetId, index) => ({
+      assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+      fingerprint: `sha256:${(index + 41).toString(16).padStart(64, '0')}`, size: 10,
+      availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'application/vnd.ise.trajectory+json',
+      trajectory: {
+        format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+        startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
+        bounds: [[72 + index * 0.1, 31], [72.5 + index * 0.1, 31.5]],
+      },
+    })),
+  ])
   const artifact = new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
     id: 'terminal-asset-registry',
     type: ASSET_REGISTRY_ARTIFACT,
@@ -374,7 +445,7 @@ function corruptingCompilerToolsFactory(options: CompilerToolOptions = {}): Agen
     ...compile,
     async execute(input, context, onProgress) {
       const result = await compile.execute(input, context, onProgress)
-      const artifact = result.artifacts?.[0]
+      const artifact = result.artifacts?.find(candidate => candidate.type === COMPILED_RUNTIME_ARTIFACT)
       assert.ok(artifact)
       const data = artifact.data as CompiledRuntimeArtifactData
       data.sceneProjectConfig.runtimePlanArtifactId = 'malformed-after-tool-validation'
@@ -393,6 +464,22 @@ function invalidAdapterCompilerToolsFactory(options: CompilerToolOptions = {}): 
       }
     },
   })
+}
+
+function shuffledCompilerToolsFactory(options: CompilerToolOptions = {}): AgentTool[] {
+  const tools = createCompilerTools(options)
+  const compile = tools[0]!
+  return [{
+    ...compile,
+    async execute(input, context, onProgress) {
+      const result = await compile.execute(input, context, onProgress)
+      const artifacts = result.artifacts!
+      return {
+        ...result,
+        artifacts: [artifacts[4]!, artifacts[2]!, artifacts[0]!, artifacts[3]!, artifacts[1]!],
+      }
+    },
+  }, ...tools.slice(1)]
 }
 
 function seedOldNarrative(repositories: AgentRepositories, sessionId: string): void {
@@ -700,10 +787,22 @@ test('a factual question about an existing scene completes as an answer turn wit
   const finalAnswer = '当前场景总时长为 180 秒。'
   const { app, database, repositories } = await fixture({ complete: async () => ({ content: finalAnswer }) })
   const sessionId = await createSession(app)
-  new PersistentArtifactStore(sessionId, repositories.artifacts).create({
-    id: 'existing-runtime', type: COMPILED_RUNTIME_ARTIFACT, createdBy: 'tool',
-    logicalKey: 'compiled-runtime:existing', data: { sceneProjectConfig: { totalDurationMs: 180_000 } },
-  })
+  const finalArtifactTypes = [
+    NARRATION_PLAN_ARTIFACT,
+    SCENE_BLUEPRINT_ARTIFACT,
+    RESOLVED_SCENE_PLAN_ARTIFACT,
+    CHOREOGRAPHY_PLAN_ARTIFACT,
+    COMPILED_RUNTIME_ARTIFACT,
+  ]
+  new PersistentArtifactStore(sessionId, repositories.artifacts).createMany(finalArtifactTypes.map((type, index) => ({
+    id: `existing-final-${index + 1}`,
+    type,
+    createdBy: 'tool',
+    logicalKey: `final:${index + 1}`,
+    data: type === COMPILED_RUNTIME_ARTIFACT
+      ? { sceneProjectConfig: { totalDurationMs: 180_000 } }
+      : { snapshotMarker: type },
+  })))
 
   const queued = await app.inject({
     method: 'POST', url: `/sessions/${sessionId}/messages`, headers: bearer('user-1'),
@@ -714,6 +813,8 @@ test('a factual question about an existing scene completes as an answer turn wit
   const run = repositories.runs.get(queued.json().runId)!
   assert.equal(run.kind, 'answer')
   assert.match(run.objective, /Current scene evidence snapshot:/)
+  assert.equal(finalArtifactTypes.length, 5)
+  for (const type of finalArtifactTypes) assert.match(run.objective, new RegExp(type))
   assert.match(run.objective, /"totalDurationMs":180000/)
   assert.equal(run.status, 'completed')
   assert.equal(run.outcome?.finalAnswer, finalAnswer)
@@ -847,6 +948,111 @@ test('invalid current-run compiled artifacts fail structurally and preserve the 
   }
 })
 
+test('approved compilation selects exact EvidenceIR and atomically persists ordered resolved artifacts', async (t) => {
+  const model = new ControllableModel()
+  let observedInput: Record<string, unknown> = {}
+  const recordingCompilerToolsFactory: typeof createCompilerTools = (options = {}) => {
+    const tools = createCompilerTools(options)
+    const compile = tools[0]!
+    return [{
+      ...compile,
+      async execute(input, context, onProgress) {
+        observedInput = input as Record<string, unknown>
+        return compile.execute(input, context, onProgress)
+      },
+    }, ...tools.slice(1)]
+  }
+  const f = await terminalFixture(t, model, false, { compilerToolsFactory: recordingCompilerToolsFactory })
+  const acceptedArtifactId = prepareAcceptedRun(f)
+  const matchingEvidence = f.repositories.artifacts.listLedger(f.session.id)
+    .find(artifact => artifact.type === EVIDENCE_IR_ARTIFACT
+      && (artifact.data as { documentId?: string }).documentId === 'terminal-document')!
+  new PersistentArtifactStore(f.session.id, f.repositories.artifacts).create({
+    id: 'unrelated-evidence',
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:unrelated-document',
+    data: { schemaVersion: 'evidence-ir/v1', documentId: 'unrelated-document', records: [] },
+  })
+  const run = f.repositories.transaction(() => f.runner.createAfterApproval({
+    sessionId: f.session.id, subject: 'user-1', acceptedArtifactId,
+  }))
+  persistNarrative(f, acceptedArtifactId, run.id)
+
+  const repository = f.repositories.artifacts
+  const replaceLedger = repository.replaceLedger.bind(repository)
+  const persistenceBatches: string[][] = []
+  repository.replaceLedger = (sessionId, ledger, createdByRun) => {
+    const existingIds = new Set(repository.listLedger(sessionId).map(artifact => artifact.id))
+    const introduced = ledger.filter(artifact => !existingIds.has(artifact.id)).map(artifact => artifact.type)
+    if (introduced.length > 0) persistenceBatches.push(introduced)
+    replaceLedger(sessionId, ledger, createdByRun)
+  }
+
+  f.runner.startQueued(run.id, 'Bearer user-1')
+  await model.started
+  model.succeed()
+  await waitForTerminal(f.repositories, f.session.id)
+
+  const expectedTypes = [
+    NARRATION_PLAN_ARTIFACT,
+    SCENE_BLUEPRINT_ARTIFACT,
+    RESOLVED_SCENE_PLAN_ARTIFACT,
+    CHOREOGRAPHY_PLAN_ARTIFACT,
+    COMPILED_RUNTIME_ARTIFACT,
+  ]
+  assert.equal(observedInput.evidenceArtifactId, matchingEvidence.id)
+  const persisted = f.repositories.artifacts.listByRun(f.session.id, run.id)
+  for (const type of expectedTypes) assert.equal(persisted.filter(artifact => artifact.type === type).length, 1, type)
+  assert.equal(persistenceBatches.some(batch => JSON.stringify(batch) === JSON.stringify(expectedTypes)), true)
+  const createdTypes = f.repositories.events.after(f.session.id, '0')
+    .filter(event => event.type === 'artifact.created' && expectedTypes.includes(event.data.artifactType as typeof expectedTypes[number]))
+    .map(event => event.data.artifactType)
+  assert.deepEqual(createdTypes, expectedTypes)
+  f.database.close()
+})
+
+test('session canonicalizes shuffled valid compiler artifacts before atomic persistence and publication', async (t) => {
+  const model = new ControllableModel()
+  const f = await terminalFixture(t, model, false, { compilerToolsFactory: shuffledCompilerToolsFactory })
+  const acceptedArtifactId = prepareAcceptedRun(f)
+  const run = f.repositories.transaction(() => f.runner.createAfterApproval({
+    sessionId: f.session.id, subject: 'user-1', acceptedArtifactId,
+  }))
+  persistNarrative(f, acceptedArtifactId, run.id)
+
+  const repository = f.repositories.artifacts
+  const replaceLedger = repository.replaceLedger.bind(repository)
+  const persistenceBatches: string[][] = []
+  repository.replaceLedger = (sessionId, ledger, createdByRun) => {
+    const existingIds = new Set(repository.listLedger(sessionId).map(artifact => artifact.id))
+    const introduced = ledger.filter(artifact => !existingIds.has(artifact.id)).map(artifact => artifact.type)
+    if (introduced.length > 0) persistenceBatches.push(introduced)
+    replaceLedger(sessionId, ledger, createdByRun)
+  }
+
+  f.runner.startQueued(run.id, 'Bearer user-1')
+  await model.started
+  model.succeed()
+  await waitForTerminal(f.repositories, f.session.id)
+
+  const expectedTypes = [
+    NARRATION_PLAN_ARTIFACT,
+    SCENE_BLUEPRINT_ARTIFACT,
+    RESOLVED_SCENE_PLAN_ARTIFACT,
+    CHOREOGRAPHY_PLAN_ARTIFACT,
+    COMPILED_RUNTIME_ARTIFACT,
+  ]
+  const finalBatch = persistenceBatches.find(batch =>
+    batch.length === expectedTypes.length && batch.every(type => expectedTypes.includes(type as typeof expectedTypes[number])))
+  assert.deepEqual(finalBatch, expectedTypes)
+  const createdTypes = f.repositories.events.after(f.session.id, '0')
+    .filter(event => event.type === 'artifact.created' && expectedTypes.includes(event.data.artifactType as typeof expectedTypes[number]))
+    .map(event => event.data.artifactType)
+  assert.deepEqual(createdTypes, expectedTypes)
+  f.database.close()
+})
+
 test('malformed compiler output fails before compiled persistence or publication', async (t) => {
   for (const current of [
     { name: 'invalid adapter output', factory: invalidAdapterCompilerToolsFactory },
@@ -896,6 +1102,8 @@ test('model-invoked malformed compiler output retains its stable failure code', 
   const registry = persistAssetRegistry(f)
   model.input = {
     eventPlanArtifactId: acceptedArtifactId,
+    evidenceArtifactId: f.repositories.artifacts.listLedger(f.session.id)
+      .find(artifact => artifact.type === EVIDENCE_IR_ARTIFACT)?.id,
     narrativePlanArtifactId,
     assetRegistryArtifactId: registry.artifactId,
     capabilityManifestVersion: capabilityManifest.version,

@@ -6,15 +6,29 @@ import {
   canonicalRuntimePlanSchema,
   type CanonicalCommand,
   type CanonicalRuntimePlan,
+  type CommandDraft,
   type RuntimeEntity,
 } from '../contracts/runtimePlan.ts'
+import { narrationPlanSchema, type NarrationPlan } from '../contracts/narrationPlan.ts'
+import { sceneBlueprintSchema, type SceneBlueprint } from '../contracts/sceneBlueprint.ts'
+import { resolvedScenePlanSchema, type ResolvedScenePlan } from '../contracts/resolvedScenePlan.ts'
+import { choreographyPlanSchema, type ChoreographyPlan } from '../contracts/choreographyPlan.ts'
+import { indoPakTrajectoryScenario } from '../config/indoPakTrajectoryScenario.ts'
 import { AssetRegistry, normalizeAssetName } from '../services/assetRegistry.ts'
+import { canonicalJson, fingerprint } from '../services/fingerprint.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
 import { capabilityManifest } from './capabilityManifest.ts'
-import { expandRequirement, inferTemplateFromStateChange, type InformationCardDraft } from './templates.ts'
+import {
+  cameraParamsForBounds,
+  expandRequirement,
+  expandSupplementalRequirement,
+  inferTemplateFromStateChange,
+  type CameraProfile,
+  type InformationCardDraft,
+} from './templates.ts'
 import { scheduleNarrative } from './scheduler.ts'
 
-export interface CompilerInput {
+export interface LegacyCompilerInput {
   eventPlanArtifactId: string
   narrativePlanArtifactId?: string
   assetRegistryArtifactId?: string
@@ -32,6 +46,23 @@ function entityId(value: string): string {
   const digest = createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 12)
   const stableName = /[^\x00-\x7f]/.test(value) ? `${slug || 'other'}-${digest}` : slug || `other-${digest}`
   return `entity:${stableName}`
+}
+
+export interface CompilerInput {
+  eventPlanArtifactId: string
+  narrativePlanArtifactId: string
+  narrationPlanArtifactId: string
+  sceneBlueprintArtifactId: string
+  resolvedScenePlanArtifactId: string
+  choreographyPlanArtifactId: string
+  assetRegistryArtifactId: string
+  eventPlan: EventPlan
+  narrativePlan: NarrativePlan
+  narrationPlan: NarrationPlan
+  sceneBlueprint: SceneBlueprint
+  resolvedScenePlan: ResolvedScenePlan
+  choreographyPlan: ChoreographyPlan
+  assetRegistry: AssetRegistrySnapshot
 }
 
 function semanticGroups(requirement: SceneRequirement): string[][] {
@@ -134,7 +165,7 @@ function assetId(entry: AssetRegistryEntry | undefined, kind: AssetRegistryEntry
   return entry?.kind === kind ? entry.assetId : undefined
 }
 
-function validatePlan(plan: CanonicalRuntimePlan, input: CompilerInput): void {
+function validatePlan(plan: CanonicalRuntimePlan, input: LegacyCompilerInput): void {
   const unitEvidence = new Map(input.eventPlan.eventUnits.map(unit => [unit.eventUnitId, new Set(unit.evidenceRefs)]))
   const outputIds = new Set<string>()
   const registerOutput = (id: string) => {
@@ -219,7 +250,7 @@ function validatePlan(plan: CanonicalRuntimePlan, input: CompilerInput): void {
   }
 }
 
-export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
+export function compileLegacyScene(rawInput: LegacyCompilerInput): CanonicalRuntimePlan {
   const eventPlan = eventPlanSchema.parse(rawInput.eventPlan)
   const narrativePlan = narrativePlanSchema.parse(rawInput.narrativePlan)
   const assetRegistry = assetRegistrySnapshotSchema.parse(rawInput.assetRegistry)
@@ -312,5 +343,245 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     diagnostics: [...registry.diagnostics].sort((left, right) => `${left.code}:${left.message}`.localeCompare(`${right.code}:${right.message}`)),
   })
   validatePlan(plan, { ...rawInput, eventPlan, narrativePlan, assetRegistry })
+  return plan
+}
+
+function fail(code: string, message: string): never {
+  throw new CompilationError([diagnostic(code, message)])
+}
+
+function exactAvailableAsset(
+  assetRegistry: AssetRegistrySnapshot,
+  assetId: string,
+  kind: AssetRegistryEntry['kind'],
+): AssetRegistryEntry {
+  const asset = assetRegistry.assets.find(candidate => candidate.assetId === assetId)
+  if (!asset || asset.kind !== kind || asset.availability !== 'available') {
+    fail('REQUIRED_ASSET_MISSING', `${kind}: ${assetId}`)
+  }
+  return asset
+}
+
+function routeBounds(
+  assetRegistry: AssetRegistrySnapshot,
+  trajectoryAssetId: string,
+): [[number, number], [number, number]] {
+  const asset = exactAvailableAsset(assetRegistry, trajectoryAssetId, 'trajectory')
+  if (asset.kind !== 'trajectory' || !asset.trajectory.bounds) {
+    fail('REQUIRED_ASSET_MISSING', `trajectory bounds: ${trajectoryAssetId}`)
+  }
+  return asset.trajectory.bounds
+}
+
+function unionBounds(
+  bounds: readonly [[number, number], [number, number]][],
+): [[number, number], [number, number]] {
+  return [
+    [Math.min(...bounds.map(item => item[0][0])), Math.min(...bounds.map(item => item[0][1]))],
+    [Math.max(...bounds.map(item => item[1][0])), Math.max(...bounds.map(item => item[1][1]))],
+  ]
+}
+
+function cameraProfile(template: TemplateName): CameraProfile {
+  if (template === 'counterattack') return 'counterattack'
+  if (template === 'interception') return 'interception'
+  return 'deployment'
+}
+
+export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
+  const eventPlan = eventPlanSchema.parse(rawInput.eventPlan)
+  const narrativePlan = narrativePlanSchema.parse(rawInput.narrativePlan)
+  const narrationPlan = narrationPlanSchema.parse(rawInput.narrationPlan)
+  const sceneBlueprint = sceneBlueprintSchema.parse(rawInput.sceneBlueprint)
+  const resolvedScenePlan = resolvedScenePlanSchema.parse(rawInput.resolvedScenePlan)
+  const choreographyPlan = choreographyPlanSchema.parse(rawInput.choreographyPlan)
+  const assetRegistry = assetRegistrySnapshotSchema.parse(rawInput.assetRegistry)
+  if (
+    narrativePlan.sourceEventPlan.artifactId !== rawInput.eventPlanArtifactId
+    || narrativePlan.sourceEventPlan.planId !== eventPlan.planId
+    || narrativePlan.sourceEventPlan.version !== eventPlan.version
+    || narrativePlan.sourceEventPlan.fingerprint !== fingerprint(eventPlan)
+    || narrationPlan.sourceEventPlanId !== eventPlan.planId
+    || narrationPlan.sourceEventPlanFingerprint !== fingerprint(eventPlan)
+    || narrationPlan.sourceNarrativePlanId !== narrativePlan.narrativePlanId
+    || sceneBlueprint.sourceNarrationPlanId !== narrationPlan.narrationPlanId
+    || sceneBlueprint.sourceNarrationFingerprint !== fingerprint(narrationPlan)
+    || resolvedScenePlan.sourceBlueprintId !== sceneBlueprint.blueprintId
+    || resolvedScenePlan.sourceBlueprintFingerprint !== fingerprint(sceneBlueprint)
+    || choreographyPlan.sourceResolvedScenePlanId !== resolvedScenePlan.resolvedScenePlanId
+    || choreographyPlan.sourceResolvedScenePlanFingerprint !== fingerprint(resolvedScenePlan)
+  ) fail('FINAL_DOMAIN_SOURCE_MISMATCH', rawInput.eventPlanArtifactId)
+  if (canonicalJson(choreographyPlan.actorInstances) !== canonicalJson(resolvedScenePlan.resolvedActors)) {
+    fail('CHOREOGRAPHY_ACTOR_SET_INVALID', choreographyPlan.choreographyPlanId)
+  }
+
+  const eventUnits = new Map(eventPlan.eventUnits.map(unit => [unit.eventUnitId, unit]))
+  const sceneBeats = new Map(sceneBlueprint.sceneBeats.map(beat => [beat.sceneBeatId, beat]))
+  const actorGroups = new Map(sceneBlueprint.actorGroups.map(group => [group.groupId, group]))
+  const formationBundles = new Map(resolvedScenePlan.resolvedFormationBundles.map(bundle => [bundle.actorGroupRef, bundle]))
+  const scenarioBundles = new Map(indoPakTrajectoryScenario.bundles.map(bundle => [bundle.bundleId, bundle]))
+  const assignments = new Map(resolvedScenePlan.actorRouteAssignments.map(assignment => [assignment.actorInstanceRef, assignment]))
+  const lifecycles = new Map(choreographyPlan.actorLifecycles.map(lifecycle => [lifecycle.actorInstanceRef, lifecycle]))
+  const motions = new Map(choreographyPlan.motionSegments.map(segment => [segment.actorInstanceRef, segment]))
+  const entities = resolvedScenePlan.resolvedActors.map(actor => {
+    const group = actorGroups.get(actor.actorGroupRef)
+    const formation = formationBundles.get(actor.actorGroupRef)
+    const scenario = formation ? scenarioBundles.get(formation.bundleId) : undefined
+    const assignment = assignments.get(actor.actorInstanceId)
+    if (!group || !formation || !scenario || !assignment || assignment.sourceKind !== 'catalog') {
+      fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', actor.actorInstanceId)
+    }
+    if (motions.get(actor.actorInstanceId)?.routeAssignmentRef !== assignment.segmentId) {
+      fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', actor.actorInstanceId)
+    }
+    exactAvailableAsset(assetRegistry, scenario.modelAssetRef, 'model')
+    exactAvailableAsset(assetRegistry, assignment.trajectoryAssetRef, 'trajectory')
+    return {
+      entityId: actor.actorInstanceId,
+      displayName: `${group.semanticEntityRef} ${actor.role === 'leader' ? 'leader' : `wingman ${actor.ordinal}`}`,
+      kind: group.role.includes('weapon') ? 'missile' as const : 'aircraft' as const,
+      modelAssetId: scenario.modelAssetRef,
+      defaultTrajectoryAssetId: assignment.trajectoryAssetRef,
+      initialState: 'normal' as const,
+    }
+  })
+  if (
+    assignments.size !== entities.length
+    || lifecycles.size !== entities.length
+    || new Set([...assignments.values()].map(assignment => assignment.trajectoryAssetRef)).size !== entities.length
+  ) fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', choreographyPlan.choreographyPlanId)
+
+  const commands: CommandDraft[] = []
+  const informationCards: InformationCardDraft[] = []
+  for (const actor of resolvedScenePlan.resolvedActors) {
+    const entity = entities.find(candidate => candidate.entityId === actor.actorInstanceId)!
+    const assignment = assignments.get(actor.actorInstanceId)!
+    const lifecycle = lifecycles.get(actor.actorInstanceId)
+    const firstBeat = lifecycle ? sceneBeats.get(lifecycle.firstSceneBeatRef) : undefined
+    const lastBeat = lifecycle ? sceneBeats.get(lifecycle.lastSceneBeatRef) : undefined
+    const firstUnit = firstBeat ? eventUnits.get(firstBeat.eventUnitId) : undefined
+    const lastUnit = lastBeat ? eventUnits.get(lastBeat.eventUnitId) : undefined
+    if (!lifecycle || !firstBeat || !lastBeat || !firstUnit || !lastUnit) {
+      fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
+    }
+    const spawnId = `cmd:${actor.actorInstanceId}:spawn`
+    const followId = `cmd:${actor.actorInstanceId}:follow-1`
+    commands.push({
+      commandId: spawnId,
+      eventUnitId: firstUnit.eventUnitId,
+      targetId: actor.actorInstanceId,
+      type: 'model.spawn',
+      params: { action: 'model.spawn', entityId: actor.actorInstanceId, modelAssetId: entity.modelAssetId! },
+      dependsOn: [], onFailure: 'abort', evidenceRefs: [...firstUnit.evidenceRefs], desiredDurationMs: 500,
+    })
+    commands.push({
+      commandId: followId,
+      eventUnitId: firstUnit.eventUnitId,
+      targetId: actor.actorInstanceId,
+      type: 'model.follow_path',
+      params: { action: 'model.follow_path', entityId: actor.actorInstanceId, trajectoryAssetId: assignment.trajectoryAssetRef },
+      dependsOn: [spawnId], onFailure: 'abort', evidenceRefs: [...firstUnit.evidenceRefs], desiredDurationMs: 6_000,
+    })
+    commands.push({
+      commandId: `cmd:${actor.actorInstanceId}:hide`,
+      eventUnitId: lastUnit.eventUnitId,
+      targetId: actor.actorInstanceId,
+      type: 'model.hide',
+      params: { action: 'model.hide', entityId: actor.actorInstanceId },
+      dependsOn: [followId], onFailure: 'abort', evidenceRefs: [...lastUnit.evidenceRefs], desiredDurationMs: 500,
+    })
+  }
+
+  for (const shot of choreographyPlan.shotPlan) {
+    const beat = shot.sceneBeatRefs.length === 1 ? sceneBeats.get(shot.sceneBeatRefs[0]!) : undefined
+    const unit = beat ? eventUnits.get(beat.eventUnitId) : undefined
+    if (!beat || !unit) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+    const subjectBounds = shot.subjectRefs.map(actorId => {
+      const assignment = assignments.get(actorId)
+      if (!assignment) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
+      return routeBounds(assetRegistry, assignment.trajectoryAssetRef)
+    })
+    const requirement = narrativePlan.sceneRequirements.find(item => item.eventUnitId === unit.eventUnitId)
+    const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
+    commands.push({
+      commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
+      type: 'camera.transition', params: cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template)),
+      dependsOn: [], onFailure: 'abort', evidenceRefs: [...unit.evidenceRefs], desiredDurationMs: 1_500,
+    })
+  }
+
+  const registry = new AssetRegistry(assetRegistry)
+  for (const requirement of narrativePlan.sceneRequirements) {
+    const unit = eventUnits.get(requirement.eventUnitId)
+    const beat = sceneBlueprint.sceneBeats.find(item => item.eventUnitId === requirement.eventUnitId)
+    const actorId = beat?.actorRefs.flatMap(groupRef =>
+      resolvedScenePlan.resolvedActors.filter(actor => actor.actorGroupRef === groupRef))[0]?.actorInstanceId
+    const entity = actorId ? entities.find(candidate => candidate.entityId === actorId) : entities[0]
+    if (!unit || !entity) fail('EVENT_UNIT_NOT_FOUND', requirement.eventUnitId)
+    const template = requirement.preferredTemplate ?? inferTemplateFromStateChange(requirement)
+    const image = template === 'return_and_summary' || template === 'status_explanation'
+      ? selectAsset(registry, 'image', requirement)
+      : undefined
+    const video = template === 'attack_chain' ? selectAsset(registry, 'video', requirement) : undefined
+    const geojson = template === 'electronic_warfare' ? selectAsset(registry, 'geojson', requirement) : undefined
+    const expansion = expandSupplementalRequirement(requirement, {
+      eventUnit: unit,
+      entity,
+      modelAssetId: entity.modelAssetId,
+      trajectoryAssetId: entity.defaultTrajectoryAssetId,
+      trajectoryBounds: entity.defaultTrajectoryAssetId
+        ? routeBounds(assetRegistry, entity.defaultTrajectoryAssetId)
+        : undefined,
+      imageAssetId: assetId(image, 'image'),
+      videoAssetId: assetId(video, 'video'),
+      geojsonAssetId: assetId(geojson, 'geojson'),
+    })
+    commands.push(...expansion.commands)
+    informationCards.push(...expansion.informationCards)
+  }
+
+  const scheduled = scheduleNarrative({
+    eventPlan,
+    narrativePlan,
+    narrationPlan,
+    commandDrafts: commands,
+    informationCardDrafts: informationCards,
+    capabilities: capabilityManifest,
+  })
+  const sourceArtifactIds = [
+    rawInput.eventPlanArtifactId,
+    rawInput.narrativePlanArtifactId,
+    rawInput.narrationPlanArtifactId,
+    rawInput.sceneBlueprintArtifactId,
+    rawInput.resolvedScenePlanArtifactId,
+    rawInput.choreographyPlanArtifactId,
+    rawInput.assetRegistryArtifactId,
+  ]
+  const outputIds = [
+    ...scheduled.subtitles.map(item => [item.subtitleId, item.evidenceRefs] as const),
+    ...scheduled.commands.map(item => [item.commandId, item.evidenceRefs] as const),
+    ...scheduled.informationCards.map(item => [item.cardId, item.evidenceRefs] as const),
+  ]
+  const diagnostics = [...assetRegistry.diagnostics, ...resolvedScenePlan.diagnostics]
+    .sort((left, right) => `${left.code}:${left.message}`.localeCompare(`${right.code}:${right.message}`))
+  const plan = canonicalRuntimePlanSchema.parse({
+    schemaVersion: 'canonical-runtime-plan/v1',
+    planId: `runtime:${choreographyPlan.choreographyPlanId}`,
+    sourceDocumentId: eventPlan.documentId,
+    eventPlanArtifactId: rawInput.eventPlanArtifactId,
+    eventPlanId: eventPlan.planId,
+    narrativePlanId: narrativePlan.narrativePlanId,
+    capabilityManifestVersion: capabilityManifest.version,
+    assetRegistryVersion: assetRegistry.registryVersion,
+    totalDurationMs: scheduled.totalDurationMs,
+    entities: [...entities].sort((left, right) => left.entityId.localeCompare(right.entityId)),
+    subtitles: [...scheduled.subtitles].sort((left, right) => left.subtitleId.localeCompare(right.subtitleId)),
+    commands: [...scheduled.commands].sort((left, right) => left.commandId.localeCompare(right.commandId)),
+    informationCards: [...scheduled.informationCards].sort((left, right) => left.cardId.localeCompare(right.cardId)),
+    lineage: outputIds.map(([outputId, evidenceRefs]) => ({ outputId, sourceArtifactIds, evidenceRefs }))
+      .sort((left, right) => left.outputId.localeCompare(right.outputId)),
+    diagnostics,
+  })
+  validatePlan(plan, rawInput)
   return plan
 }

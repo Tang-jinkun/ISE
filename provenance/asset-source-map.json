@@ -135,6 +135,125 @@
       "criticality": "required"
     },
     {
+      "assetId": "trajectory:adampur-vampire-1",
+      "sourceRelativePath": "json/ADAMPUR Vampire-1.json",
+      "displayName": "ADAMPUR Vampire-1",
+      "aliases": ["Vampire-1"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:adampur-vampire-2",
+      "sourceRelativePath": "json/ADAMPUR Vampire-2.json",
+      "displayName": "ADAMPUR Vampire-2",
+      "aliases": ["Vampire-2"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:adampur-vampire-3",
+      "sourceRelativePath": "json/ADAMPUR Vampire-3.json",
+      "displayName": "ADAMPUR Vampire-3",
+      "aliases": ["Vampire-3"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:adampur-vampire-4",
+      "sourceRelativePath": "json/ADAMPUR Vampire-4.json",
+      "displayName": "ADAMPUR Vampire-4",
+      "aliases": ["Vampire-4"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:ambala-rafale-2",
+      "sourceRelativePath": "json/AMBALA Rafale-2.json",
+      "displayName": "AMBALA Rafale-2",
+      "aliases": ["Rafale-2"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:ambala-rafale-3",
+      "sourceRelativePath": "json/AMBALA Rafale-3.json",
+      "displayName": "AMBALA Rafale-3",
+      "aliases": ["Rafale-3"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:ambala-rafale-4",
+      "sourceRelativePath": "json/AMBALA Rafale-4.json",
+      "displayName": "AMBALA Rafale-4",
+      "aliases": ["Rafale-4"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:ambala-su30mki-2",
+      "sourceRelativePath": "json/AMBALA Su-30MKI-2.json",
+      "displayName": "AMBALA Su-30MKI-2",
+      "aliases": ["Su-30MKI-2"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:minhas-j10ce-2",
+      "sourceRelativePath": "json/MINAS J-10CE-2.json",
+      "displayName": "MINAS J-10CE-2",
+      "aliases": ["J-10CE-2"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:minhas-j10ce-3",
+      "sourceRelativePath": "json/MINAS J-10CE-3.json",
+      "displayName": "MINAS J-10CE-3",
+      "aliases": ["J-10CE-3"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:minhas-j10ce-4",
+      "sourceRelativePath": "json/MINAS J-10CE-4.json",
+      "displayName": "MINAS J-10CE-4",
+      "aliases": ["J-10CE-4"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:rafiki-j10ce-1",
+      "sourceRelativePath": "json/RAFIKI J-10CE-1.json",
+      "displayName": "RAFIKI J-10CE-1",
+      "aliases": ["J-10CE-1"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:rafiki-j10ce-2",
+      "sourceRelativePath": "json/RAFIKI J-10CE-2.json",
+      "displayName": "RAFIKI J-10CE-2",
+      "aliases": ["J-10CE-2"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:rafiki-j10ce-3",
+      "sourceRelativePath": "json/RAFIKI J-10CE-3.json",
+      "displayName": "RAFIKI J-10CE-3",
+      "aliases": ["J-10CE-3"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:rafiki-j10ce-4",
+      "sourceRelativePath": "json/RAFIKI J-10CE-4.json",
+      "displayName": "RAFIKI J-10CE-4",
+      "aliases": ["J-10CE-4"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:pakistan-strike-missile-2",
+      "sourceRelativePath": "json/巴方打击导弹2.json",
+      "displayName": "Pakistan strike missile 2",
+      "aliases": ["Pakistan missile 2"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:india-missile-1",
+      "sourceRelativePath": "json/印方导弹1.json",
+      "displayName": "India missile 1",
+      "aliases": ["India missile route"],
+      "criticality": "required"
+    },
+    {
       "assetId": "trajectory:minhas-j10ce-1",
       "sourceRelativePath": "json/MINAS J-10CE-1.json",
       "displayName": "MINAS J-10CE-1",
@@ -153,7 +272,13 @@
       "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
       "displayName": "AMBALA Su-30MKI-1",
       "aliases": ["Su-30MKI-1", "Su-30MKI route", "苏-30MKI航迹", "苏-30MKI编队航迹", "阿达姆普尔航迹"],
-      "criticality": "optional"
+      "criticality": "optional",
+      "trajectoryCuration": {
+        "policyId": "trajectory.shift-suffix/v1",
+        "expectedSourceFingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
+        "startIndex": 91,
+        "deltaMs": 2000
+      }
     }
   ],
   "nameMappings": [

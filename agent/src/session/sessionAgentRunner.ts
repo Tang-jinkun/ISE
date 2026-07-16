@@ -11,8 +11,12 @@ import {
 } from '../contracts/artifactTypes.ts'
 import {
   ASSET_REGISTRY_ARTIFACT,
+  CHOREOGRAPHY_PLAN_ARTIFACT,
   COMPILED_RUNTIME_ARTIFACT,
+  NARRATION_PLAN_ARTIFACT,
   NARRATIVE_PLAN_ARTIFACT,
+  RESOLVED_SCENE_PLAN_ARTIFACT,
+  SCENE_BLUEPRINT_ARTIFACT,
 } from '../contracts/artifactTypes.ts'
 import type { AgentRepositories, RunRecord } from '../persistence/repositories.ts'
 import { SqlJsPersistenceError } from '../persistence/sqlJsDatabase.ts'
@@ -32,6 +36,7 @@ import { createCompilerTools } from '../tools/compilerTools.ts'
 import { capabilityManifest } from '../compiler/capabilityManifest.ts'
 import { assetRegistrySnapshotSchema } from '../contracts/assetRegistry.ts'
 import { narrativePlanSchema } from '../contracts/narrativePlan.ts'
+import { evidenceIrSchema } from '../contracts/evidence.ts'
 import { eventPlanSchema } from '../contracts/eventPlan.ts'
 import type { DocumentIR } from '../contracts/document.ts'
 import type { EvidenceIR } from '../contracts/evidence.ts'
@@ -351,6 +356,21 @@ export class SessionAgentRunner {
     narrativeArtifact: Artifact,
   ): Promise<Artifact> {
     if (!run.expectedAccepted) throw new CompilationError([diagnostic('RUN_PROVENANCE_MISSING', run.id)])
+    const acceptedArtifact = artifacts.get(run.expectedAccepted.artifactId)
+    if (!acceptedArtifact || acceptedArtifact.type !== EVENT_PLAN_ACCEPTED_ARTIFACT || acceptedArtifact.superseded) {
+      throw new CompilationError([diagnostic('RUN_PROVENANCE_MISSING', run.id)])
+    }
+    const acceptedPlan = eventPlanSchema.parse(acceptedArtifact.data)
+    const evidenceCandidates = artifacts.list(EVIDENCE_IR_ARTIFACT)
+      .map(artifact => ({ artifact, evidence: evidenceIrSchema.parse(artifact.data) }))
+      .filter(candidate => candidate.evidence.documentId === acceptedPlan.documentId)
+    if (evidenceCandidates.length === 0) {
+      throw new CompilationError([diagnostic('EVIDENCE_IR_MISSING', acceptedPlan.documentId)])
+    }
+    if (evidenceCandidates.length > 1) {
+      throw new CompilationError([diagnostic('EVIDENCE_IR_AMBIGUOUS', acceptedPlan.documentId)])
+    }
+    const evidenceArtifact = evidenceCandidates[0]!.artifact
     const narrativePlan = narrativePlanSchema.parse(narrativeArtifact.data)
     if (
       narrativePlan.sourceEventPlan.artifactId !== run.expectedAccepted.artifactId
@@ -393,6 +413,7 @@ export class SessionAgentRunner {
     try {
       result = await compileTool.execute({
         eventPlanArtifactId: narrativePlan.sourceEventPlan.artifactId,
+        evidenceArtifactId: evidenceArtifact.id,
         narrativePlanArtifactId: narrativeArtifact.id,
         assetRegistryArtifactId: registryArtifact.id,
         capabilityManifestVersion: capabilityManifest.version,
@@ -407,24 +428,40 @@ export class SessionAgentRunner {
       })
       throw error
     }
-    if (result.artifacts?.length !== 1 || result.artifacts[0]!.type !== COMPILED_RUNTIME_ARTIFACT) {
-      throw new CompilationError([diagnostic('COMPILED_ARTIFACT_MISSING', 'Compiler returned no playable artifact')])
+    const returned = result.artifacts ?? []
+    const expectedTypes = [
+      NARRATION_PLAN_ARTIFACT,
+      SCENE_BLUEPRINT_ARTIFACT,
+      RESOLVED_SCENE_PLAN_ARTIFACT,
+      CHOREOGRAPHY_PLAN_ARTIFACT,
+      COMPILED_RUNTIME_ARTIFACT,
+    ]
+    const expectedTypeSet = new Set<string>(expectedTypes)
+    const validSet = returned.length === expectedTypes.length
+      && expectedTypes.every(type => returned.filter(artifact => artifact.type === type).length === 1)
+      && returned.every(artifact => expectedTypeSet.has(artifact.type))
+    if (!validSet) {
+      throw new CompilationError([diagnostic('COMPILER_ARTIFACT_SET_INVALID', 'Compiler returned an invalid artifact set')])
     }
-    this.validatedCompiledData(run, result.artifacts[0] as CompiledRuntimeArtifactCandidate)
-    const compiled = artifacts.create(result.artifacts[0]!)
-    this.events.append(run.sessionId, run.id, 'artifact.created', {
-      runId: run.id,
-      artifactId: compiled.id,
-      artifactType: compiled.type,
-      logicalKey: compiled.logicalKey,
-    })
+    const ordered = expectedTypes.map(type => returned.find(artifact => artifact.type === type)!)
+    const compiledInput = ordered.find(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)!
+    this.validatedCompiledData(run, compiledInput as CompiledRuntimeArtifactCandidate)
+    const persisted = artifacts.createMany(ordered)
+    for (const artifact of persisted) {
+      this.events.append(run.sessionId, run.id, 'artifact.created', {
+        runId: run.id,
+        artifactId: artifact.id,
+        artifactType: artifact.type,
+        logicalKey: artifact.logicalKey,
+      })
+    }
     this.events.append(run.sessionId, run.id, 'tool.completed', {
       runId: run.id,
       toolCallId,
       toolName: compileTool.name,
       summary: 'Replay runtime compilation completed',
     })
-    return compiled
+    return persisted.find(artifact => artifact.type === COMPILED_RUNTIME_ARTIFACT)!
   }
 
   private toolContext(run: RunRecord, artifacts: PersistentArtifactStore): AgentContext {
@@ -557,6 +594,10 @@ export class SessionAgentRunner {
       EVENT_PLAN_DRAFT_ARTIFACT,
       EVENT_PLAN_ACCEPTED_ARTIFACT,
       NARRATIVE_PLAN_ARTIFACT,
+      NARRATION_PLAN_ARTIFACT,
+      SCENE_BLUEPRINT_ARTIFACT,
+      RESOLVED_SCENE_PLAN_ARTIFACT,
+      CHOREOGRAPHY_PLAN_ARTIFACT,
       COMPILED_RUNTIME_ARTIFACT,
     ]
     const active = this.options.repositories.artifacts.listLedger(sessionId)
@@ -572,6 +613,10 @@ export class SessionAgentRunner {
       EVENT_PLAN_DRAFT_ARTIFACT,
       EVENT_PLAN_ACCEPTED_ARTIFACT,
       NARRATIVE_PLAN_ARTIFACT,
+      NARRATION_PLAN_ARTIFACT,
+      SCENE_BLUEPRINT_ARTIFACT,
+      RESOLVED_SCENE_PLAN_ARTIFACT,
+      CHOREOGRAPHY_PLAN_ARTIFACT,
       COMPILED_RUNTIME_ARTIFACT,
     ])
     return this.options.repositories.artifacts.listLedger(sessionId)
