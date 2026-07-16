@@ -13,7 +13,7 @@ export const MODEL_PROVIDERS: ModelProviderPreset[] = [
     id: 'deepseek',
     label: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
+    defaultModel: 'deepseek-v4-pro',
     local: false
   },
   {

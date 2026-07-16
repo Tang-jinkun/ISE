@@ -63,6 +63,14 @@ describe('ModelConfigDialog', () => {
     mocks.clearModelConfig.mockResolvedValue(empty);
   });
 
+  it('defaults an unconfigured DeepSeek user to deepseek-v4-pro', () => {
+    renderDialog(empty);
+
+    expect(screen.getByLabelText('提供商')).toHaveValue('deepseek');
+    expect(screen.getByLabelText('模型')).toHaveValue('deepseek-v4-pro');
+    expect(screen.getByLabelText('API Key')).toHaveValue('');
+  });
+
   it('loads redacted current values without rendering the stored key', () => {
     renderDialog();
 
