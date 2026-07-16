@@ -44,7 +44,20 @@ function validateGeoJson(bytes: Uint8Array) {
 }
 
 async function prepareTrajectory(entry: Extract<AssetManifestEntry, { kind: 'trajectory' }>, bytes: Uint8Array) {
+  if (entry.trajectory.curation === undefined && entry.trajectory.repair !== undefined) {
+    throw new Error('Trajectory repair metadata requires curation');
+  }
+  if (entry.trajectory.curation !== undefined && entry.trajectory.repair === undefined) {
+    throw new Error('Trajectory curation requires repair metadata');
+  }
   const prepared = await prepareTrajectorySource(entry.assetId, bytes, entry.trajectory.curation);
+  if (
+    prepared.repair !== undefined &&
+    entry.trajectory.repair !== undefined &&
+    JSON.stringify(entry.trajectory.repair) !== JSON.stringify(prepared.repair)
+  ) {
+    throw new Error('Trajectory repair metadata does not match recomputed source repair');
+  }
   const normalized = prepared.normalized;
   const first = normalized.points[0]!;
   const last = normalized.points.at(-1)!;

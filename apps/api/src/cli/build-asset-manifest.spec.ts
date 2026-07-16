@@ -273,6 +273,14 @@ describe('buildAssetManifest', () => {
           startIndex: 1,
           deltaMs: 2000,
         },
+        repair: {
+          sourceFingerprint: sha256(base.reversedTrajectoryBytes),
+          repairRuleVersion: 'trajectory.shift-suffix/v1',
+          affectedSampleRange: [1, 1],
+          boundaryTimesBeforeMs: [0, -1000],
+          boundaryTimesAfterMs: [0, 1000],
+          offsetMs: 2000,
+        },
         bounds: [[76.8, 30.4], [76.82, 30.41]],
       },
     });

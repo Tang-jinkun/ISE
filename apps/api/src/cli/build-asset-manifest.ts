@@ -437,6 +437,7 @@ async function buildEntry(
       monotonic: true,
       bounds: trajectoryBounds(normalized.points),
       ...(source.trajectoryCuration ? { curation: source.trajectoryCuration } : {}),
+      ...(preparedSource.repair ? { repair: preparedSource.repair } : {}),
     },
   };
   await prepareAssetForUpload(entry, bytes);

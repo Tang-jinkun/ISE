@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
   trajectoryCurationSchema,
+  trajectoryRepairMetadataSchema,
   type TrajectoryCuration,
+  type TrajectoryRepairMetadata,
 } from './assets.js';
 import {
   normalizeTrajectorySamples,
@@ -10,8 +12,8 @@ import {
   type RawTrajectorySample,
 } from './trajectory.js';
 
-export { trajectoryCurationSchema } from './assets.js';
-export type { TrajectoryCuration } from './assets.js';
+export { trajectoryCurationSchema, trajectoryRepairMetadataSchema } from './assets.js';
+export type { TrajectoryCuration, TrajectoryRepairMetadata } from './assets.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -20,11 +22,7 @@ const curatedTrajectoryId = 'trajectory:ambala-su30mki-1';
 export type PreparedTrajectorySource = {
   bytes: Uint8Array;
   normalized: NormalizedTrajectory;
-  repair?: {
-    policyId: 'trajectory.shift-suffix/v1';
-    affectedRange: { startIndex: number; endIndex: number };
-    deltaMs: number;
-  };
+  repair?: TrajectoryRepairMetadata;
 };
 
 async function sha256(bytes: Uint8Array): Promise<string> {
@@ -32,7 +30,7 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return `sha256:${[...digest].map(value => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
-function shiftTimestamp(timestamp: string, deltaMs: number): string {
+function parseTimestamp(timestamp: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(timestamp);
   if (!match) throw new Error(`Invalid trajectory timestamp: ${timestamp}`);
   const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = '0'] = match;
@@ -57,6 +55,11 @@ function shiftTimestamp(timestamp: string, deltaMs: number): string {
   ) {
     throw new Error(`Invalid trajectory timestamp: ${timestamp}`);
   }
+  return parsed;
+}
+
+function shiftTimestamp(timestamp: string, deltaMs: number): string {
+  const parsed = parseTimestamp(timestamp);
   const shifted = new Date(parsed + deltaMs);
   if (!Number.isFinite(shifted.getTime())) throw new Error(`Invalid trajectory timestamp: ${timestamp}`);
   const year = shifted.getUTCFullYear().toString().padStart(4, '0');
@@ -98,16 +101,22 @@ export async function prepareTrajectorySource(
     if (parsedCuration.startIndex >= raw.length) {
       throw new Error(`Trajectory curation startIndex is outside source for ${assetId}`);
     }
+    const originMs = parseTimestamp(raw[0]!.timestamp);
+    const previousTimeMs = parseTimestamp(raw[parsedCuration.startIndex - 1]!.timestamp) - originMs;
+    const startTimeBeforeMs = parseTimestamp(raw[parsedCuration.startIndex]!.timestamp) - originMs;
     preparedRaw = raw.map((sample, index) =>
       index >= parsedCuration.startIndex
         ? { ...sample, timestamp: shiftTimestamp(sample.timestamp, parsedCuration.deltaMs) }
         : sample,
     );
-    repair = {
-      policyId: parsedCuration.policyId,
-      affectedRange: { startIndex: parsedCuration.startIndex, endIndex: raw.length - 1 },
-      deltaMs: parsedCuration.deltaMs,
-    };
+    repair = trajectoryRepairMetadataSchema.parse({
+      sourceFingerprint: parsedCuration.expectedSourceFingerprint,
+      repairRuleVersion: parsedCuration.policyId,
+      affectedSampleRange: [parsedCuration.startIndex, raw.length - 1],
+      boundaryTimesBeforeMs: [previousTimeMs, startTimeBeforeMs],
+      boundaryTimesAfterMs: [previousTimeMs, startTimeBeforeMs + parsedCuration.deltaMs],
+      offsetMs: parsedCuration.deltaMs,
+    });
   }
 
   const normalized = normalizeTrajectorySamples(preparedRaw);

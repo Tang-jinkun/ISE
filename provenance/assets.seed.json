@@ -593,6 +593,23 @@
           "expectedSourceFingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
           "startIndex": 91,
           "deltaMs": 2000
+        },
+        "repair": {
+          "sourceFingerprint": "sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995",
+          "repairRuleVersion": "trajectory.shift-suffix/v1",
+          "affectedSampleRange": [
+            91,
+            181
+          ],
+          "boundaryTimesBeforeMs": [
+            90000,
+            89000
+          ],
+          "boundaryTimesAfterMs": [
+            90000,
+            91000
+          ],
+          "offsetMs": 2000
         }
       }
     },

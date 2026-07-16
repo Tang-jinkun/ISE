@@ -13,6 +13,16 @@ export const trajectoryCurationSchema = z.strictObject({
 });
 export type TrajectoryCuration = z.infer<typeof trajectoryCurationSchema>;
 
+export const trajectoryRepairMetadataSchema = z.strictObject({
+  sourceFingerprint: fingerprintSchema,
+  repairRuleVersion: z.string().min(1),
+  affectedSampleRange: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
+  boundaryTimesBeforeMs: z.tuple([z.number().int(), z.number().int()]),
+  boundaryTimesAfterMs: z.tuple([z.number().int(), z.number().int()]),
+  offsetMs: z.number().int(),
+});
+export type TrajectoryRepairMetadata = z.infer<typeof trajectoryRepairMetadataSchema>;
+
 const canonicalNonBlankString = z.string().regex(/^\S(?:[\s\S]*\S)?$/);
 const safeRelativePath = z.string().regex(
   /^(?!\s)(?![A-Za-z]:)(?!\/)(?!.*\\)(?!.*\/\/)(?!.*\/$)(?!\.{1,2}(?:\/|$))(?!.*\/\.{1,2}(?:\/|$)).*\S$/
@@ -43,6 +53,7 @@ export const trajectoryAssetMetadataSchema = z.strictObject({
     message: 'bounds must be ordered southwest to northeast'
   }).optional(),
   curation: trajectoryCurationSchema.optional(),
+  repair: trajectoryRepairMetadataSchema.optional(),
 }).refine(value => value.endTimeMs >= value.startTimeMs, {
   message: 'endTimeMs must be greater than or equal to startTimeMs',
   path: ['endTimeMs']

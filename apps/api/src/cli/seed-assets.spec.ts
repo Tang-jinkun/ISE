@@ -144,6 +144,7 @@ describe('seedAssets', () => {
         startTimeMs: prepared.normalized.points[0]!.timeMs,
         endTimeMs: prepared.normalized.points.at(-1)!.timeMs,
         curation,
+        repair: prepared.repair,
       },
     };
     await writeFile(base.manifestPath, JSON.stringify({ ...base.manifest, assets: [entry] }));
@@ -156,6 +157,47 @@ describe('seedAssets', () => {
       Buffer.from(prepared.bytes),
       'application/vnd.ise.trajectory+json',
     );
+  });
+
+  it('rejects curated manifest repair metadata that differs from the source', async () => {
+    const base = await fixture();
+    const raw: RawTrajectorySample[] = [
+      { timestamp: '2025-05-07 00:00:09', latitude: 30.4, longitude: 76.8, altitude: 1000 },
+      { timestamp: '2025-05-07 00:00:08', latitude: 30.41, longitude: 76.82, altitude: 1200 },
+    ];
+    const source = Buffer.from(JSON.stringify(raw));
+    await writeFile(join(base.sourceDir, 'trajectories', 'route.json'), source);
+    const curation = {
+      policyId: 'trajectory.shift-suffix/v1' as const,
+      expectedSourceFingerprint: sha256(source),
+      startIndex: 1,
+      deltaMs: 2_000,
+    };
+    const prepared = await prepareTrajectorySource('trajectory:ambala-su30mki-1', source, curation);
+    const baseEntry = base.manifest.assets[0];
+    if (baseEntry.kind !== 'trajectory' || prepared.repair === undefined) {
+      throw new Error('curated fixture must contain repair metadata');
+    }
+    const entry = {
+      ...baseEntry,
+      assetId: 'trajectory:ambala-su30mki-1' as const,
+      fingerprint: sha256(Buffer.from(prepared.bytes)),
+      size: prepared.bytes.byteLength,
+      trajectory: {
+        ...baseEntry.trajectory,
+        startTimeMs: prepared.normalized.points[0]!.timeMs,
+        endTimeMs: prepared.normalized.points.at(-1)!.timeMs,
+        curation,
+        repair: { ...prepared.repair, offsetMs: prepared.repair.offsetMs + 1 },
+      },
+    };
+    await writeFile(base.manifestPath, JSON.stringify({ ...base.manifest, assets: [entry] }));
+    const upload = jest.fn();
+
+    await expect(
+      seedAssets({ manifestPath: base.manifestPath, sourceDir: base.sourceDir, upload }),
+    ).rejects.toThrow(/repair metadata does not match/i);
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it('uploads normalized prepared bytes to the exact manifest object key', async () => {

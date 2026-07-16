@@ -102,6 +102,14 @@ test('public trajectory curation crosses the Agent catalog boundary unchanged', 
     startIndex: 91,
     deltaMs: 2_000,
   }
+  const repair = {
+    sourceFingerprint: hash,
+    repairRuleVersion: 'trajectory.shift-suffix/v1',
+    affectedSampleRange: [91, 181],
+    boundaryTimesBeforeMs: [90_000, 89_000],
+    boundaryTimesAfterMs: [90_000, 91_000],
+    offsetMs: 2_000,
+  }
   const registry = createAssetRegistrySnapshot([{
     assetId: 'trajectory:ambala-su30mki-1',
     kind: 'trajectory',
@@ -122,12 +130,14 @@ test('public trajectory curation crosses the Agent catalog boundary unchanged', 
       endTimeMs: 120_000,
       monotonic: true,
       curation,
+      repair,
     },
   }])
   const entry = registry.assets[0]
   assert.equal(entry?.kind, 'trajectory')
   if (entry?.kind !== 'trajectory') assert.fail('Expected trajectory entry')
   assert.deepEqual(entry.trajectory.curation, curation)
+  assert.deepEqual(entry.trajectory.repair, repair)
   assert.equal(assetRegistryEntrySchema.safeParse({
     ...entry,
     trajectory: { ...entry.trajectory, curation: { ...curation, unexpected: true } },

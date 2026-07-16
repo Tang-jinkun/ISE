@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   normalizeTrajectorySamples,
   prepareAssetForUpload,
+  prepareTrajectorySource,
   type AssetManifestEntry,
   type RawTrajectorySample
 } from '../src/index.js';
@@ -92,6 +93,72 @@ test('normalizes trajectory JSON before size and fingerprint validation', async 
     }
   };
   assert.deepEqual(await prepareAssetForUpload(entry, source), expected);
+});
+
+test('requires exact recomputed repair metadata for curated trajectories', async () => {
+  const raw: RawTrajectorySample[] = [
+    { timestamp: '2025-05-07 00:00:09', latitude: 30.4, longitude: 76.8, altitude: 1000 },
+    { timestamp: '2025-05-07 00:00:08', latitude: 30.41, longitude: 76.82, altitude: 1200 },
+  ];
+  const source = new TextEncoder().encode(JSON.stringify(raw));
+  const curation = {
+    policyId: 'trajectory.shift-suffix/v1' as const,
+    expectedSourceFingerprint: fingerprint(source),
+    startIndex: 1,
+    deltaMs: 2_000,
+  };
+  const prepared = await prepareTrajectorySource('trajectory:ambala-su30mki-1', source, curation);
+  const entry: AssetManifestEntry = {
+    assetId: 'trajectory:ambala-su30mki-1',
+    kind: 'trajectory',
+    displayName: 'AMBALA Su-30MKI 1',
+    aliases: [],
+    fingerprint: fingerprint(prepared.bytes),
+    sourceRelativePath: 'trajectories/AMBALA Su-30MKI-1.json',
+    objectName: 'demo/trajectories/ambala-su30mki-1.json',
+    mediaType: 'application/vnd.ise.trajectory+json',
+    size: prepared.bytes.byteLength,
+    availability: 'available',
+    criticality: 'required',
+    fallbackAssetIds: [],
+    allowFallback: false,
+    trajectory: {
+      format: 'ise-trajectory/v1',
+      timeUnit: 'ms',
+      coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 0,
+      endTimeMs: 1_000,
+      monotonic: true,
+      curation,
+      repair: {
+        sourceFingerprint: curation.expectedSourceFingerprint,
+        repairRuleVersion: curation.policyId,
+        affectedSampleRange: [1, 1],
+        boundaryTimesBeforeMs: [0, -1_000],
+        boundaryTimesAfterMs: [0, 1_000],
+        offsetMs: 2_000,
+      },
+    },
+  };
+
+  assert.deepEqual(await prepareAssetForUpload(entry, source), prepared.bytes);
+  await assert.rejects(
+    prepareAssetForUpload({
+      ...entry,
+      trajectory: { ...entry.trajectory, repair: { ...entry.trajectory.repair!, offsetMs: 1_000 } },
+    }, source),
+    /repair metadata does not match/i,
+  );
+  const { repair: _repair, ...withoutRepair } = entry.trajectory;
+  await assert.rejects(
+    prepareAssetForUpload({ ...entry, trajectory: withoutRepair }, source),
+    /curation requires repair metadata/i,
+  );
+  const { curation: _curation, ...withoutCuration } = entry.trajectory;
+  await assert.rejects(
+    prepareAssetForUpload({ ...entry, trajectory: withoutCuration }, source),
+    /repair metadata requires curation/i,
+  );
 });
 
 test('validates MP4, PNG/JPEG, and GeoJSON magic before returning bytes', async () => {

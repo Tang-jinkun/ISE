@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   prepareTrajectorySource,
   trajectoryCurationSchema,
+  trajectoryRepairMetadataSchema,
   type RawTrajectorySample,
 } from '../src/index.js';
 
@@ -29,8 +30,16 @@ test('curates the Su-30 suffix and returns deterministic canonical bytes', async
   assert.deepEqual(first, second);
   assert.equal(first.normalized.points[0]!.timeMs, 0);
   assert.equal(first.normalized.points[1]!.timeMs + 1_000, first.normalized.points[2]!.timeMs);
-  assert.equal(first.repair?.affectedRange.startIndex, 2);
-  assert.equal(first.repair?.deltaMs, 2_000);
+  assert.deepEqual(first.repair, {
+    sourceFingerprint: rawFingerprint,
+    repairRuleVersion: 'trajectory.shift-suffix/v1',
+    affectedSampleRange: [2, 2],
+    boundaryTimesBeforeMs: [1_000, 0],
+    boundaryTimesAfterMs: [1_000, 2_000],
+    offsetMs: 2_000,
+  });
+  assert.deepEqual(trajectoryRepairMetadataSchema.parse(first.repair), first.repair);
+  assert.throws(() => trajectoryRepairMetadataSchema.parse({ ...first.repair, extra: true }));
   assert.deepEqual(first.normalized.points.map(point => [point.longitude, point.latitude, point.altitudeM]), [
     [76.8, 30.4, 1000],
     [76.82, 30.41, 1200],

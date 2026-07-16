@@ -48,7 +48,7 @@ Date: 2026-07-15
 
 The catalog contains all 21 operator trajectories. Every trajectory ID is `trajectory:<origin-or-side>-<platform>-<ordinal>` in lowercase kebab case. Source spelling never silently changes the stable ID; `nameMappings` records report, trajectory, model, and operator contexts explicitly, including the J-10/J-10CE and JF-17 naming cases.
 
-The Su-30MKI-1 source has a single auditable curation record: policy `trajectory.shift-suffix/v1`, expected raw fingerprint `sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995`, `startIndex: 91`, and `deltaMs: 2000`. The same shared preparation helper applies this suffix shift during both manifest construction and seed upload.
+The Su-30MKI-1 source has a single auditable curation record: policy `trajectory.shift-suffix/v1`, expected raw fingerprint `sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995`, `startIndex: 91`, and `deltaMs: 2000`. The same shared preparation helper applies this suffix shift during both manifest construction and seed upload. Its computed repair provenance records `affectedSampleRange: [91, 181]`, `boundaryTimesBeforeMs: [90000, 89000]`, `boundaryTimesAfterMs: [90000, 91000]`, and `offsetMs: 2000`; boundary times are relative to the first raw source timestamp.
 
 ## Manifest fields
 
@@ -58,7 +58,7 @@ The Su-30MKI-1 source has a single auditable curation record: policy `trajectory
 - `allowFallback` must be true before `fallbackAssetIds` may contain another registered asset; both fields remain seed policy and are absent from ResolvedAssetAccess.
 - `fingerprint` and `size` describe the prepared bytes that are uploaded. For trajectories they describe canonical `ise-trajectory/v1` bytes, not the original timestamp/latitude/longitude/altitude JSON.
 - Model `scale` is unitless, `rotationOffsetDeg` is `[x, y, z]` in degrees, and `altitudeOffsetM` is meters.
-- Trajectory metadata is exactly `{ format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt', startTimeMs, endTimeMs, monotonic: true }`.
+- Trajectory metadata contains `{ format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt', startTimeMs, endTimeMs, monotonic: true }`, optional bounds, and optional paired `curation` plus computed `repair` provenance. Seed upload recomputes repair from the raw source and requires exact equality with the manifest.
 - Video `durationMs` is milliseconds and `codec` is the probed codec name. Image `width` and `height` are pixels.
 
 ## Canonical trajectory bytes
