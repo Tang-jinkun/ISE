@@ -5,6 +5,7 @@ import {
   applyModelTransform,
   createModelTransformHierarchy,
   ModelRuntime,
+  type ModelEntityFrameSnapshot,
   reduceModelFrame,
 } from '../ModelRuntime';
 import { prepareTrajectory, sampleTrajectory } from '../trajectory';
@@ -573,6 +574,28 @@ it('produces the identical entity transform when applying the same seek time aga
   runtime.apply(1_750);
 
   expect(runtime.getFrameSnapshot()[0]).toEqual(first);
+});
+
+it('samples an earlier position snapshot without mutating the applied model frame', async () => {
+  const { runtime } = modelHarness();
+  await runtime.load([rafale('one')], [modelTrackFor('one')]);
+  runtime.apply(2_750);
+  const applied = runtime.getFrameSnapshot()[0];
+  const samplePositionSnapshotAt = (
+    runtime as unknown as {
+      getPositionSnapshotAt(timeMs: number): ModelEntityFrameSnapshot[];
+    }
+  ).getPositionSnapshotAt.bind(runtime);
+
+  expect(samplePositionSnapshotAt(1_500)[0]).toEqual(
+    expect.objectContaining({
+      entityId: 'one',
+      visible: true,
+      longitude: 76.25,
+      latitude: 30,
+    }),
+  );
+  expect(runtime.getFrameSnapshot()[0]).toEqual(applied);
 });
 
 it('exposes the applied GLB transform and trajectory orientation as a readonly frame snapshot', async () => {

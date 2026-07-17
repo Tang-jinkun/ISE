@@ -179,6 +179,20 @@ function snapshot(
   };
 }
 
+function applyBaseWithSampler(
+  runtime: MapRuntime,
+  timeMs: number,
+  snapshots: readonly ModelEntityFrameSnapshot[],
+  sampleSnapshots: (sampleTimeMs: number) => readonly ModelEntityFrameSnapshot[],
+) {
+  const applyBase = runtime.applyBase as unknown as (
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[],
+    sampleSnapshots: (sampleTimeMs: number) => readonly ModelEntityFrameSnapshot[],
+  ) => void;
+  applyBase.call(runtime, timeMs, snapshots, sampleSnapshots);
+}
+
 it('adds active marker and geometry layers with namespaced IDs and removes expired items', async () => {
   const map = new FakeMap();
   const resources = fakeResources({ 'geo:border': featureCollection });
@@ -472,8 +486,114 @@ it('persists the latest dynamic policy through a camera timeline gap', async () 
   };
   await runtime.load([track]);
 
-  runtime.applyBase(1_500, [snapshot('fighter-1', 82, 32)]);
-  expect(map.lastJump).toEqual({ center: [82, 32], zoom: 8, pitch: 10, bearing: 20 });
+  const sampleSnapshots = (timeMs: number) => [
+    snapshot('fighter-1', 70 + timeMs / 100, 20 + timeMs / 100),
+  ];
+  applyBaseWithSampler(runtime, 1_500, sampleSnapshots(1_500), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [80, 30], zoom: 8, pitch: 10, bearing: 20 });
+});
+
+it('uses current snapshots throughout the active dynamic camera duration', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(0, 1_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'tracking',
+      zoom: 8,
+      pitch: 10,
+      bearing: 20,
+      lookAheadMs: 0,
+      transitionMs: 0,
+    }),
+  ]);
+  const sampleSnapshots = (timeMs: number) => [snapshot('fighter-1', 70 + timeMs / 100, 20)];
+
+  applyBaseWithSampler(runtime, 999, sampleSnapshots(999), sampleSnapshots);
+  expect((map.lastJump as { center: [number, number] }).center[0]).toBeCloseTo(79.99, 5);
+});
+
+it('blends from the terminal visible subject camera when the subject becomes hidden', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(0, 4_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'tracking',
+      zoom: 8,
+      pitch: 10,
+      bearing: 20,
+      lookAheadMs: 0,
+      transitionMs: 1_000,
+    }),
+  ]);
+  const sampleSnapshots = (timeMs: number) => [
+    snapshot('fighter-1', 80, 30, { visible: timeMs < 2_000 }),
+  ];
+
+  applyBaseWithSampler(runtime, 2_000, sampleSnapshots(2_000), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [80, 30], zoom: 8, pitch: 10, bearing: 20 });
+  applyBaseWithSampler(runtime, 2_500, sampleSnapshots(2_500), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [75, 25], zoom: 5.5, pitch: 5, bearing: 10 });
+  applyBaseWithSampler(runtime, 3_000, sampleSnapshots(3_000), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+});
+
+it('blends into a dynamic camera when its subject becomes visible after item start', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(0, 4_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'tracking',
+      zoom: 8,
+      pitch: 10,
+      bearing: 20,
+      lookAheadMs: 0,
+      transitionMs: 1_000,
+    }),
+  ]);
+  const sampleSnapshots = (timeMs: number) => [
+    snapshot('fighter-1', 80, 30, { visible: timeMs >= 2_000 }),
+  ];
+
+  applyBaseWithSampler(runtime, 2_000, sampleSnapshots(2_000), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  applyBaseWithSampler(runtime, 2_500, sampleSnapshots(2_500), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [75, 25], zoom: 5.5, pitch: 5, bearing: 10 });
+  applyBaseWithSampler(runtime, 3_000, sampleSnapshots(3_000), sampleSnapshots);
+  expect(map.lastJump).toEqual({ center: [80, 30], zoom: 8, pitch: 10, bearing: 20 });
+});
+
+it('recreates terminal sampling and a visibility blend after seek and replay', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(0, 4_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'tracking',
+      zoom: 8,
+      pitch: 10,
+      bearing: 20,
+      lookAheadMs: 0,
+      transitionMs: 1_000,
+    }),
+  ]);
+  const sampleSnapshots = (timeMs: number) => [
+    snapshot('fighter-1', 80, 30, { visible: timeMs < 2_000 }),
+  ];
+
+  applyBaseWithSampler(runtime, 2_500, sampleSnapshots(2_500), sampleSnapshots);
+  const first = map.lastJump;
+  expect(first).toEqual({ center: [75, 25], zoom: 5.5, pitch: 5, bearing: 10 });
+  applyBaseWithSampler(runtime, 0, sampleSnapshots(0), sampleSnapshots);
+  applyBaseWithSampler(runtime, 2_500, sampleSnapshots(2_500), sampleSnapshots);
+  expect(map.lastJump).toEqual(first);
+  expect(map.easeTo).not.toHaveBeenCalled();
 });
 
 it('recreates a dynamic-to-static blend after seek without camera history', async () => {

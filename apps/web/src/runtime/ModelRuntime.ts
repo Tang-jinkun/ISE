@@ -38,19 +38,22 @@ export interface ModelFrameState {
   trail: RuntimeTrail;
 }
 
-export interface ModelEntityFrameSnapshot {
+export interface ModelEntityPositionSnapshot {
   entityId: string;
   state: SceneEntity['initialState'];
+  visible: boolean;
+  longitude?: number;
+  latitude?: number;
+  headingDeg?: number;
+}
+
+export interface ModelEntityFrameSnapshot extends ModelEntityPositionSnapshot {
   modelAssetId?: string;
   defaultTrajectoryAssetId?: string;
   trajectoryAssetId?: string;
-  visible: boolean;
   projectedSizePx?: number;
   appliedScale?: number;
-  longitude?: number;
-  latitude?: number;
   altitudeM?: number;
-  headingDeg?: number;
   pitchDeg?: number;
   position: [number, number, number];
   quaternion: [number, number, number, number];
@@ -421,6 +424,24 @@ export class ModelRuntime {
         .multiply(transform.calibrationRoot.quaternion)
         .toArray() as [number, number, number, number],
     }));
+  }
+
+  getPositionSnapshotAt(timeMs: number): ModelEntityPositionSnapshot[] {
+    return this.instances.map(({ entity, items }) => {
+      const frame = reduceModelFrame(entity, items, this.trajectories, timeMs);
+      return {
+        entityId: entity.entityId,
+        state: frame.state,
+        visible: frame.visible,
+        ...(frame.sample
+          ? {
+              longitude: frame.sample.longitude,
+              latitude: frame.sample.latitude,
+              headingDeg: frame.sample.headingDeg,
+            }
+          : {}),
+      };
+    });
   }
 
   dispose() {

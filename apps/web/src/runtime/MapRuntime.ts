@@ -3,7 +3,10 @@ import { runtimeMapEngine } from '@/lib/mapEngine';
 import type mapboxgl from 'mapbox-gl';
 import { z } from 'zod';
 import { SceneRuntimeError } from './errors';
-import type { ModelEntityFrameSnapshot } from './ModelRuntime';
+import type {
+  ModelEntityFrameSnapshot,
+  ModelEntityPositionSnapshot,
+} from './ModelRuntime';
 import type { ResourceManager } from './ResourceManager';
 
 type MarkerItem = Extract<SceneTrack, { type: 'marker' }>['items'][number];
@@ -14,6 +17,7 @@ type StaticCameraParams = Extract<CameraParams, { center: [number, number] }>;
 type DynamicCameraParams = Exclude<CameraParams, StaticCameraParams>;
 type StaticCameraItem = Omit<CameraItem, 'params'> & { params: StaticCameraParams };
 type DynamicCameraItem = Omit<CameraItem, 'params'> & { params: DynamicCameraParams };
+type ModelSnapshotSampler = (timeMs: number) => readonly ModelEntityPositionSnapshot[];
 type ActorCameraItem = Omit<CameraItem, 'params'> & {
   params: Extract<DynamicCameraParams, { action: 'camera.follow_actor' }>;
 };
@@ -67,6 +71,7 @@ export class MapRuntime {
   private readonly acquiredGeojsonAssetIds: string[] = [];
   private lastTimeMs = 0;
   private lastSnapshots: readonly ModelEntityFrameSnapshot[] = [];
+  private lastSnapshotSampler: ModelSnapshotSampler | undefined;
   private lastTrails: RuntimeTrail[] = [];
   private listenerRegistered = false;
   private disposed = false;
@@ -143,15 +148,20 @@ export class MapRuntime {
     }
   }
 
-  applyBase(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[] = []) {
+  applyBase(
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[] = [],
+    sampleSnapshots: ModelSnapshotSampler = () => snapshots,
+  ) {
     if (this.disposed) {
       return;
     }
     this.lastTimeMs = finiteTime(timeMs);
     this.lastSnapshots = snapshots;
+    this.lastSnapshotSampler = sampleSnapshots;
     this.applyMarkers(this.lastTimeMs);
     this.applyGeojson(this.lastTimeMs);
-    this.applyCamera(this.lastTimeMs, snapshots);
+    this.applyCamera(this.lastTimeMs, sampleSnapshots);
   }
 
   applyTrails(trails: RuntimeTrail[]) {
@@ -237,7 +247,11 @@ export class MapRuntime {
     }
     this.renderedGeojson.clear();
     this.renderedTrails.clear();
-    this.applyBase(this.lastTimeMs, this.lastSnapshots);
+    this.applyBase(
+      this.lastTimeMs,
+      this.lastSnapshots,
+      this.lastSnapshotSampler ?? (() => this.lastSnapshots),
+    );
     this.applyTrails(this.lastTrails);
   };
 
@@ -359,16 +373,16 @@ export class MapRuntime {
     this.renderedGeojson.delete(id);
   }
 
-  private applyCamera(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[]) {
+  private applyCamera(timeMs: number, sampleSnapshots: ModelSnapshotSampler) {
     if (!this.initialCamera) {
       return;
     }
-    this.map.jumpTo(this.cameraState(timeMs, snapshots));
+    this.map.jumpTo(this.cameraState(timeMs, sampleSnapshots));
   }
 
   private cameraState(
     timeMs: number,
-    snapshots: readonly ModelEntityFrameSnapshot[],
+    sampleSnapshots: ModelSnapshotSampler,
   ): CameraState {
     let latestIndex = -1;
     for (let index = 0; index < this.cameraItems.length; index += 1) {
@@ -384,17 +398,17 @@ export class MapRuntime {
 
     const latest = this.cameraItems[latestIndex]!;
     return isActive(latest, timeMs)
-      ? this.activeCameraPolicy(latestIndex, timeMs, snapshots)
-      : this.terminalCameraPolicy(latestIndex, timeMs, snapshots);
+      ? this.activeCameraPolicy(latestIndex, timeMs, sampleSnapshots)
+      : this.terminalCameraPolicy(latestIndex, sampleSnapshots);
   }
 
   private activeCameraPolicy(
     index: number,
     timeMs: number,
-    snapshots: readonly ModelEntityFrameSnapshot[],
+    sampleSnapshots: ModelSnapshotSampler,
   ): CameraState {
     const item = this.cameraItems[index]!;
-    const previous = this.previousCameraPolicy(index, timeMs, snapshots);
+    const previous = this.previousCameraPolicy(index, sampleSnapshots);
     if (isStaticCameraItem(item)) {
       const progress = clamp01((timeMs - item.startMs) / item.durationMs);
       const eased =
@@ -407,9 +421,19 @@ export class MapRuntime {
       return previous;
     }
 
+    const snapshots = sampleSnapshots(timeMs);
     const target = dynamicCameraTarget(this.map, item, snapshots);
     if (!target) {
-      return previous;
+      return this.visibilityTransitionPolicy(item, timeMs, sampleSnapshots, previous) ?? previous;
+    }
+    const visibilityTransition = this.visibilityTransitionPolicy(
+      item,
+      timeMs,
+      sampleSnapshots,
+      previous,
+    );
+    if (visibilityTransition) {
+      return visibilityTransition;
     }
     const progress = clamp01((timeMs - item.startMs) / item.params.transitionMs);
     return item.params.transitionMs > 0 && progress < 1
@@ -419,30 +443,60 @@ export class MapRuntime {
 
   private terminalCameraPolicy(
     index: number,
-    timeMs: number,
-    snapshots: readonly ModelEntityFrameSnapshot[],
+    sampleSnapshots: ModelSnapshotSampler,
   ): CameraState {
     const item = this.cameraItems[index]!;
     if (isStaticCameraItem(item)) {
       return cameraTarget(item);
     }
     if (!isDynamicCameraItem(item)) {
-      return this.previousCameraPolicy(index, timeMs, snapshots);
+      return this.previousCameraPolicy(index, sampleSnapshots);
     }
-    return (
-      dynamicCameraTarget(this.map, item, snapshots) ??
-      this.previousCameraPolicy(index, timeMs, snapshots)
+    return this.activeCameraPolicy(
+      index,
+      item.startMs + item.durationMs,
+      sampleSnapshots,
     );
   }
 
   private previousCameraPolicy(
     index: number,
-    timeMs: number,
-    snapshots: readonly ModelEntityFrameSnapshot[],
+    sampleSnapshots: ModelSnapshotSampler,
   ): CameraState {
     return index > 0
-      ? this.terminalCameraPolicy(index - 1, timeMs, snapshots)
+      ? this.terminalCameraPolicy(index - 1, sampleSnapshots)
       : this.initialCamera!;
+  }
+
+  private visibilityTransitionPolicy(
+    item: DynamicCameraItem,
+    timeMs: number,
+    sampleSnapshots: ModelSnapshotSampler,
+    fallback: CameraState,
+  ): CameraState | undefined {
+    const transitionMs = item.params.transitionMs;
+    if (transitionMs <= 0) {
+      return undefined;
+    }
+    const windowStartMs = Math.max(item.startMs, timeMs - transitionMs);
+    const currentSnapshots = sampleSnapshots(timeMs);
+    const currentKey = dynamicSubjectKey(item, currentSnapshots);
+    const windowKey = dynamicSubjectKey(item, sampleSnapshots(windowStartMs));
+    if (currentKey === windowKey) {
+      return undefined;
+    }
+
+    const boundaryMs = findDynamicSubjectBoundary(
+      item,
+      windowStartMs,
+      timeMs,
+      currentKey,
+      sampleSnapshots,
+    );
+    const beforeSnapshots = sampleSnapshots(Math.max(item.startMs, boundaryMs - 1));
+    const start = dynamicCameraTarget(this.map, item, beforeSnapshots) ?? fallback;
+    const end = dynamicCameraTarget(this.map, item, currentSnapshots) ?? fallback;
+    return interpolateCamera(start, end, clamp01((timeMs - boundaryMs) / transitionMs));
   }
 
   private removeLayerAndSource(id: string) {
@@ -510,7 +564,7 @@ function cameraTarget(item: StaticCameraItem): CameraState {
 function dynamicCameraTarget(
   map: mapboxgl.Map,
   item: DynamicCameraItem,
-  snapshots: readonly ModelEntityFrameSnapshot[],
+  snapshots: readonly ModelEntityPositionSnapshot[],
 ): CameraState | undefined {
   switch (item.params.action) {
     case 'camera.follow_actor':
@@ -522,7 +576,7 @@ function dynamicCameraTarget(
 
 function actorCameraTarget(
   params: ActorCameraItem['params'],
-  snapshots: readonly ModelEntityFrameSnapshot[],
+  snapshots: readonly ModelEntityPositionSnapshot[],
 ): CameraState | undefined {
   const subject = snapshots.find(
     (snapshot) => snapshot.entityId === params.entityId && snapshot.visible && hasCoordinates(snapshot),
@@ -546,12 +600,12 @@ function actorCameraTarget(
 function groupCameraTarget(
   map: mapboxgl.Map,
   params: GroupCameraItem['params'],
-  snapshots: readonly ModelEntityFrameSnapshot[],
+  snapshots: readonly ModelEntityPositionSnapshot[],
 ): CameraState | undefined {
   const snapshotByEntityId = new Map(snapshots.map((snapshot) => [snapshot.entityId, snapshot]));
   const subjects = params.entityIds
     .map((entityId) => snapshotByEntityId.get(entityId))
-    .filter((snapshot): snapshot is ModelEntityFrameSnapshot =>
+    .filter((snapshot): snapshot is ModelEntityPositionSnapshot =>
       snapshot !== undefined && snapshot.visible && hasCoordinates(snapshot),
     );
   if (subjects.length === 0) {
@@ -592,9 +646,46 @@ function groupCameraTarget(
 }
 
 function hasCoordinates(
-  snapshot: ModelEntityFrameSnapshot,
-): snapshot is ModelEntityFrameSnapshot & { longitude: number; latitude: number } {
+  snapshot: ModelEntityPositionSnapshot,
+): snapshot is ModelEntityPositionSnapshot & { longitude: number; latitude: number } {
   return Number.isFinite(snapshot.longitude) && Number.isFinite(snapshot.latitude);
+}
+
+function dynamicSubjectKey(
+  item: DynamicCameraItem,
+  snapshots: readonly ModelEntityPositionSnapshot[],
+) {
+  const referenced =
+    item.params.action === 'camera.follow_actor'
+      ? new Set([item.params.entityId])
+      : new Set(item.params.entityIds);
+  return snapshots
+    .filter(
+      (snapshot) => referenced.has(snapshot.entityId) && snapshot.visible && hasCoordinates(snapshot),
+    )
+    .map((snapshot) => snapshot.entityId)
+    .sort()
+    .join('\u0000');
+}
+
+function findDynamicSubjectBoundary(
+  item: DynamicCameraItem,
+  startMs: number,
+  endMs: number,
+  endKey: string,
+  sampleSnapshots: ModelSnapshotSampler,
+) {
+  let low = Math.floor(startMs);
+  let high = Math.ceil(endMs);
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (dynamicSubjectKey(item, sampleSnapshots(middle)) === endKey) {
+      high = middle;
+    } else {
+      low = middle;
+    }
+  }
+  return high;
 }
 
 function cameraCenter(center: mapboxgl.LngLatLike | undefined): [number, number] | undefined {

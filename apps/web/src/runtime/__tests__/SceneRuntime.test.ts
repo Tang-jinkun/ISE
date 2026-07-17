@@ -123,7 +123,13 @@ function sceneRuntimeHarness(
     load: vi.fn(async (_tracks: SceneTrack[], _signal?: AbortSignal) => {
       calls.push('map.load');
     }),
-    applyBase: vi.fn((timeMs: number, _snapshots: unknown[]) => calls.push(`map.apply:${timeMs}`)),
+    applyBase: vi.fn(
+      (
+        timeMs: number,
+        _snapshots: unknown[],
+        _sampleSnapshots?: (sampleTimeMs: number) => unknown[],
+      ) => calls.push(`map.apply:${timeMs}`),
+    ),
     applyTrails: vi.fn(() => calls.push(`map.trails:${clock.currentTimeMs}`)),
     dispose: vi.fn(),
   };
@@ -161,6 +167,16 @@ function sceneRuntimeHarness(
         pitchDeg: 4,
         position: [0.25, 0.5, 0.00105] as [number, number, number],
         quaternion: [0, 0, 0.7, 0.7] as [number, number, number, number],
+      },
+    ]),
+    getPositionSnapshotAt: vi.fn((timeMs: number) => [
+      {
+        entityId: 'aircraft-1',
+        state: 'normal' as const,
+        visible: true,
+        longitude: 76 + timeMs / 1_000,
+        latitude: 30,
+        headingDeg: 90,
       },
     ]),
     dispose: vi.fn(),
@@ -310,6 +326,13 @@ it('applies clock frames in model, map, trail, data-link, overlay order', async 
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('250');
   expect(harness.mapRuntime.applyBase.mock.calls[0]![1]).toEqual([
     expect.objectContaining({ entityId: 'aircraft-1', visible: true }),
+  ]);
+  const samplePositions = harness.mapRuntime.applyBase.mock.calls[0]![2] as (
+    sampleTimeMs: number,
+  ) => unknown[];
+  expect(samplePositions).toEqual(expect.any(Function));
+  expect(samplePositions(125)).toEqual([
+    expect.objectContaining({ entityId: 'aircraft-1', longitude: 76.125 }),
   ]);
   expect(JSON.parse(harness.overlayRoot.dataset.runtimeModels ?? '')).toEqual([
     expect.objectContaining({

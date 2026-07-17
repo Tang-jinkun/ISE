@@ -6,7 +6,11 @@ import {
   type SceneTrack,
 } from '@ise/runtime-contracts';
 import { MapRuntime, type RuntimeTrail } from './MapRuntime';
-import { ModelRuntime, type ModelEntityFrameSnapshot } from './ModelRuntime';
+import {
+  ModelRuntime,
+  type ModelEntityFrameSnapshot,
+  type ModelEntityPositionSnapshot,
+} from './ModelRuntime';
 import { DataLinkRuntime } from './DataLinkRuntime';
 import { OverlayRuntime } from './OverlayRuntime';
 import { PlaybackClock } from './PlaybackClock';
@@ -22,7 +26,11 @@ import type {
 
 interface MapRuntimePort {
   load(tracks: SceneTrack[], signal?: AbortSignal): Promise<void>;
-  applyBase(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[]): void;
+  applyBase(
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[],
+    sampleSnapshots: (timeMs: number) => readonly ModelEntityPositionSnapshot[],
+  ): void;
   applyTrails(trails: RuntimeTrail[]): void;
   dispose(): void;
 }
@@ -31,6 +39,7 @@ interface ModelRuntimePort {
   load(entities: SceneEntity[], tracks: SceneTrack[], signal?: AbortSignal): Promise<void>;
   apply(timeMs: number): RuntimeTrail[];
   getFrameSnapshot(): ModelEntityFrameSnapshot[];
+  getPositionSnapshotAt(timeMs: number): ModelEntityPositionSnapshot[];
   dispose(): void;
 }
 
@@ -277,7 +286,11 @@ export class SceneRuntimeImpl implements SceneRuntime {
   private applyFrame(frame: RuntimeFrame) {
     const trails = this.modelRuntime.apply(frame.timeMs);
     const snapshots = this.modelRuntime.getFrameSnapshot();
-    this.mapRuntime.applyBase(frame.timeMs, snapshots);
+    this.mapRuntime.applyBase(
+      frame.timeMs,
+      snapshots,
+      (timeMs) => this.modelRuntime.getPositionSnapshotAt(timeMs),
+    );
     this.mapRuntime.applyTrails(trails);
     this.dataLinkRuntime.apply(frame.timeMs, snapshots);
     this.overlayRuntime.apply(frame);
