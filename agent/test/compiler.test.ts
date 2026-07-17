@@ -458,6 +458,11 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
 
   assert.deepEqual(plan.subtitles.map(item => [item.subtitleId, item.text, item.evidenceRefs]),
     fixture.narrationPlan.beats.map(item => [item.subtitleId, item.text, item.evidenceRefs]))
+  assert.equal(plan.totalDurationMs, Math.max(
+    ...plan.subtitles.map(item => item.startMs + item.durationMs),
+    ...plan.commands.map(item => item.startMs + item.durationMs),
+    ...plan.informationCards.map(item => item.startMs + item.durationMs),
+  ))
   for (const subtitle of plan.subtitles) {
     assert.ok(plan.commands.filter(command => command.eventUnitId === subtitle.eventUnitId)
       .every(command => command.startMs >= subtitle.startMs + 800))
@@ -471,6 +476,56 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
   ])
   assert.ok(plan.lineage.every(item => item.sourceArtifactIds.length === expectedSources.size
     && item.sourceArtifactIds.every(id => expectedSources.has(id))))
+})
+
+test('actor lifecycle ignores unsubtitled boundary beats and binds the internal subtitled beat', () => {
+  const fixture = multiActorCompilerFixture()
+  const launchBeat = fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-launch')!
+  const { subtitleId: _subtitleId, ...unsubtitledLaunchBeat } = launchBeat
+  fixture.sceneBlueprint.sceneBeats = [
+    {
+      ...unsubtitledLaunchBeat,
+      sceneBeatId: 'scene-beat-launch-before-subtitle',
+      purpose: 'Prepare the launch actor before narration',
+    },
+    ...fixture.sceneBlueprint.sceneBeats,
+    {
+      ...unsubtitledLaunchBeat,
+      sceneBeatId: 'scene-beat-launch-after-subtitle',
+      purpose: 'Retain the launch actor after narration',
+    },
+  ]
+  fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+  const choreographyPlan = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+  fixture.choreographyPlan = choreographyPlan
+  fixture.input.choreographyPlan = choreographyPlan
+
+  const missile = fixture.resolvedScenePlan.resolvedActors.find(actor =>
+    actor.actorGroupRef === 'group:weapon-unit-launch')!
+  const lifecycle = choreographyPlan.actorLifecycles.find(item => item.actorInstanceRef === missile.actorInstanceId)!
+  assert.equal(lifecycle.firstSceneBeatRef, launchBeat.sceneBeatId)
+  assert.equal(lifecycle.lastSceneBeatRef, launchBeat.sceneBeatId)
+  assert.ok(compileFinalScene(fixture.input).commands.some(command =>
+    command.type === 'model.follow_path' && command.targetId === missile.actorInstanceId))
+
+  fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => {
+    if (!beat.actorRefs.includes(missile.actorGroupRef)) return beat
+    const { subtitleId: _boundSubtitleId, ...unsubtitledBeat } = beat
+    return unsubtitledBeat
+  })
+  fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+  assert.throws(() => compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  }), (error: unknown) => error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'ACTOR_SCENE_BEAT_UNBOUND'))
 })
 
 test('final compiler reports the stable conflict when an actor lifecycle cannot fit the minimum follow duration', () => {

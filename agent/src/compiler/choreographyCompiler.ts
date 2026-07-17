@@ -56,7 +56,8 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
   ) fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', resolvedScenePlan.resolvedScenePlanId)
 
   const actorLifecycles = resolvedScenePlan.resolvedActors.map(actor => {
-    const referencedBeats = sceneBlueprint.sceneBeats.filter(beat => beat.actorRefs.includes(actor.actorGroupRef))
+    const referencedBeats = sceneBlueprint.sceneBeats.filter(beat =>
+      beat.subtitleId && beat.actorRefs.includes(actor.actorGroupRef))
     if (referencedBeats.length === 0) fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
     return {
       actorInstanceRef: actor.actorInstanceId,
