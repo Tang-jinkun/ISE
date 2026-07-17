@@ -30,11 +30,23 @@ const missileRoutes = [
   'trajectory:pakistan-strike-missile-2',
 ] as const
 
-const allRoutes = [...aircraftRoutes, ...missileRoutes]
+const awacsRoutes = [
+  'trajectory:india-awacs-1',
+  'trajectory:pakistan-awacs-1',
+] as const
+
+const allRoutes = [...aircraftRoutes, ...missileRoutes, ...awacsRoutes]
 
 function trajectoryEntry(assetId: string): AssetRegistryEntry {
   const suffix = Number(assetId.match(/-(\d+)$/)?.[1] ?? 1)
   const repaired = assetId === 'trajectory:ambala-su30mki-1'
+  const indiaAwacs = assetId === 'trajectory:india-awacs-1'
+  const pakistanAwacs = assetId === 'trajectory:pakistan-awacs-1'
+  const stationaryBounds: [[number, number], [number, number]] | undefined = indiaAwacs
+    ? [[75.171707, 30.81646], [75.171707, 30.81646]]
+    : pakistanAwacs
+      ? [[73.0845, 31.4504], [73.0845, 31.4504]]
+      : undefined
   return {
     assetId: assetId as `trajectory:${string}`,
     kind: 'trajectory',
@@ -54,9 +66,9 @@ function trajectoryEntry(assetId: string): AssetRegistryEntry {
       timeUnit: 'ms',
       coordinateOrder: 'lng-lat-alt',
       startTimeMs: 0,
-      endTimeMs: repaired ? 181_000 : 160_000 + suffix * 1_000,
+      endTimeMs: indiaAwacs || pakistanAwacs ? 99_000 : repaired ? 181_000 : 160_000 + suffix * 1_000,
       monotonic: true,
-      bounds: [[70, 20], [80, 35]],
+      bounds: stationaryBounds ?? [[70, 20], [80, 35]],
       ...(repaired ? {
         curation: {
           policyId: 'trajectory.shift-suffix/v1' as const,
@@ -74,6 +86,30 @@ function trajectoryEntry(assetId: string): AssetRegistryEntry {
         },
       } : {}),
     },
+  }
+}
+
+function awacsGroup(
+  groupId: string,
+  semanticEntityRef: string,
+  side: string,
+  behaviorProfile: string,
+  locationRef: string,
+): ActorGroup {
+  return {
+    ...group(groupId, semanticEntityRef, locationRef, side, 'early-warning-support'),
+    platformType: 'awacs',
+    quantityDecision: {
+      value: 1,
+      constraint: 'unknown',
+      source: 'default',
+      evidenceRefs: [],
+      defaultPolicyId: 'single-node/v1',
+      reason: 'Test fixture',
+    },
+    formationPattern: 'single',
+    leaderPolicy: 'single-member',
+    behaviorProfile,
   }
 }
 
@@ -173,15 +209,29 @@ function expectCompilationCode(code: string) {
     && error.diagnostics.some(item => item.code === code)
 }
 
-test('builds a deterministic catalog for all 18 aircraft and 3 missile trajectories', () => {
+test('builds a deterministic catalog for all aircraft, missile, and stationary AWACS trajectories', () => {
   const first = buildTrajectoryCatalog(snapshot([...allRoutes].reverse()))
   const second = buildTrajectoryCatalog(snapshot(allRoutes))
 
-  assert.equal(first.entries.length, 21)
+  assert.equal(first.entries.length, 23)
   assert.deepEqual(first, second)
   assert.deepEqual(first.entries.map(entry => entry.trajectoryAssetId), [...allRoutes].sort())
   assert.equal(first.entries.every(entry => entry.scenarioBindings.includes('indo-pak/v1')), true)
   assert.equal(first.entries.every(entry => entry.validationStatus !== 'invalid'), true)
+})
+
+test('catalogs both AWACS routes as exact stationary 99000ms paths', () => {
+  const catalog = buildTrajectoryCatalog(snapshot())
+
+  assert.deepEqual(
+    catalog.entries
+      .filter(entry => awacsRoutes.includes(entry.trajectoryAssetId as typeof awacsRoutes[number]))
+      .map(entry => [entry.trajectoryAssetId, entry.startTimeMs, entry.endTimeMs, entry.bounds]),
+    [
+      ['trajectory:india-awacs-1', 0, 99_000, [[75.171707, 30.81646], [75.171707, 30.81646]]],
+      ['trajectory:pakistan-awacs-1', 0, 99_000, [[73.0845, 31.4504], [73.0845, 31.4504]]],
+    ],
+  )
 })
 
 test('records the approved Su-30 suffix repair without changing catalog geometry', () => {
@@ -234,6 +284,8 @@ test('defines scenario-local route semantics and keeps AMBALA Su-30 routes as re
       ['formation:pakistan-jf17-minhas', 4],
       ['formation:pakistan-jf17-rafiki', 4],
       ['reserve:india-su30-ambala', 2],
+      ['support:india-netra-awacs', 1],
+      ['support:pakistan-awacs-proxy', 1],
       ['weapon:india-first-strike', 1],
       ['weapon:pakistan-intercept', 1],
       ['weapon:pakistan-counterattack', 1],
@@ -246,6 +298,39 @@ test('defines scenario-local route semantics and keeps AMBALA Su-30 routes as re
   assert.ok(minhas?.diagnostics.includes('OPERATOR_ROUTE_LABEL_DIFFERS_FROM_REPORT_ENTITY'))
   assert.ok(rafiki?.diagnostics.includes('OPERATOR_ROUTE_LABEL_DIFFERS_FROM_REPORT_ENTITY'))
   assert.ok(vampire?.diagnostics.some(item => item.includes('scenario-local callsign')))
+})
+
+test('binds exact AWACS aliases and behavior profiles to their models and stationary routes', () => {
+  const india = indoPakTrajectoryScenario.bundles.find(bundle => bundle.bundleId === 'support:india-netra-awacs')
+  const pakistan = indoPakTrajectoryScenario.bundles.find(bundle => bundle.bundleId === 'support:pakistan-awacs-proxy')
+  assert.deepEqual(
+    [india, pakistan].map(bundle => ({
+      model: bundle?.modelAssetRef,
+      routes: bundle?.routeAssetRefs,
+      profiles: bundle?.behaviorProfileRefs,
+    })),
+    [
+      {
+        model: 'model:netra-awacs',
+        routes: ['trajectory:india-awacs-1'],
+        profiles: ['awacs-support/india/v1'],
+      },
+      {
+        model: 'model:awacs-generic-e3a',
+        routes: ['trajectory:pakistan-awacs-1'],
+        profiles: ['awacs-support/pakistan/v1'],
+      },
+    ],
+  )
+
+  const resolved = resolveFormationBundles([
+    awacsGroup('group:india-awacs', 'Netra AEW&CS', 'india', 'awacs-support/india/v1', 'unrelated location wording'),
+    awacsGroup('group:pakistan-awacs', '巴方预警机（通用示意模型）', 'pakistan', 'awacs-support/pakistan/v1', 'other location wording'),
+  ], buildTrajectoryCatalog(snapshot()), indoPakTrajectoryScenario)
+  assert.deepEqual(resolved.map(bundle => [bundle.actorGroupRef, bundle.routeAssetRefs]), [
+    ['group:india-awacs', ['trajectory:india-awacs-1']],
+    ['group:pakistan-awacs', ['trajectory:pakistan-awacs-1']],
+  ])
 })
 
 test('binds weapon behavior profiles to their exact catalog routes without base location matching', () => {

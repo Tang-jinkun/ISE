@@ -87,6 +87,37 @@
       }
     },
     {
+      "displayName": "Generic AWACS visual proxy (Boeing E-3A)",
+      "aliases": [
+        "Boeing E-3A Sentry AWACS",
+        "E-3A",
+        "巴方预警机（通用示意模型）"
+      ],
+      "fingerprint": "sha256:36477ccf3b3492a2e4a814485b3cc1e22499642e66e6c77298630ded8c1a3289",
+      "sourceRelativePath": "newGLB/boeing_e-3a_sentry_awacs.glb",
+      "objectName": "demo-assets/model/awacs-generic-e3a.glb",
+      "size": 10298940,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:awacs-generic-e3a",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 1.003803,
+        "rotationOffsetDeg": [
+          90,
+          -90,
+          0
+        ],
+        "altitudeOffsetM": 0.885106,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
       "displayName": "J-10",
       "aliases": [
         "J-10CE",
@@ -168,6 +199,39 @@
           0
         ],
         "altitudeOffsetM": 0.864481,
+        "entityTypes": [
+          "aircraft"
+        ]
+      }
+    },
+    {
+      "displayName": "Indian Netra AEW&CS",
+      "aliases": [
+        "Indian Netra AWACs",
+        "Netra",
+        "Netra AEW&CS",
+        "印方预警机",
+        "印度预警机"
+      ],
+      "fingerprint": "sha256:83b09dbb500b3647dbe442e0bef4d951d08a884ca2e7c2f2ed696420b8b6ec20",
+      "sourceRelativePath": "newGLB/indian_netra_awacs.glb",
+      "objectName": "demo-assets/model/netra-awacs.glb",
+      "size": 23012448,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "model:netra-awacs",
+      "kind": "model",
+      "mediaType": "model/gltf-binary",
+      "model": {
+        "scale": 25.782316,
+        "rotationOffsetDeg": [
+          90,
+          -90,
+          0
+        ],
+        "altitudeOffsetM": 0,
         "entityTypes": [
           "aircraft"
         ]
@@ -649,6 +713,43 @@
       }
     },
     {
+      "displayName": "India AWACS stationary route 1",
+      "aliases": [
+        "印度方预警机位置",
+        "印方预警机驻留航迹",
+        "Netra stationary route"
+      ],
+      "fingerprint": "sha256:ec0e10854a8178adb24b4213b93be93185f137683cbd63b6a415b0b5aa84464c",
+      "sourceRelativePath": "json/印度方预警机驻留-1.json",
+      "objectName": "demo-assets/trajectory/india-awacs-1.json",
+      "size": 196,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:india-awacs-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 99000,
+        "monotonic": true,
+        "bounds": [
+          [
+            75.171707,
+            30.81646
+          ],
+          [
+            75.171707,
+            30.81646
+          ]
+        ]
+      }
+    },
+    {
       "displayName": "India missile 1",
       "aliases": [
         "India missile route"
@@ -826,6 +927,43 @@
           [
             74.21358617363025,
             34.140548017640626
+          ]
+        ]
+      }
+    },
+    {
+      "displayName": "Pakistan AWACS stationary route 1",
+      "aliases": [
+        "巴基斯坦方预警机",
+        "巴方预警机驻留航迹",
+        "Pakistan AWACS stationary route"
+      ],
+      "fingerprint": "sha256:e4e35fc03f9b765232f790899242bda5945ebf85c618f5d387164cd9a09b0f88",
+      "sourceRelativePath": "json/巴基斯坦方预警机驻留-1.json",
+      "objectName": "demo-assets/trajectory/pakistan-awacs-1.json",
+      "size": 190,
+      "availability": "available",
+      "criticality": "required",
+      "fallbackAssetIds": [],
+      "allowFallback": false,
+      "assetId": "trajectory:pakistan-awacs-1",
+      "kind": "trajectory",
+      "mediaType": "application/vnd.ise.trajectory+json",
+      "trajectory": {
+        "format": "ise-trajectory/v1",
+        "timeUnit": "ms",
+        "coordinateOrder": "lng-lat-alt",
+        "startTimeMs": 0,
+        "endTimeMs": 99000,
+        "monotonic": true,
+        "bounds": [
+          [
+            73.0845,
+            31.4504
+          ],
+          [
+            73.0845,
+            31.4504
           ]
         ]
       }
@@ -1216,6 +1354,12 @@
       "note": "Known reversed optional trajectory"
     },
     {
+      "sourceName": "Boeing E-3A Sentry AWACS",
+      "sourceKind": "model",
+      "assetId": "model:awacs-generic-e3a",
+      "note": "Generic visual proxy only; not a Pakistani-operated platform"
+    },
+    {
       "sourceName": "J-10",
       "sourceKind": "model",
       "assetId": "model:j10",
@@ -1252,6 +1396,12 @@
       "note": "Operator filename spelling retained explicitly"
     },
     {
+      "sourceName": "Netra AEW&CS",
+      "sourceKind": "report",
+      "assetId": "model:netra-awacs",
+      "note": "Exact Indian early-warning platform model"
+    },
+    {
       "sourceName": "Rafale",
       "sourceKind": "model",
       "assetId": "model:rafale",
@@ -1264,10 +1414,22 @@
       "note": "Operator source filename spelling"
     },
     {
+      "sourceName": "印度方预警机驻留-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:india-awacs-1",
+      "note": "Stationary route derived from the operator point; 9000m is an explicit scenario default"
+    },
+    {
       "sourceName": "地面雷达",
       "sourceKind": "report",
       "assetId": "image:ground-radar",
       "note": "Report illustration name"
+    },
+    {
+      "sourceName": "巴基斯坦方预警机驻留-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:pakistan-awacs-1",
+      "note": "Stationary route derived from the operator point and stated approximate altitude"
     },
     {
       "sourceName": "巴方导弹1",

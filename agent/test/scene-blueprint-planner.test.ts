@@ -465,6 +465,137 @@ function planningFixtureWithParticipants(
   return fixture
 }
 
+function planningFixtureWithAwacs() {
+  const fixture = planningFixture()
+  fixture.eventPlan.eventUnits.push(
+    {
+      eventUnitId: 'event:india-awacs',
+      title: 'Indian early warning support',
+      worldStateChange: '印方Netra预警机提供早期预警支援。',
+      participants: ['印方预警机'],
+      locationRefs: ['印方预警机驻留点'],
+      evidenceRefs: ['ev-india-awacs'],
+      inferenceRefs: [],
+      uncertainties: [],
+      narrativePurpose: 'Show Indian early-warning support',
+      importance: 'high',
+    },
+    {
+      eventUnitId: 'event:pakistan-awacs',
+      title: 'Pakistani early warning support',
+      worldStateChange: '巴方Saab 2000 Erieye预警机提供早期预警支援。',
+      participants: ['巴方预警机'],
+      locationRefs: ['巴方预警机驻留点'],
+      evidenceRefs: ['ev-pakistan-awacs'],
+      inferenceRefs: [],
+      uncertainties: [],
+      narrativePurpose: 'Show Pakistani early-warning support',
+      importance: 'high',
+    },
+  )
+  fixture.evidence.records.push(
+    {
+      evidenceId: 'ev-india-awacs', sourceRef: 'docx:p3',
+      claim: '印方Netra AEW&CS预警机提供早期预警支援。', kind: 'explicit_fact',
+      entities: ['印方预警机', 'Netra AEW&CS'], confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-pakistan-awacs', sourceRef: 'docx:p3',
+      claim: '巴方Saab 2000 Erieye预警机提供早期预警支援。', kind: 'explicit_fact',
+      entities: ['巴方预警机', 'Saab 2000 Erieye'], confidence: 1, ambiguities: [],
+    },
+  )
+  fixture.narrativePlan.subtitles.push(
+    {
+      subtitleId: 'subtitle:india-awacs', eventUnitId: 'event:india-awacs',
+      text: '印方Netra预警机提供早期预警支援。', evidenceRefs: ['ev-india-awacs'], importance: 'high',
+    },
+    {
+      subtitleId: 'subtitle:pakistan-awacs', eventUnitId: 'event:pakistan-awacs',
+      text: '巴方预警机提供早期预警支援。', evidenceRefs: ['ev-pakistan-awacs'], importance: 'high',
+    },
+  )
+  fixture.narrativePlan.sceneRequirements.push(
+    {
+      requirementId: 'requirement:india-awacs', eventUnitId: 'event:india-awacs',
+      focusEntities: ['印方预警机'], spatialRelations: ['stationary support position'],
+      stateChanges: [], motionRequirements: ['hold position'], attentionRequirements: ['show Indian AWACS'],
+      requiredFacts: ['Indian early-warning support'], forbiddenClaims: [], preferredTemplate: 'deployment',
+    },
+    {
+      requirementId: 'requirement:pakistan-awacs', eventUnitId: 'event:pakistan-awacs',
+      focusEntities: ['巴方预警机'], spatialRelations: ['stationary support position'],
+      stateChanges: [], motionRequirements: ['hold position'], attentionRequirements: ['show Pakistani AWACS'],
+      requiredFacts: ['Pakistani early-warning support'], forbiddenClaims: ['Pakistan operates E-3A'],
+      preferredTemplate: 'deployment',
+    },
+  )
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+  return fixture
+}
+
+test('creates one persistent AWACS group per evidenced side and binds only the corresponding beats', () => {
+  const fixture = planningFixtureWithAwacs()
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+  const awacs = blueprint.actorGroups.filter(group => group.role === 'early-warning-support')
+
+  assert.deepEqual(awacs.map(group => ({
+    id: group.groupId,
+    entity: group.semanticEntityRef,
+    side: group.side,
+    quantity: group.quantityDecision,
+    formation: group.formationPattern,
+    leader: group.leaderPolicy,
+    profile: group.behaviorProfile,
+    lifecycle: group.lifecycle,
+  })), [
+    {
+      id: 'group:india-netra-awacs', entity: 'Netra AEW&CS', side: 'india',
+      quantity: {
+        value: 1, constraint: 'unknown', source: 'default', evidenceRefs: [],
+        defaultPolicyId: 'single-node/v1', reason: 'No explicit quantity; applied single-node/v1',
+      },
+      formation: 'single', leader: 'single-member', profile: 'awacs-support/india/v1', lifecycle: 'scene-persistent',
+    },
+    {
+      id: 'group:pakistan-awacs-proxy', entity: '巴方预警机（通用示意模型）', side: 'pakistan',
+      quantity: {
+        value: 1, constraint: 'unknown', source: 'default', evidenceRefs: [],
+        defaultPolicyId: 'single-node/v1', reason: 'No explicit quantity; applied single-node/v1',
+      },
+      formation: 'single', leader: 'single-member', profile: 'awacs-support/pakistan/v1', lifecycle: 'scene-persistent',
+    },
+  ])
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:india-awacs')?.actorRefs,
+    ['group:india-netra-awacs'],
+  )
+  assert.deepEqual(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:pakistan-awacs')?.actorRefs,
+    ['group:pakistan-awacs-proxy'],
+  )
+})
+
+test('does not create or bind either side for an unqualified generic AWACS fact', () => {
+  const fixture = planningFixture()
+  fixture.eventPlan.eventUnits[0]!.participants = ['预警机']
+  fixture.eventPlan.eventUnits[0]!.evidenceRefs = ['ev-generic-awacs']
+  fixture.evidence.records = [{
+    evidenceId: 'ev-generic-awacs', sourceRef: 'docx:p3', claim: '预警机提供早期预警支援。',
+    kind: 'explicit_fact', entities: ['预警机'], confidence: 1, ambiguities: ['Side is unspecified'],
+  }]
+  fixture.narrativePlan.subtitles[0]!.evidenceRefs = ['ev-generic-awacs']
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+  assert.deepEqual(blueprint.actorGroups.filter(group => group.role === 'early-warning-support'), [])
+  assert.equal(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.actorRefs
+      .some(ref => ref.includes('awacs')),
+    false,
+  )
+})
+
 test('creates an event-scoped generic missile actor from grounded launch facts when participants omit the weapon', () => {
   const fixture = planningFixtureWithParticipants({
     'event:launch': ['巴方JF-17编队'],

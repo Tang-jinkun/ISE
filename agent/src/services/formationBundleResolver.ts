@@ -18,7 +18,7 @@ function matchesGroup(group: ActorGroup, bundle: ScenarioTrajectoryBundle): bool
   const aliases = new Set(bundle.semanticEntityAliases.map(normalizeAssetName))
   if (!aliases.has(entity)) return false
 
-  if (group.role === 'weapon-launch') {
+  if (group.role === 'weapon-launch' || group.role === 'early-warning-support') {
     const behaviorProfiles = new Set(bundle.behaviorProfileRefs.map(normalizeAssetName))
     return behaviorProfiles.has(normalizeAssetName(group.behaviorProfile))
   }

@@ -54,6 +54,25 @@ const sideFormationParticipantLabels: Readonly<Record<string, readonly string[]>
   india: ['印方编队'],
   pakistan: ['巴方编队', '巴方拦截编队'],
 }
+const bothSidesAwacsAliases = ['双方预警机', '印巴双方预警机', 'Indian and Pakistani AWACS']
+const awacsDefinitions = [
+  {
+    groupId: 'group:india-netra-awacs',
+    entityName: 'Netra AEW&CS',
+    aliases: ['印方预警机', '印度预警机', 'Netra', 'Netra AEW&CS'],
+    side: 'india',
+    locationRef: 'location:india-awacs',
+    behaviorProfile: 'awacs-support/india/v1',
+  },
+  {
+    groupId: 'group:pakistan-awacs-proxy',
+    entityName: '巴方预警机（通用示意模型）',
+    aliases: ['巴方预警机', '巴基斯坦预警机', 'Saab 2000 Erieye', 'ZDK-03'],
+    side: 'pakistan',
+    locationRef: 'location:pakistan-awacs',
+    behaviorProfile: 'awacs-support/pakistan/v1',
+  },
+] as const
 
 function normalized(value: string): string {
   return value.normalize('NFKC').replace(/[\s‐‑‒–—―_-]+/g, '').toLocaleLowerCase('en-US')
@@ -147,6 +166,37 @@ function fighterGroups(evidence: EvidenceIR): ActorGroup[] {
     }, evidence, locationRef, scopedEvidence(evidence, jf17Records)))
   }
   return groups
+}
+
+function awacsGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroup[] {
+  const linkedEvidenceIds = new Set(eventPlan.eventUnits.flatMap(unit => unit.evidenceRefs))
+  const linkedRecords = factualRecords(evidence).filter(record => linkedEvidenceIds.has(record.evidenceId))
+  return awacsDefinitions.flatMap(definition => {
+    const records = linkedRecords.filter(record => includesAlias(
+      recordText(record),
+      [...definition.aliases, ...bothSidesAwacsAliases],
+    ))
+    if (records.length === 0) return []
+    return [{
+      groupId: definition.groupId,
+      semanticEntityRef: definition.entityName,
+      side: definition.side,
+      locationRef: definition.locationRef,
+      platformType: 'awacs',
+      role: 'early-warning-support',
+      quantityDecision: resolveQuantity({
+        entityName: definition.entityName,
+        entityAliases: definition.aliases,
+        platformType: 'awacs',
+        role: 'early-warning-support',
+        evidence: scopedEvidence(evidence, records),
+      }),
+      formationPattern: 'single',
+      leaderPolicy: 'single-member',
+      behaviorProfile: definition.behaviorProfile,
+      lifecycle: 'scene-persistent',
+    } satisfies ActorGroup]
+  })
 }
 
 function isExplicitLaunch(unit: EventUnit, completedLaunchRecords: EvidenceRecord[]): boolean {
@@ -269,10 +319,18 @@ function participantMatchesFighter(participant: string, group: ActorGroup): bool
   return includesAlias(participant, scenarioAliasesForFighter(group))
 }
 
+function unitNamesAwacs(unit: EventUnit, group: ActorGroup): boolean {
+  if (group.role !== 'early-warning-support') return false
+  const texts = [unit.title, unit.worldStateChange, ...unit.participants]
+  if (texts.some(text => includesAlias(text, bothSidesAwacsAliases))) return true
+  const definition = awacsDefinitions.find(candidate => candidate.side === group.side)
+  return definition !== undefined && texts.some(text => includesAlias(text, definition.aliases))
+}
+
 function actorRefsForUnit(unit: EventUnit, groups: ActorGroup[]): string[] {
   return groups.filter(group => {
     if (group.lifecycle === `event-scoped:${unit.eventUnitId}`) return true
-    return unit.participants.some(participant =>
+    return unitNamesAwacs(unit, group) || unit.participants.some(participant =>
       normalized(participant) === normalized(group.semanticEntityRef)
       || participantMatchesFighter(participant, group))
   }).map(group => group.groupId)
@@ -305,7 +363,11 @@ function assertNarrationBinding(input: BuildSceneBlueprintInput): void {
 
 export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBlueprint {
   assertNarrationBinding(input)
-  const groups = [...fighterGroups(input.evidence), ...weaponGroups(input.eventPlan, input.evidence)]
+  const groups = [
+    ...fighterGroups(input.evidence),
+    ...awacsGroups(input.eventPlan, input.evidence),
+    ...weaponGroups(input.eventPlan, input.evidence),
+  ]
   const eventUnits = new Map(input.eventPlan.eventUnits.map(unit => [unit.eventUnitId, unit]))
   const requirements = sceneRequirementByEvent(input.narrativePlan)
   const hasImageIntent = input.narrationPlan.beats.some(beat =>

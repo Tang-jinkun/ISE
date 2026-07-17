@@ -12,6 +12,8 @@ Date: 2026-07-15
 | model | `model:pl15e` | `pl-15e.glb` |
 | model | `model:rafale` | `Refale.glb`; the source spelling is retained only as an alias |
 | model | `model:su30mki` | `SU-30MKI.glb` |
+| model | `model:netra-awacs` | `indian_netra_awacs.glb` |
+| model | `model:awacs-generic-e3a` | `boeing_e-3a_sentry_awacs.glb`; Pakistani AWACS visual proxy only |
 | video | `video:ooda-chain` | `ooda作战链示例视频.mp4` |
 | video | `video:runway-exit` | `冲出跑道.mp4` |
 | video | `video:missile-impact` | `导弹击中飞机.mp4` |
@@ -45,8 +47,18 @@ Date: 2026-07-15
 | trajectory | `trajectory:pakistan-missile-1` | `巴方导弹1.json` |
 | trajectory | `trajectory:pakistan-strike-missile-2` | `巴方打击导弹2.json` |
 | trajectory | `trajectory:india-missile-1` | `印方导弹1.json` |
+| trajectory | `trajectory:india-awacs-1` | `印度方预警机驻留-1.json`; stationary route derived from the operator point |
+| trajectory | `trajectory:pakistan-awacs-1` | `巴基斯坦方预警机驻留-1.json`; stationary route derived from the operator point |
 
-The catalog contains all 21 operator trajectories. Every trajectory ID is `trajectory:<origin-or-side>-<platform>-<ordinal>` in lowercase kebab case. Source spelling never silently changes the stable ID; `nameMappings` records report, trajectory, model, and operator contexts explicitly, including the J-10/J-10CE and JF-17 naming cases.
+## AWACS model attribution and route provenance
+
+- `model:netra-awacs` uses *Indian Netra AWACs* by Chenzoss, sourced from https://sketchfab.com/3d-models/indian-netra-awacs-d9d5349178c94c48b8bf4d63056d0022 and licensed under CC BY 4.0. The downloaded GLB retains its embedded attribution metadata.
+- `model:awacs-generic-e3a` uses *Boeing E-3A Sentry AWACS* by Muhamad Mirza Arrafi, sourced from https://sketchfab.com/3d-models/boeing-e-3a-sentry-awacs-ea83f2a9677d42dab9b3f53eddd3562e and licensed under CC BY 4.0. It is only a visual proxy for the Pakistani AWACS role; Pakistan must not be described as operating the E-3A and E-3A performance facts must not be attributed to Pakistan.
+- `trajectory:india-awacs-1` preserves the operator point `[75.171707, 30.81646]`. Its 9000m altitude is an explicit scenario default because the Indian point source omitted altitude; it is not document evidence.
+- `trajectory:pakistan-awacs-1` preserves the operator point `[73.0845, 31.4504]` and the source's stated approximate 9000m altitude.
+- Both AWACS routes contain exactly two spatially identical samples from `2025-05-07 00:00:00` to `2025-05-07 00:01:39`. They represent stationary residence, not synthesized orbits.
+
+The catalog contains all 23 governed trajectories: 21 operator trajectories plus two stationary AWACS routes derived from operator point assets. Every trajectory ID is `trajectory:<origin-or-side>-<platform>-<ordinal>` in lowercase kebab case. Source spelling never silently changes the stable ID; `nameMappings` records report, trajectory, model, and operator contexts explicitly, including the J-10/J-10CE and JF-17 naming cases.
 
 The Su-30MKI-1 source has a single auditable curation record: policy `trajectory.shift-suffix/v1`, expected raw fingerprint `sha256:ba6e0167c0d31e1141a6890bf033e1e671f1f364e7109471f28c7ab000a95995`, `startIndex: 91`, and `deltaMs: 2000`. The same shared preparation helper applies this suffix shift during both manifest construction and seed upload. Its computed repair provenance records `affectedSampleRange: [91, 181]`, `boundaryTimesBeforeMs: [90000, 89000]`, `boundaryTimesAfterMs: [90000, 91000]`, and `offsetMs: 2000`; boundary times are relative to the first raw source timestamp.
 

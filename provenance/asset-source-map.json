@@ -135,6 +135,20 @@
       "criticality": "required"
     },
     {
+      "assetId": "model:netra-awacs",
+      "sourceRelativePath": "newGLB/indian_netra_awacs.glb",
+      "displayName": "Indian Netra AEW&CS",
+      "aliases": ["Indian Netra AWACs", "Netra", "Netra AEW&CS", "印方预警机", "印度预警机"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "model:awacs-generic-e3a",
+      "sourceRelativePath": "newGLB/boeing_e-3a_sentry_awacs.glb",
+      "displayName": "Generic AWACS visual proxy (Boeing E-3A)",
+      "aliases": ["Boeing E-3A Sentry AWACS", "E-3A", "巴方预警机（通用示意模型）"],
+      "criticality": "required"
+    },
+    {
       "assetId": "trajectory:adampur-vampire-1",
       "sourceRelativePath": "json/ADAMPUR Vampire-1.json",
       "displayName": "ADAMPUR Vampire-1",
@@ -268,6 +282,20 @@
       "criticality": "required"
     },
     {
+      "assetId": "trajectory:india-awacs-1",
+      "sourceRelativePath": "json/印度方预警机驻留-1.json",
+      "displayName": "India AWACS stationary route 1",
+      "aliases": ["印度方预警机位置", "印方预警机驻留航迹", "Netra stationary route"],
+      "criticality": "required"
+    },
+    {
+      "assetId": "trajectory:pakistan-awacs-1",
+      "sourceRelativePath": "json/巴基斯坦方预警机驻留-1.json",
+      "displayName": "Pakistan AWACS stationary route 1",
+      "aliases": ["巴基斯坦方预警机", "巴方预警机驻留航迹", "Pakistan AWACS stationary route"],
+      "criticality": "required"
+    },
+    {
       "assetId": "trajectory:ambala-su30mki-1",
       "sourceRelativePath": "json/AMBALA Su-30MKI-1.json",
       "displayName": "AMBALA Su-30MKI-1",
@@ -347,6 +375,30 @@
       "sourceKind": "report",
       "assetId": "image:aew-illustration",
       "note": "Report illustration name"
+    },
+    {
+      "sourceName": "Netra AEW&CS",
+      "sourceKind": "report",
+      "assetId": "model:netra-awacs",
+      "note": "Exact Indian early-warning platform model"
+    },
+    {
+      "sourceName": "Boeing E-3A Sentry AWACS",
+      "sourceKind": "model",
+      "assetId": "model:awacs-generic-e3a",
+      "note": "Generic visual proxy only; not a Pakistani-operated platform"
+    },
+    {
+      "sourceName": "印度方预警机驻留-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:india-awacs-1",
+      "note": "Stationary route derived from the operator point; 9000m is an explicit scenario default"
+    },
+    {
+      "sourceName": "巴基斯坦方预警机驻留-1",
+      "sourceKind": "trajectory",
+      "assetId": "trajectory:pakistan-awacs-1",
+      "note": "Stationary route derived from the operator point and stated approximate altitude"
     },
     {
       "sourceName": "AMBALA Rafale-1",

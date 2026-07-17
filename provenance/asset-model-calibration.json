@@ -34,5 +34,17 @@
     "rotationOffsetDeg": [90, 0, 0],
     "altitudeOffsetM": 2.345046,
     "entityTypes": ["aircraft"]
+  },
+  "model:netra-awacs": {
+    "scale": 25.782316,
+    "rotationOffsetDeg": [90, -90, 0],
+    "altitudeOffsetM": 0,
+    "entityTypes": ["aircraft"]
+  },
+  "model:awacs-generic-e3a": {
+    "scale": 1.003803,
+    "rotationOffsetDeg": [90, -90, 0],
+    "altitudeOffsetM": 0.885106,
+    "entityTypes": ["aircraft"]
   }
 }

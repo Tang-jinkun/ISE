@@ -195,6 +195,7 @@ test('catalog bundles and route assignments preserve source samples and spatial 
       modelAssetRef: 'model:rafale',
       routeAssetRefs: formationBundle.routeAssetRefs,
       semanticEntityAliases: ['Rafale'],
+      behaviorProfileRefs: ['fighter-formation/v1'],
       locationRefs: [actorGroup.locationRef],
       diagnostics: [],
     }],
