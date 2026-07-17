@@ -153,10 +153,10 @@
         "JF-17战机",
         "JF-17编队"
       ],
-      "fingerprint": "sha256:40ab8686126477d9c958d5a588e63393b9a1b5100d5d4912fbdcba864ee928f8",
-      "sourceRelativePath": "印巴glb（修改6.0）/JF-17.glb",
+      "fingerprint": "sha256:ed3157c0ee8b84356c5b18e2ef5edd14c75554ad89ffe82a3cc81fa01e173d58",
+      "sourceRelativePath": "newGLB/pakistan_jf_17_thunder.glb",
       "objectName": "demo-assets/model/jf17.glb",
-      "size": 1466636,
+      "size": 3682696,
       "availability": "available",
       "criticality": "required",
       "fallbackAssetIds": [],
@@ -165,13 +165,13 @@
       "kind": "model",
       "mediaType": "model/gltf-binary",
       "model": {
-        "scale": 15.287153,
+        "scale": 7.89912,
         "rotationOffsetDeg": [
           90,
-          0,
+          180,
           0
         ],
-        "altitudeOffsetM": 2.661958,
+        "altitudeOffsetM": 2.613392,
         "entityTypes": [
           "aircraft"
         ]
@@ -274,10 +274,10 @@
         "阵风战斗机",
         "阵风战斗机编队"
       ],
-      "fingerprint": "sha256:3034eb15782822c4a49430d0a249d7778678c20a09de8e61cdaf13985a3e4839",
-      "sourceRelativePath": "印巴glb（修改6.0）/Refale.glb",
+      "fingerprint": "sha256:6275e5ed051c69fe9e07805134aea4a2f347ce20a6fb9ca2efa6982e2df04585",
+      "sourceRelativePath": "newGLB/dassault_rafale.glb",
       "objectName": "demo-assets/model/rafale.glb",
-      "size": 1417224,
+      "size": 5961952,
       "availability": "available",
       "criticality": "required",
       "fallbackAssetIds": [],
@@ -286,13 +286,13 @@
       "kind": "model",
       "mediaType": "model/gltf-binary",
       "model": {
-        "scale": 21.179728,
+        "scale": 1.220692,
         "rotationOffsetDeg": [
           90,
-          0,
+          -90,
           0
         ],
-        "altitudeOffsetM": 2.074768,
+        "altitudeOffsetM": 0.53876,
         "entityTypes": [
           "aircraft"
         ]

@@ -10,7 +10,7 @@
     },
     {
       "assetId": "model:jf17",
-      "sourceRelativePath": "印巴glb（修改6.0）/JF-17.glb",
+      "sourceRelativePath": "newGLB/pakistan_jf_17_thunder.glb",
       "displayName": "JF-17",
       "aliases": ["JF-17战机", "JF-17编队"],
       "criticality": "required"
@@ -31,7 +31,7 @@
     },
     {
       "assetId": "model:rafale",
-      "sourceRelativePath": "印巴glb（修改6.0）/Refale.glb",
+      "sourceRelativePath": "newGLB/dassault_rafale.glb",
       "displayName": "Rafale",
       "aliases": ["Refale", "阵风", "阵风战斗机", "阵风战斗机编队"],
       "criticality": "required"

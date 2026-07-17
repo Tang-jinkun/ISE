@@ -6,9 +6,9 @@
     "entityTypes": ["aircraft"]
   },
   "model:jf17": {
-    "scale": 15.287153,
-    "rotationOffsetDeg": [90, 0, 0],
-    "altitudeOffsetM": 2.661958,
+    "scale": 7.899120,
+    "rotationOffsetDeg": [90, 180, 0],
+    "altitudeOffsetM": 2.613392,
     "entityTypes": ["aircraft"]
   },
   "model:mig29": {
@@ -24,9 +24,9 @@
     "entityTypes": ["missile"]
   },
   "model:rafale": {
-    "scale": 21.179728,
-    "rotationOffsetDeg": [90, 0, 0],
-    "altitudeOffsetM": 2.074768,
+    "scale": 1.220692,
+    "rotationOffsetDeg": [90, -90, 0],
+    "altitudeOffsetM": 0.538760,
     "entityTypes": ["aircraft"]
   },
   "model:su30mki": {

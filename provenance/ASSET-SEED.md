@@ -7,10 +7,10 @@ Date: 2026-07-15
 | Kind | Stable asset ID | Current operator source name |
 | --- | --- | --- |
 | model | `model:j10` | `J-10.glb` |
-| model | `model:jf17` | `JF-17.glb` |
+| model | `model:jf17` | `pakistan_jf_17_thunder.glb` |
 | model | `model:mig29` | `MiG-29.glb` |
 | model | `model:pl15e` | `pl-15e.glb` |
-| model | `model:rafale` | `Refale.glb`; the source spelling is retained only as an alias |
+| model | `model:rafale` | `dassault_rafale.glb`; `Refale` remains only as an operator alias |
 | model | `model:su30mki` | `SU-30MKI.glb` |
 | model | `model:netra-awacs` | `indian_netra_awacs.glb` |
 | model | `model:awacs-generic-e3a` | `boeing_e-3a_sentry_awacs.glb`; Pakistani AWACS visual proxy only |
@@ -57,6 +57,12 @@ Date: 2026-07-15
 - `trajectory:india-awacs-1` preserves the operator point `[75.171707, 30.81646]`. Its 9000m altitude is an explicit scenario default because the Indian point source omitted altitude; it is not document evidence.
 - `trajectory:pakistan-awacs-1` preserves the operator point `[73.0845, 31.4504]` and the source's stated approximate 9000m altitude.
 - Both AWACS routes contain exactly two spatially identical samples from `2025-05-07 00:00:00` to `2025-05-07 00:01:39`. They represent stationary residence, not synthesized orbits.
+
+## Replacement fighter model attribution
+
+- `model:rafale` uses *Dassault Rafale* by andertan, sourced from https://sketchfab.com/3d-models/dassault-rafale-fabb8472bc2e413282c80406b13ff1a7 and licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). The governed GLB retains the embedded author, source, title, and license metadata.
+- `model:jf17` uses *Pakistan JF 17 Thunder* by Chenzoss, sourced from https://sketchfab.com/3d-models/pakistan-jf-17-thunder-da222e5aad9e4f249f2042063f3acfb8 and licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). The governed GLB retains the embedded author, source, title, and license metadata.
+- Both replacements preserve their existing stable asset IDs and all report/operator aliases. Only governed source bytes and model calibration changed.
 
 The catalog contains all 23 governed trajectories: 21 operator trajectories plus two stationary AWACS routes derived from operator point assets. Every trajectory ID is `trajectory:<origin-or-side>-<platform>-<ordinal>` in lowercase kebab case. Source spelling never silently changes the stable ID; `nameMappings` records report, trajectory, model, and operator contexts explicitly, including the J-10/J-10CE and JF-17 naming cases.
 
