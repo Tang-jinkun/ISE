@@ -32,6 +32,7 @@ export interface ModelRuntimeDependencies {
 export interface ModelFrameState {
   visible: boolean;
   state: SceneEntity['initialState'];
+  stateStartMs?: number;
   trajectoryAssetId?: string;
   sample?: TrajectorySample;
   trail: RuntimeTrail;
@@ -110,6 +111,7 @@ export function reduceModelFrame(
   const seekTimeMs = finiteTime(timeMs);
   let spawned = false;
   let state = entity.initialState;
+  let stateStartMs: number | undefined;
   let trajectoryAssetId: string | undefined;
   let sample: TrajectorySample | undefined;
   let trail: RuntimeTrail = { entityId: entity.entityId, coordinates: [] };
@@ -166,6 +168,7 @@ export function reduceModelFrame(
         break;
       case 'model.set_state':
         state = item.params.state;
+        stateStartMs = item.startMs;
         break;
       case 'model.hide':
         spawned = false;
@@ -176,6 +179,7 @@ export function reduceModelFrame(
   return {
     visible: spawned && state !== 'hidden' && sample !== undefined,
     state,
+    ...(stateStartMs !== undefined ? { stateStartMs } : {}),
     ...(trajectoryAssetId ? { trajectoryAssetId } : {}),
     sample,
     trail,
@@ -197,6 +201,7 @@ export function applyModelTransform(
   sample: TrajectorySample,
   metadata: ModelMetadata,
   project: ModelRuntimeDependencies['project'],
+  destroyedElapsedMs?: number,
 ) {
   const altitudeM = sample.altitudeM + metadata.altitudeOffsetM;
   const mercator = project(sample.longitude, sample.latitude, altitudeM);
@@ -222,6 +227,22 @@ export function applyModelTransform(
     ),
   );
   transform.motionRoot.quaternion.copy(yaw).multiply(pitch);
+  if (destroyedElapsedMs !== undefined) {
+    const progress = THREE.MathUtils.smoothstep(
+      Math.min(1_000, Math.max(0, destroyedElapsedMs)),
+      0,
+      1_000,
+    );
+    const lossOfControl = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        THREE.MathUtils.degToRad(-55 * progress),
+        THREE.MathUtils.degToRad(160 * progress),
+        0,
+        'XYZ',
+      ),
+    );
+    transform.motionRoot.quaternion.multiply(lossOfControl);
+  }
   transform.calibrationRoot.quaternion.copy(correction);
 
   return { altitudeM, scaleFactor };
@@ -349,6 +370,9 @@ export class ModelRuntime {
           frame.sample,
           instance.metadata,
           this.dependencies.project,
+          frame.state === 'destroyed' && frame.stateStartMs !== undefined
+            ? finiteTime(timeMs) - frame.stateStartMs
+            : undefined,
         );
         const size = modelDisplaySize(scaleFactor, instance.nativeExtent, this.map.getZoom());
         instance.transform.mercatorRoot.scale.set(
@@ -718,6 +742,9 @@ function applyMaterialState(materials: MaterialState[], state: SceneEntity['init
       }
       material.opacity = 0.45;
       material.transparent = true;
+    } else if (state === 'destroyed') {
+      color?.multiplyScalar(0.18);
+      emissive?.multiplyScalar(0.1);
     }
     material.needsUpdate = true;
   }

@@ -255,6 +255,134 @@ it('reduces spawn, follow, state, and hide at any seek time', () => {
   expect(reduceModelFrame(rafale('one'), items, trajectories, 3_600).visible).toBe(false);
 });
 
+it('records the latest applied model state command time', () => {
+  const items = modelTrackFor('one', [
+    action(1_500, 1, { action: 'model.set_state', entityId: 'one', state: 'warning' }),
+    action(2_000, 1, { action: 'model.set_state', entityId: 'one', state: 'destroyed' }),
+    action(2_500, 1, { action: 'model.set_state', entityId: 'one', state: 'disabled' }),
+  ]).items;
+  const trajectories = new Map([['trajectory:ambala-rafale-1', eastboundTrajectory]]);
+
+  expect(reduceModelFrame(rafale('one'), items, trajectories, 2_400)).toMatchObject({
+    state: 'destroyed',
+    stateStartMs: 2_000,
+  });
+  expect(reduceModelFrame(rafale('one'), items, trajectories, 2_600)).toMatchObject({
+    state: 'disabled',
+    stateStartMs: 2_500,
+  });
+});
+
+it('eases a destroyed aircraft pose at 500 ms and clamps it after 1,000 ms', async () => {
+  const { runtime } = modelHarness();
+  await runtime.load(
+    [rafale('one'), rafale('two')],
+    [
+      modelTrackFor('one', [
+        action(1_500, 1, { action: 'model.set_state', entityId: 'one', state: 'destroyed' }),
+      ]),
+      modelTrackFor('two'),
+    ],
+  );
+
+  runtime.apply(2_000);
+  const easingPose = runtime.getFrameSnapshot()[0]!.quaternion;
+  const normalPose = runtime.getFrameSnapshot()[1]!.quaternion;
+  runtime.apply(2_500);
+  const clampedPose = runtime.getFrameSnapshot()[0]!.quaternion;
+  runtime.apply(2_800);
+
+  expect(easingPose).not.toEqual(normalPose);
+  expect(easingPose).not.toEqual(clampedPose);
+  expect(runtime.getFrameSnapshot()[0]!.quaternion).toEqual(clampedPose);
+});
+
+it('keeps a destroyed aircraft on its existing catalog route sample', async () => {
+  const { runtime } = modelHarness();
+  await runtime.load(
+    [rafale('one'), rafale('two')],
+    [
+      modelTrackFor('one', [
+        action(1_500, 1, { action: 'model.set_state', entityId: 'one', state: 'destroyed' }),
+      ]),
+      modelTrackFor('two'),
+    ],
+  );
+
+  runtime.apply(2_000);
+  const [destroyed, normal] = runtime.getFrameSnapshot();
+
+  expect(destroyed).toEqual(
+    expect.objectContaining({
+      trajectoryAssetId: normal!.trajectoryAssetId,
+      longitude: normal!.longitude,
+      latitude: normal!.latitude,
+      altitudeM: normal!.altitudeM,
+      headingDeg: normal!.headingDeg,
+      pitchDeg: normal!.pitchDeg,
+      position: normal!.position,
+    }),
+  );
+});
+
+it('chars only destroyed materials and restores them when seeking before impact', async () => {
+  const sourceMaterial = new THREE.MeshStandardMaterial({
+    color: 0x88aacc,
+    emissive: 0x101010,
+  });
+  const template = new THREE.Group();
+  template.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), sourceMaterial));
+  const { clones, runtime } = modelHarness({ template });
+  await runtime.load(
+    [rafale('one'), rafale('two')],
+    [
+      modelTrackFor('one', [
+        action(1_500, 1, { action: 'model.set_state', entityId: 'one', state: 'destroyed' }),
+      ]),
+      modelTrackFor('two'),
+    ],
+  );
+
+  const firstMaterial = (clones[0]!.children[0] as THREE.Mesh)
+    .material as THREE.MeshStandardMaterial;
+  const secondMaterial = (clones[1]!.children[0] as THREE.Mesh)
+    .material as THREE.MeshStandardMaterial;
+  runtime.apply(2_000);
+
+  expect(firstMaterial.color.toArray()).toEqual(
+    sourceMaterial.color.clone().multiplyScalar(0.18).toArray(),
+  );
+  expect(firstMaterial.emissive.toArray()).toEqual(
+    sourceMaterial.emissive.clone().multiplyScalar(0.1).toArray(),
+  );
+  expect(secondMaterial.color.toArray()).toEqual(sourceMaterial.color.toArray());
+  expect(secondMaterial.emissive.toArray()).toEqual(sourceMaterial.emissive.toArray());
+
+  runtime.apply(1_499);
+
+  expect(firstMaterial.color.toArray()).toEqual(sourceMaterial.color.toArray());
+  expect(firstMaterial.emissive.toArray()).toEqual(sourceMaterial.emissive.toArray());
+});
+
+it('keeps a destroyed aircraft visible until its existing hide command', async () => {
+  const { runtime } = modelHarness();
+  await runtime.load(
+    [rafale('one')],
+    [
+      modelTrackFor('one', [
+        action(1_500, 1, { action: 'model.set_state', entityId: 'one', state: 'destroyed' }),
+        action(2_500, 1, { action: 'model.hide', entityId: 'one' }),
+      ]),
+    ],
+  );
+
+  runtime.apply(2_000);
+  expect(runtime.getFrameSnapshot()[0]!.visible).toBe(true);
+  runtime.apply(2_600);
+
+  expect(runtime.getFrameSnapshot()[0]!.visible).toBe(false);
+});
+
 it('keeps the trail valid at the exact spawn position', () => {
   const frame = reduceModelFrame(
     rafale('one'),
