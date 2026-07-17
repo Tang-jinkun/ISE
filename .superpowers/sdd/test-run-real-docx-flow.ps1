@@ -25,7 +25,10 @@ foreach ($marker in @(
   'resolved-scene-plan.json',
   'choreography-plan.json',
   'canonical-runtime-plan.json',
-  'scene-project.json'
+  'scene-project.json',
+  'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.',
+  'Each model track must contain commands for exactly one RuntimePlan entity.',
+  'Each RuntimePlan entity must have one contiguous spawn/follow/hide lifecycle.'
 )) {
   if (-not $flowText.Contains($marker)) { throw "Missing final artifact contract marker: $marker" }
 }
@@ -35,7 +38,13 @@ $e2eText = [System.IO.File]::ReadAllText($e2ePath)
 if (-not $e2eText.Contains("getByTestId('runtime-replay').click()")) {
   throw 'Persisted desktop acceptance must exercise runtime replay.'
 }
-foreach ($marker in @('function cameraAcceptanceTimes', 'async function seekPreviewRuntime')) {
+foreach ($marker in @(
+  'function cameraAcceptanceTimes',
+  'async function seekPreviewRuntime',
+  'expect(modelTracks).toHaveLength(13)',
+  'function followAcceptanceSamples',
+  'function assertPersistedSubtitleStyle'
+)) {
   if (-not $e2eText.Contains($marker)) {
     throw "Persisted desktop acceptance is missing dynamic Preview camera marker: $marker"
   }
@@ -268,6 +277,24 @@ $artifacts = @(
       }
       sceneProjectConfig = [pscustomobject]@{
         schemaVersion = 'ise-scene/v1'; eventPlanArtifactId = 'accepted-1'; runtimePlanArtifactId = 'compiled-1'
+        tracks = @(
+          [pscustomobject]@{
+            trackId = 'model-track-a'; type = 'model'
+            items = @(
+              [pscustomobject]@{ id = 'spawn-a'; startMs = 800; durationMs = 100; params = [pscustomobject]@{ action = 'model.spawn'; entityId = 'actor:a' } },
+              [pscustomobject]@{ id = 'follow-a'; startMs = 900; durationMs = 2100; params = [pscustomobject]@{ action = 'model.follow_path'; entityId = 'actor:a'; trajectoryAssetId = 'trajectory:a' } },
+              [pscustomobject]@{ id = 'hide-a'; startMs = 3000; durationMs = 0; params = [pscustomobject]@{ action = 'model.hide'; entityId = 'actor:a' } }
+            )
+          },
+          [pscustomobject]@{
+            trackId = 'model-track-b'; type = 'model'
+            items = @(
+              [pscustomobject]@{ id = 'spawn-b'; startMs = 800; durationMs = 100; params = [pscustomobject]@{ action = 'model.spawn'; entityId = 'actor:b' } },
+              [pscustomobject]@{ id = 'follow-b'; startMs = 900; durationMs = 2100; params = [pscustomobject]@{ action = 'model.follow_path'; entityId = 'actor:b'; trajectoryAssetId = 'trajectory:b' } },
+              [pscustomobject]@{ id = 'hide-b'; startMs = 3000; durationMs = 0; params = [pscustomobject]@{ action = 'model.hide'; entityId = 'actor:b' } }
+            )
+          }
+        )
       }
     }
     metadata = [pscustomobject]@{
@@ -338,6 +365,28 @@ Assert-InvariantRejected {
   param($value)
   $value.Compiled.data.runtimePlan.subtitles[0].startMs = 101
 } 'visual lead below 800ms'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.sceneProjectConfig.tracks = @($value.Compiled.data.sceneProjectConfig.tracks[0])
+} 'model track count drift'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.sceneProjectConfig.tracks[0].items += $value.Compiled.data.sceneProjectConfig.tracks[1].items[0]
+} 'multiple entities in one model track'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.sceneProjectConfig.tracks[0].items = @(
+    $value.Compiled.data.sceneProjectConfig.tracks[0].items | Where-Object { $_.params.action -ne 'model.hide' }
+  )
+} 'incomplete spawn/follow/hide lifecycle'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.sceneProjectConfig.tracks[0].items[1].startMs += 1
+} 'follow does not start at spawn end'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.sceneProjectConfig.tracks[0].items[2].startMs += 1
+} 'follow end differs from hide start'
 
 $ambiguous = @($artifacts) + [pscustomobject]@{
   artifactId = 'narration-1'; type = 'ise.narration-plan/v1'; superseded = $false

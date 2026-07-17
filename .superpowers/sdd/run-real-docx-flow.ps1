@@ -548,6 +548,54 @@ function Assert-FinalDomainInvariants {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Choreography and RuntimePlan entities must exactly match resolved actors.'
   }
 
+  $modelTracks = @(@(Get-PropertyValue $scene 'tracks') | Where-Object {
+    (Get-PropertyValue $_ 'type') -eq 'model'
+  })
+  $modelTrackEntityIds = @()
+  foreach ($track in $modelTracks) {
+    $items = @(Get-PropertyValue $track 'items')
+    $itemEntityIds = @($items | ForEach-Object {
+      Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId'
+    })
+    $trackEntityIds = @($itemEntityIds | Where-Object {
+      $_ -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$_)
+    } | Sort-Object -Unique)
+    if ($items.Count -eq 0 -or $trackEntityIds.Count -ne 1 -or
+        @($itemEntityIds | Where-Object { $_ -ne $trackEntityIds[0] }).Count -ne 0) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each model track must contain commands for exactly one RuntimePlan entity.'
+    }
+    $modelTrackEntityIds += $trackEntityIds[0]
+  }
+  $uniqueModelTrackEntityIds = @($modelTrackEntityIds | Sort-Object -Unique)
+  if ($modelTracks.Count -ne $entities.Count -or
+      $uniqueModelTrackEntityIds.Count -ne $entityIds.Count -or
+      ($uniqueModelTrackEntityIds -join '|') -ne ($entityIds -join '|')) {
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
+  }
+
+  foreach ($track in $modelTracks) {
+    $items = @(Get-PropertyValue $track 'items')
+    $spawnItems = @($items | Where-Object {
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'action') -eq 'model.spawn'
+    })
+    $followItems = @($items | Where-Object {
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'action') -eq 'model.follow_path'
+    })
+    $hideItems = @($items | Where-Object {
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'action') -eq 'model.hide'
+    })
+    if ($spawnItems.Count -ne 1 -or $followItems.Count -ne 1 -or $hideItems.Count -ne 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must have one contiguous spawn/follow/hide lifecycle.'
+    }
+    $spawnEndMs = [long](Get-PropertyValue $spawnItems[0] 'startMs') + [long](Get-PropertyValue $spawnItems[0] 'durationMs')
+    $followStartMs = [long](Get-PropertyValue $followItems[0] 'startMs')
+    $followEndMs = $followStartMs + [long](Get-PropertyValue $followItems[0] 'durationMs')
+    $hideStartMs = [long](Get-PropertyValue $hideItems[0] 'startMs')
+    if ($followStartMs -ne $spawnEndMs -or $followEndMs -ne $hideStartMs) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must have one contiguous spawn/follow/hide lifecycle.'
+    }
+  }
+
   $commands = @(Get-PropertyValue $runtime 'commands')
   $followCommands = @($commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'model.follow_path' })
   if ($followCommands.Count -ne $entities.Count -or

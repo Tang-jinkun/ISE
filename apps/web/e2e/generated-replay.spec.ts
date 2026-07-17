@@ -157,6 +157,37 @@ function isFollowPathItem(item: ModelTrackItem): item is FollowPathItem {
   return item.params.action === 'model.follow_path';
 }
 
+function followAcceptanceSamples(follows: FollowPathItem[]) {
+  const eligible = follows
+    .filter((item) => item.durationMs > 2)
+    .sort((left, right) => {
+      const leftSupportsPostCutoff = left.startMs + left.durationMs > 6_001 ? 1 : 0;
+      const rightSupportsPostCutoff = right.startMs + right.durationMs > 6_001 ? 1 : 0;
+      return rightSupportsPostCutoff - leftSupportsPostCutoff || right.durationMs - left.durationMs;
+    })
+    .slice(0, 3)
+    .map((item) => {
+      const endMs = item.startMs + item.durationMs;
+      const cutoffSampleMs = endMs > 6_001 ? 6_001 : item.startMs + 2;
+      const lateMs = Math.min(
+        endMs - 1,
+        Math.max(cutoffSampleMs, Math.floor(item.startMs + item.durationMs * 0.8)),
+      );
+      const earlyMs = Math.max(
+        item.startMs + 1,
+        Math.floor(item.startMs + (lateMs - item.startMs) * 0.25),
+      );
+      if (earlyMs >= lateMs) {
+        throw new Error('Persisted follow window must contain distinct early and late samples.');
+      }
+      return { item, earlyMs, lateMs };
+    });
+  if (eligible.length < 3) {
+    throw new Error('Persisted scene requires at least three independently sampled follow windows.');
+  }
+  return eligible;
+}
+
 function sampleInside(startMs: number, durationMs: number, preferredOffsetMs: number) {
   if (durationMs <= 1) throw new Error('Persisted media intervals must exceed 1ms.');
   const offsetMs = Math.min(preferredOffsetMs, durationMs - 1);
@@ -196,11 +227,13 @@ function cameraAcceptanceTimes(config: SceneProjectConfig): [number, number] {
 function persistedAcceptanceSamples(config: SceneProjectConfig) {
   const imageItem = config.tracks.find((track) => track.type === 'image')?.items[0];
   const videoItem = config.tracks.find((track) => track.type === 'video')?.items[0];
-  if (!imageItem || !videoItem) {
-    throw new Error('Persisted scene requires active image and video intervals.');
+  const subtitleItem = config.tracks.find((track) => track.type === 'subtitle')?.items[0];
+  if (!imageItem || !videoItem || !subtitleItem) {
+    throw new Error('Persisted scene requires active image, video, and subtitle intervals.');
   }
   const image = sampleInside(imageItem.startMs, imageItem.durationMs, 500);
   const video = sampleInside(videoItem.startMs, videoItem.durationMs, 1_000);
+  const subtitle = sampleInside(subtitleItem.startMs, subtitleItem.durationMs, 500);
 
   const aircraftIds = new Set(
     config.entities.filter((entity) => entity.kind === 'aircraft').map((entity) => entity.entityId),
@@ -209,34 +242,43 @@ function persistedAcceptanceSamples(config: SceneProjectConfig) {
     .filter((track): track is ModelTrack => track.type === 'model')
     .flatMap((track) => track.items.filter(isFollowPathItem));
   const aircraftFollows = follows.filter((item) => aircraftIds.has(item.params.entityId));
-  let overlap: { items: [FollowPathItem, FollowPathItem]; startMs: number; endMs: number } | undefined;
-  for (let left = 0; left < aircraftFollows.length; left += 1) {
-    for (let right = left + 1; right < aircraftFollows.length; right += 1) {
-      const first = aircraftFollows[left]!;
-      const second = aircraftFollows[right]!;
-      const startMs = Math.max(first.startMs, second.startMs);
-      const endMs = Math.min(
-        first.startMs + first.durationMs,
-        second.startMs + second.durationMs,
-      );
-      if (endMs - startMs > 2 && (!overlap || endMs - startMs > overlap.endMs - overlap.startMs)) {
-        overlap = { items: [first, second], startMs, endMs };
-      }
-    }
-  }
-  if (!overlap) {
-    throw new Error('Persisted scene requires two aircraft with overlapping follow_path intervals.');
-  }
-  const overlapDurationMs = overlap.endMs - overlap.startMs;
   return {
     image,
     video,
+    subtitle,
     cameraTimes: cameraAcceptanceTimes(config),
     follows,
-    activeAircraftIds: overlap.items.map((item) => item.params.entityId),
-    modelEarlyMs: Math.floor(overlap.startMs + overlapDurationMs * 0.2),
-    modelLateMs: Math.floor(overlap.startMs + overlapDurationMs * 0.8),
+    followSamples: followAcceptanceSamples(aircraftFollows),
   };
+}
+
+async function assertPersistedSubtitleStyle(page: Page) {
+  const overlay = page.getByTestId('runtime-overlay');
+  const subtitle = overlay.locator('[data-runtime-kind="subtitle"]:visible').first();
+  await expect(subtitle).toBeVisible();
+  const style = await subtitle.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return {
+      backgroundColor: computed.backgroundColor,
+      color: computed.color,
+      backdropFilter: computed.backdropFilter || computed.webkitBackdropFilter,
+      fontSize: computed.fontSize,
+    };
+  });
+  const [subtitleBounds, overlayBounds] = await Promise.all([
+    subtitle.boundingBox(),
+    overlay.boundingBox(),
+  ]);
+  if (!subtitleBounds || !overlayBounds) {
+    throw new Error('Persisted subtitle and desktop overlay must have measurable bounds.');
+  }
+  expect(style.backgroundColor).toBe('rgba(255, 255, 255, 0.84)');
+  expect(style.color).toBe('rgb(17, 24, 39)');
+  expect(style.backdropFilter).toContain('blur(12px)');
+  expect(style.fontSize).toBe('16px');
+  expect(subtitleBounds.x - overlayBounds.x).toBeGreaterThanOrEqual(16);
+  expect(overlayBounds.x + overlayBounds.width - subtitleBounds.x - subtitleBounds.width)
+    .toBeGreaterThanOrEqual(16);
 }
 
 async function persistedSceneConfig(response: Response) {
@@ -543,9 +585,19 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   const samples = persistedAcceptanceSamples(sceneConfig);
   const entityIds = sceneConfig.entities.map((entity) => entity.entityId);
   const defaultRoutes = sceneConfig.entities.map((entity) => entity.defaultTrajectoryAssetId);
+  const modelTracks = sceneConfig.tracks.filter(
+    (track): track is ModelTrack => track.type === 'model',
+  );
+  const modelTrackEntityIds = modelTracks.map((track) => {
+    const ids = new Set(track.items.map((item) => item.params.entityId));
+    expect(ids.size).toBe(1);
+    return [...ids][0]!;
+  });
   const followEntityIds = samples.follows.map((item) => item.params.entityId);
   const followRoutes = samples.follows.map((item) => item.params.trajectoryAssetId);
   expect(sceneConfig.entities.filter((entity) => entity.kind === 'aircraft')).toHaveLength(13);
+  expect(modelTracks).toHaveLength(13);
+  expect(new Set(modelTrackEntityIds)).toEqual(new Set(entityIds));
   expect(new Set(entityIds).size).toBe(entityIds.length);
   expect(defaultRoutes.every((route): route is string => route !== undefined)).toBe(true);
   expect(new Set(defaultRoutes).size).toBe(defaultRoutes.length);
@@ -614,48 +666,40 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   if (decodedFrames !== undefined) expect(decodedFrames).toBeGreaterThan(0);
   await page.getByTestId('runtime-pause').click();
 
-  await seekRuntimeHarness(page, samples.modelEarlyMs);
-  await expect
-    .poll(async () => {
-      const activeIds = new Set(samples.activeAircraftIds);
-      return (await runtimeModelSnapshots(page)).filter(
-        (item) => item.visible && activeIds.has(item.entityId),
-      ).length;
-    })
-    .toBeGreaterThan(1);
-  const firstModels = (await runtimeModelSnapshots(page)).filter((item) => item.visible);
-  const visibleEntityIds = firstModels.map((item) => item.entityId);
-  expect(new Set(visibleEntityIds).size).toBe(visibleEntityIds.length);
-  expect(firstModels.filter((item) => samples.activeAircraftIds.includes(item.entityId)).length)
-    .toBeGreaterThan(1);
-  for (const model of firstModels) {
-    expect(model.modelAssetId).toMatch(/^model:/);
-    expectFiniteModelSnapshot(model);
-  }
-  const exposedRoutes = firstModels.flatMap((item) =>
-    item.trajectoryAssetId ?? item.defaultTrajectoryAssetId
-      ? [item.trajectoryAssetId ?? item.defaultTrajectoryAssetId!]
-      : [],
-  );
-  if (exposedRoutes.length > 0) {
-    expect(exposedRoutes).toHaveLength(firstModels.length);
-    expect(new Set(exposedRoutes).size).toBe(exposedRoutes.length);
-  }
-  const firstCanvas = await canvasPixels(page);
+  await seekRuntimeHarness(page, samples.subtitle.timeMs);
+  await assertPersistedSubtitleStyle(page);
 
-  await seekRuntimeHarness(page, samples.modelLateMs);
-  const secondModels = (await runtimeModelSnapshots(page)).filter((item) => item.visible);
-  for (const model of secondModels) expectFiniteModelSnapshot(model);
-  const modelPairs = samples.activeAircraftIds.flatMap((entityId) => {
-    const first = firstModels.find((item) => item.entityId === entityId);
-    const second = secondModels.find((item) => item.entityId === entityId);
-    return first && second ? [{ first, second }] : [];
-  });
-  expect(modelPairs).toHaveLength(samples.activeAircraftIds.length);
-  const movedModels = modelPairs.filter(({ first, second }) =>
-    second.position.some((value, index) => value !== first.position[index]),
-  );
-  expect(movedModels.length).toBeGreaterThanOrEqual(2);
+  const modelPairs: Array<{ first: RuntimeModelSnapshot; second: RuntimeModelSnapshot }> = [];
+  let firstCanvas: Uint8ClampedArray | undefined;
+  for (const sample of samples.followSamples) {
+    const entityId = sample.item.params.entityId;
+    await seekRuntimeHarness(page, sample.earlyMs);
+    await expect
+      .poll(async () =>
+        (await runtimeModelSnapshots(page)).find((item) => item.visible && item.entityId === entityId),
+      )
+      .not.toBeUndefined();
+    const first = (await runtimeModelSnapshots(page)).find(
+      (item) => item.visible && item.entityId === entityId,
+    )!;
+    expect(first.modelAssetId).toMatch(/^model:/);
+    expectFiniteModelSnapshot(first);
+    firstCanvas ??= await canvasPixels(page);
+
+    await seekRuntimeHarness(page, sample.lateMs);
+    const second = (await runtimeModelSnapshots(page)).find(
+      (item) => item.visible && item.entityId === entityId,
+    );
+    expect(second).toBeDefined();
+    expectFiniteModelSnapshot(second!);
+    expect(second!.position.some((value, index) => value !== first.position[index])).toBe(true);
+    expect(second!.quaternion.some((value, index) => value !== first.quaternion[index])).toBe(true);
+    if (sample.item.startMs + sample.item.durationMs > 6_001) {
+      expect(sample.lateMs).toBeGreaterThan(6_000);
+    }
+    modelPairs.push({ first, second: second! });
+  }
+  expect(modelPairs).toHaveLength(3);
   expect(
     modelPairs.some(({ first, second }) =>
       second.quaternion.some((value, index) => value !== first.quaternion[index]) &&
@@ -664,7 +708,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   ).toBe(true);
 
   await expect
-    .poll(async () => changedPixelRatio(firstCanvas, await canvasPixels(page)))
+    .poll(async () => changedPixelRatio(firstCanvas!, await canvasPixels(page)))
     .toBeGreaterThan(0.001);
 
   const screenshotPath = testInfo.outputPath('persisted-runtime-dynamic-canvas.png');
@@ -690,7 +734,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   });
   await expectNonBlankCanvas(page);
 
-  expect(samples.modelLateMs).toBeGreaterThan(500);
+  expect(Math.max(...samples.followSamples.map((sample) => sample.lateMs))).toBeGreaterThan(500);
   let replayMinimumMs = Number.POSITIVE_INFINITY;
   await page.getByTestId('runtime-replay').click();
   await expect
