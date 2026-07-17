@@ -634,6 +634,81 @@ test('final compiler emits automatic missile lifecycle, phased cameras, impact, 
   assert.ok(impactVideos.some(command => command.evidenceRefs.includes('ev-counterattack')))
 })
 
+test('choreography grounds every missile data link and only same-side supported AWACS data links', () => {
+  const fixture = finalInputForEngagementFixture()
+  const awacsGroup: SceneBlueprint['actorGroups'][number] = {
+    groupId: 'group:india-netra-awacs', semanticEntityRef: 'Netra AEW&CS', side: 'india', locationRef: 'Adampur',
+    platformType: 'Netra AEW&CS', role: 'early-warning-support',
+    quantityDecision: { value: 1, constraint: 'exact', source: 'evidence', evidenceRefs: ['ev-first-strike'], reason: 'Fixture AWACS' },
+    formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: 'awacs-support/india/v1', lifecycle: 'scene-persistent',
+  }
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    assets: [...fixture.input.assetRegistry.assets, {
+      assetId: 'model:netra-awacs', kind: 'model', displayName: 'Netra AWACS', aliases: [], fingerprint: hash,
+      size: 10, availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'model/gltf-binary', model: { scale: 1, rotationOffsetDeg: [0, 0, 0], altitudeOffsetM: 0, entityTypes: ['aircraft'] },
+    }],
+  }
+  fixture.input.sceneBlueprint = {
+    ...fixture.input.sceneBlueprint,
+    actorGroups: [...fixture.input.sceneBlueprint.actorGroups, awacsGroup],
+    sceneBeats: fixture.input.sceneBlueprint.sceneBeats.map(beat => {
+      if (beat.sceneBeatId === 'scene-beat-first-strike') {
+        return {
+          ...beat,
+          actorRefs: [...beat.actorRefs, awacsGroup.groupId],
+          purpose: 'Netra distributes target information by data link to the Indian strike fighters.',
+          requiredFacts: [...beat.requiredFacts, 'AWACS distributes target information through a data link.'],
+        }
+      }
+      if (beat.sceneBeatId === 'scene-beat-intercept') {
+        return {
+          ...beat,
+          actorRefs: [...beat.actorRefs, awacsGroup.groupId, 'group:india-su30-adampur'],
+          purpose: 'Netra continues data-link guidance for the same Indian strike fighters.',
+          requiredFacts: [...beat.requiredFacts, 'AWACS continues target information distribution by data link.'],
+        }
+      }
+      return beat
+    }),
+  }
+  fixture.input.resolvedScenePlan = resolveSceneBlueprint({
+    blueprint: fixture.input.sceneBlueprint,
+    assetRegistry: fixture.input.assetRegistry,
+  })
+  fixture.input.choreographyPlan = compileChoreography({
+    narrationPlan: fixture.input.narrationPlan,
+    sceneBlueprint: fixture.input.sceneBlueprint,
+    resolvedScenePlan: fixture.input.resolvedScenePlan,
+    assetRegistry: fixture.input.assetRegistry,
+  })
+  const actorRef = (groupRef: string) => fixture.input.resolvedScenePlan.resolvedActors
+    .find(actor => actor.actorGroupRef === groupRef)!.actorInstanceId
+  const awacs = actorRef(awacsGroup.groupId)
+  const su30 = actorRef('group:india-su30-adampur')
+  const relations = fixture.input.choreographyPlan.relationSegments
+  const fighterMissile = relations.filter(relation => relation.linkKind === 'fighter-missile')
+  const awacsFighter = relations.filter(relation => relation.linkKind === 'awacs-fighter')
+
+  assert.deepEqual(fighterMissile.map(relation => [relation.sourceRef, relation.targetRef]).sort(), fixture.input.choreographyPlan.weaponEngagements
+    .map(engagement => [engagement.launcherRef, engagement.weaponRef]).sort())
+  assert.deepEqual(awacsFighter.map(relation => [relation.sourceRef, relation.targetRef]), fixture.input.resolvedScenePlan.resolvedActors
+    .filter(actor => actor.actorGroupRef === 'group:india-su30-adampur')
+    .map(actor => [awacs, actor.actorInstanceId]))
+  assert.ok(awacsFighter.every(relation => relation.evidenceRefs.includes('ev-first-strike')))
+  assert.ok(awacsFighter.every(relation => relation.sceneBeatRef === 'scene-beat-first-strike'))
+
+  const plan = compileFinalScene(fixture.input)
+  const dataLinks = plan.commands.filter(command => command.type === 'data_link.show')
+  assert.equal(dataLinks.length, relations.length)
+  for (const command of dataLinks) {
+    const subtitle = plan.subtitles.find(item => item.eventUnitId === command.eventUnitId)!
+    assert.equal(command.startMs, subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
+    assert.equal(command.startMs + command.durationMs, subtitle.startMs + subtitle.durationMs)
+  }
+})
+
 test('final compiler rejects an engagement subtitle too short for its four phase cameras', () => {
   const fixture = finalInputForEngagementFixture()
   fixture.input.narrationPlan = {

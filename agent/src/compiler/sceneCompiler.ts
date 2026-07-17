@@ -577,6 +577,22 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     capabilities: capabilityManifest,
   })
   const subtitles = new Map(scheduled.subtitles.map(subtitle => [subtitle.subtitleId, subtitle]))
+  const dataLinkCommands = choreographyPlan.relationSegments.map(relation => {
+    const sceneBeat = sceneBeats.get(relation.sceneBeatRef)
+    const subtitle = sceneBeat?.subtitleId ? subtitles.get(sceneBeat.subtitleId) : undefined
+    const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
+    if (!sceneBeat || !subtitle || !unit) fail('NARRATION_SCENE_BEAT_UNBOUND', relation.sceneBeatRef)
+    const startMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    return runtimeCommandSchema.parse({
+      commandId: `cmd:${relation.segmentId}:show`, eventUnitId: unit.eventUnitId,
+      targetId: `data-link:${relation.sourceRef}:${relation.targetRef}`,
+      type: 'data_link.show', params: {
+        sourceEntityId: relation.sourceRef, targetEntityId: relation.targetRef, linkKind: relation.linkKind,
+      },
+      startMs, durationMs: subtitle.startMs + subtitle.durationMs - startMs,
+      dependsOn: [], onFailure: 'abort', evidenceRefs: [...relation.evidenceRefs],
+    })
+  })
   const phaseCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
   const engagementForShot = (shot: ChoreographyPlan['shotPlan'][number]) =>
@@ -676,7 +692,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       ...(destroyedHide ? [] : [scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide'])]),
     ]
   })
-  const finalCommands = [...scheduled.commands, ...phaseCommands, ...actorCommands, ...destroyedTargetHides.values()]
+  const finalCommands = [...scheduled.commands, ...dataLinkCommands, ...phaseCommands, ...actorCommands, ...destroyedTargetHides.values()]
   const totalDurationMs = Math.max(
     1,
     ...scheduled.subtitles.map(item => item.startMs + item.durationMs),

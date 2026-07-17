@@ -38,9 +38,10 @@ export const weaponEngagementSchema = z.strictObject({
 export const relationSegmentSchema = z.strictObject({
   segmentId: z.string().min(1),
   sceneBeatRef: z.string().min(1),
-  relation: z.string().min(1),
-  subjectRefs: z.array(z.string().min(1)).min(1),
-  objectRefs: z.array(z.string().min(1)).min(1),
+  sourceRef: z.string().min(1),
+  targetRef: z.string().min(1),
+  linkKind: z.enum(['awacs-fighter', 'fighter-missile']),
+  evidenceRefs: z.array(z.string().min(1)).min(1),
 })
 
 export const effectSegmentSchema = z.strictObject({

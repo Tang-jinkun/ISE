@@ -3,6 +3,7 @@ import type { CanonicalCommand, CanonicalRuntimePlan } from '../contracts/runtim
 
 type TrackType = SceneProjectConfig['tracks'][number]['type']
 type ModelCommand = Extract<CanonicalCommand, { type: `model.${string}` }>
+type DataLinkCommand = Extract<CanonicalCommand, { type: 'data_link.show' }>
 
 function assertNever(value: never): never {
   throw new Error(`Unsupported runtime command: ${JSON.stringify(value)}`)
@@ -15,6 +16,7 @@ function commandTrackType(command: CanonicalCommand): TrackType {
     case 'marker.show': return 'marker'
     case 'geojson.show': return 'geojson'
     case 'camera.transition': return 'camera'
+    case 'data_link.show': return 'data_link'
     case 'model.spawn':
     case 'model.follow_path':
     case 'model.set_state':
@@ -25,6 +27,10 @@ function commandTrackType(command: CanonicalCommand): TrackType {
 
 function isModelCommand(command: CanonicalCommand): command is ModelCommand {
   return commandTrackType(command) === 'model'
+}
+
+function isDataLinkCommand(command: CanonicalCommand): command is DataLinkCommand {
+  return command.type === 'data_link.show'
 }
 
 function toModelAction(command: ModelCommand) {
@@ -103,6 +109,14 @@ function toTrackItem(command: CanonicalCommand): unknown {
         easing: command.params.easing,
       },
     }
+    case 'data_link.show': return {
+      ...common,
+      params: {
+        sourceEntityId: command.params.sourceEntityId,
+        targetEntityId: command.params.targetEntityId,
+        linkKind: command.params.linkKind,
+      },
+    }
     case 'model.spawn':
     case 'model.follow_path':
     case 'model.set_state':
@@ -132,14 +146,28 @@ export class BaseRuntimeAdapter {
           params: { text: card.text, position: 'top', maxWidthPct: 70 },
         })),
       ]],
-      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []],
+      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []], ['data_link', []],
     ])
     const modelItems = new Map(plan.entities.map(entity => [entity.entityId, [] as unknown[]]))
+    const dataLinkItems = new Map<string, {
+      sourceEntityId: string
+      targetEntityId: string
+      items: unknown[]
+    }>()
     for (const command of plan.commands) {
       if (isModelCommand(command)) {
         const entityItems = modelItems.get(command.params.entityId)
         if (!entityItems) throw new Error(`MODEL_COMMAND_ENTITY_NOT_FOUND:${command.params.entityId}`)
         entityItems.push(toTrackItem(command))
+      } else if (isDataLinkCommand(command)) {
+        const pairKey = `${command.params.sourceEntityId}\u0000${command.params.targetEntityId}`
+        const pair = dataLinkItems.get(pairKey) ?? {
+          sourceEntityId: command.params.sourceEntityId,
+          targetEntityId: command.params.targetEntityId,
+          items: [],
+        }
+        pair.items.push(toTrackItem(command))
+        dataLinkItems.set(pairKey, pair)
       } else {
         items.get(commandTrackType(command))!.push(toTrackItem(command))
       }
@@ -154,6 +182,15 @@ export class BaseRuntimeAdapter {
         visible: true,
         items: trackItems,
       })),
+      ...[...dataLinkItems.values()].map(({ sourceEntityId, targetEntityId, items: trackItems }) => {
+        return {
+          trackId: `track:data_link:${sourceEntityId}:${targetEntityId}`,
+          type: 'data_link' as const,
+          label: `Data link ${sourceEntityId} to ${targetEntityId}`,
+          visible: true,
+          items: trackItems,
+        }
+      }),
       ...plan.entities.flatMap(entity => {
         const trackItems = modelItems.get(entity.entityId)!
         return trackItems.length === 0 ? [] : [{

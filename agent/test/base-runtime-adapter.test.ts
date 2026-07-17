@@ -31,6 +31,9 @@ function runtimePlanWithEveryTrack(): CanonicalRuntimePlan {
     entities: [{
       entityId: 'entity:jf17-1', displayName: 'JF-17 1', kind: 'aircraft',
       modelAssetId: 'model:jf17', defaultTrajectoryAssetId: 'trajectory:jf17-1', initialState: 'normal',
+    }, {
+      entityId: 'entity:awacs-1', displayName: 'Netra AWACS', kind: 'aircraft',
+      modelAssetId: 'model:netra-awacs', defaultTrajectoryAssetId: 'trajectory:india-awacs-1', initialState: 'normal',
     }],
     subtitles: [{
       subtitleId: 'subtitle-1', eventUnitId: 'unit-1', text: 'Deployment', evidenceRefs: ['ev-1'],
@@ -49,6 +52,9 @@ function runtimePlanWithEveryTrack(): CanonicalRuntimePlan {
         circleColor: '#fff', circleRadius: 2, keepAfterEnd: false,
       } },
       { ...common('camera-1', 'camera:main'), type: 'camera.transition', params: { center: [74.5, 32.5], zoom: 7, pitch: 45, bearing: 0, easing: 'easeInOut' } },
+      { ...common('data-link-1', 'data-link:entity:awacs-1:entity:jf17-1'), type: 'data_link.show', durationMs: 4_000, params: {
+        sourceEntityId: 'entity:awacs-1', targetEntityId: 'entity:jf17-1', linkKind: 'awacs-fighter',
+      } },
       { ...common('spawn-1', 'entity:jf17-1'), type: 'model.spawn', params: { action: 'model.spawn', entityId: 'entity:jf17-1', modelAssetId: 'model:jf17' } },
       { ...common('follow-1', 'entity:jf17-1'), type: 'model.follow_path', durationMs: 4_000, params: { action: 'model.follow_path', entityId: 'entity:jf17-1', trajectoryAssetId: 'trajectory:jf17-1' } },
       { ...common('state-1', 'entity:jf17-1'), type: 'model.set_state', params: { action: 'model.set_state', entityId: 'entity:jf17-1', state: 'warning' } },
@@ -166,10 +172,30 @@ test('adapter produces the exact shared entity shape', () => {
   })
 })
 
-test('adapter groups all seven discriminated tracks and passes shared schema', () => {
+test('adapter groups all eight discriminated tracks and passes shared schema', () => {
   const config = new BaseRuntimeAdapter().adapt(runtimePlanWithEveryTrack(), 'runtime-artifact-1')
-  assert.deepEqual(config.tracks.map(track => track.type).sort(), ['camera', 'geojson', 'image', 'marker', 'model', 'subtitle', 'video'])
+  assert.deepEqual(config.tracks.map(track => track.type).sort(), ['camera', 'data_link', 'geojson', 'image', 'marker', 'model', 'subtitle', 'video'])
   assert.deepEqual(sceneProjectConfigSchema.parse(config), config)
+})
+
+test('adapter preserves every data link pair as an independently editable track', () => {
+  const plan = runtimePlanWithEveryTrack()
+  const expanded = canonicalRuntimePlanSchema.parse({
+    ...plan,
+    commands: [...plan.commands, {
+      commandId: 'data-link-2', eventUnitId: 'unit-1', targetId: 'data-link:entity:jf17-1:entity:awacs-1',
+      type: 'data_link.show', startMs: 2_000, durationMs: 3_000, dependsOn: [], onFailure: 'abort', evidenceRefs: ['ev-1'],
+      params: { sourceEntityId: 'entity:jf17-1', targetEntityId: 'entity:awacs-1', linkKind: 'fighter-missile' },
+    }],
+  })
+  const dataLinkTracks = new BaseRuntimeAdapter().adapt(expanded, 'runtime-artifact-1').tracks
+    .filter(track => track.type === 'data_link')
+
+  assert.deepEqual(dataLinkTracks.map(track => track.trackId), [
+    'track:data_link:entity:awacs-1:entity:jf17-1',
+    'track:data_link:entity:jf17-1:entity:awacs-1',
+  ])
+  assert.deepEqual(dataLinkTracks.map(track => track.items.length), [1, 1])
 })
 
 test('adapter persists one model track per runtime entity in entity order', () => {
@@ -217,6 +243,7 @@ test('adapter preserves generic ids and labels for non-model tracks', () => {
       { trackId: 'track:marker', label: 'Marker' },
       { trackId: 'track:geojson', label: 'Geojson' },
       { trackId: 'track:camera', label: 'Camera' },
+      { trackId: 'track:data_link:entity:awacs-1:entity:jf17-1', label: 'Data link entity:awacs-1 to entity:jf17-1' },
     ],
   )
 })

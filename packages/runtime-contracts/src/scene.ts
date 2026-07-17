@@ -88,6 +88,11 @@ const cameraParamsSchema = z.strictObject({
   bearing: z.number().finite().min(-360).max(360),
   easing: z.enum(['linear', 'easeInOut'])
 });
+const dataLinkParamsSchema = z.strictObject({
+  sourceEntityId: nonEmptyId,
+  targetEntityId: nonEmptyId,
+  linkKind: z.enum(['awacs-fighter', 'fighter-missile'])
+});
 
 export const modelActionSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('model.spawn'), entityId: nonEmptyId }),
@@ -123,6 +128,7 @@ const geojsonItemSchema = z.strictObject({
 });
 const cameraItemSchema = z.strictObject({ ...baseItemShape, params: cameraParamsSchema });
 const modelItemSchema = z.strictObject({ ...baseItemShape, params: modelActionSchema });
+const dataLinkItemSchema = z.strictObject({ ...baseItemShape, params: dataLinkParamsSchema });
 
 export const sceneTrackItemSchema = z.union([
   subtitleItemSchema,
@@ -131,7 +137,8 @@ export const sceneTrackItemSchema = z.union([
   markerItemSchema,
   geojsonItemSchema,
   cameraItemSchema,
-  modelItemSchema
+  modelItemSchema,
+  dataLinkItemSchema
 ]);
 export type SceneTrackItem = z.infer<typeof sceneTrackItemSchema>;
 
@@ -147,7 +154,8 @@ export const sceneTrackSchema = z.discriminatedUnion('type', [
   z.strictObject({ ...trackBase, type: z.literal('marker'), items: z.array(markerItemSchema) }),
   z.strictObject({ ...trackBase, type: z.literal('geojson'), items: z.array(geojsonItemSchema) }),
   z.strictObject({ ...trackBase, type: z.literal('camera'), items: z.array(cameraItemSchema) }),
-  z.strictObject({ ...trackBase, type: z.literal('model'), items: z.array(modelItemSchema) })
+  z.strictObject({ ...trackBase, type: z.literal('model'), items: z.array(modelItemSchema) }),
+  z.strictObject({ ...trackBase, type: z.literal('data_link'), items: z.array(dataLinkItemSchema) })
 ]);
 export type SceneTrack = z.infer<typeof sceneTrackSchema>;
 
@@ -192,6 +200,19 @@ export const sceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine
       for (const [itemIndex, trackItem] of track.items.entries()) {
         if (!entityIds.has(trackItem.params.entityId)) {
           context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'entityId'], message: 'Unknown model entityId' });
+        }
+      }
+    }
+    if (track.type === 'data_link') {
+      for (const [itemIndex, trackItem] of track.items.entries()) {
+        if (!entityIds.has(trackItem.params.sourceEntityId)) {
+          context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'sourceEntityId'], message: 'Unknown data link sourceEntityId' });
+        }
+        if (!entityIds.has(trackItem.params.targetEntityId)) {
+          context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'targetEntityId'], message: 'Unknown data link targetEntityId' });
+        }
+        if (trackItem.params.sourceEntityId === trackItem.params.targetEntityId) {
+          context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'targetEntityId'], message: 'Data link endpoints must differ' });
         }
       }
     }

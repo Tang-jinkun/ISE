@@ -176,6 +176,55 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     entries.push(engagement)
     engagementsBySceneBeat.set(engagement.sceneBeatRef, entries)
   }
+  const fighterMissileRelationSegments = weaponEngagements.map(engagement => ({
+      segmentId: `data-link:fighter-missile:${engagement.launcherRef}:${engagement.weaponRef}`,
+      sceneBeatRef: engagement.sceneBeatRef,
+      sourceRef: engagement.launcherRef,
+      targetRef: engagement.weaponRef,
+      linkKind: 'fighter-missile' as const,
+      evidenceRefs: [...engagement.evidenceRefs],
+    }))
+  const subtitleOrder = new Map(narrationPlan.beats.map((beat, index) => [beat.subtitleId, index]))
+  const awacsRelationCandidates = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
+      const supportText = [
+        sceneBeat.purpose,
+        ...sceneBeat.behaviorIntents,
+        ...sceneBeat.requiredFacts,
+      ].join(' ')
+      if (!/(?:data[ -]?link|target information|warning|guidance|tracking|\u6570\u636e\u94fe|\u76ee\u6807\u4fe1\u606f|\u9884\u8b66|\u5f15\u5bfc|\u8ddf\u8e2a)/iu.test(supportText)) return []
+      const narrationBeat = narrationPlan.beats.find(beat => beat.subtitleId === sceneBeat.subtitleId)
+      if (!narrationBeat) return []
+      const awacsGroups = sceneBeat.actorRefs
+        .map(groupRef => groups.get(groupRef))
+        .filter((group): group is SceneBlueprint['actorGroups'][number] => group !== undefined
+          && (group.role === 'early-warning-support' || /(?:awacs|aew|early warning)/iu.test(group.semanticEntityRef)))
+      const fighterGroups = sceneBeat.actorRefs
+        .map(groupRef => groups.get(groupRef))
+        .filter((group): group is SceneBlueprint['actorGroups'][number] => group?.role === 'fighter-formation')
+      return awacsGroups.flatMap(awacsGroup => actorsForGroup(awacsGroup.groupId).flatMap(awacsActor =>
+        fighterGroups
+          .filter(fighterGroup => fighterGroup.side === awacsGroup.side)
+          .flatMap(fighterGroup => actorsForGroup(fighterGroup.groupId).map(fighterActor => ({
+            segmentId: `data-link:awacs-fighter:${awacsActor.actorInstanceId}:${fighterActor.actorInstanceId}`,
+            sceneBeatRef: sceneBeat.sceneBeatId,
+            sourceRef: awacsActor.actorInstanceId,
+            targetRef: fighterActor.actorInstanceId,
+            linkKind: 'awacs-fighter' as const,
+            evidenceRefs: [...narrationBeat.evidenceRefs],
+          }))),
+      ))
+    })
+  const awacsRelationsByPair = new Map<string, (typeof awacsRelationCandidates)[number]>()
+  for (const relation of [...awacsRelationCandidates].sort((left, right) => {
+    const leftOrder = subtitleOrder.get(sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === left.sceneBeatRef)?.subtitleId ?? '') ?? Number.MAX_SAFE_INTEGER
+    const rightOrder = subtitleOrder.get(sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === right.sceneBeatRef)?.subtitleId ?? '') ?? Number.MAX_SAFE_INTEGER
+    return leftOrder - rightOrder || left.sceneBeatRef.localeCompare(right.sceneBeatRef) || left.segmentId.localeCompare(right.segmentId)
+  })) {
+    const pairKey = `${relation.linkKind}\u0000${relation.sourceRef}\u0000${relation.targetRef}`
+    if (!awacsRelationsByPair.has(pairKey)) awacsRelationsByPair.set(pairKey, relation)
+  }
+  const relationSegments = [...fighterMissileRelationSegments, ...awacsRelationsByPair.values()]
+    .sort((left, right) => left.segmentId.localeCompare(right.segmentId))
   const shotPlan = narrationPlan.beats.flatMap(narrationBeat => {
     const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.subtitleId === narrationBeat.subtitleId)
     if (!sceneBeat) fail('NARRATION_SCENE_BEAT_UNBOUND', narrationBeat.subtitleId)
@@ -249,7 +298,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     motionSegments,
     formationSegments,
     weaponEngagements,
-    relationSegments: [],
+    relationSegments,
     effectSegments: [],
     shotPlan,
     overlayPlan: [],

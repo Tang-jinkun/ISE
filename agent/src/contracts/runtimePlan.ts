@@ -42,7 +42,7 @@ export const lineageSchema = z.strictObject({
 
 export const runtimeCommandTypeSchema = z.enum([
   'image.show', 'video.play', 'marker.show', 'geojson.show', 'camera.transition',
-  'model.spawn', 'model.follow_path', 'model.set_state', 'model.hide',
+  'data_link.show', 'model.spawn', 'model.follow_path', 'model.set_state', 'model.hide',
 ])
 export type RuntimeCommandType = z.infer<typeof runtimeCommandTypeSchema>
 
@@ -89,6 +89,10 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
     center: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]),
     zoom: z.number().min(0).max(24), pitch: z.number().min(0).max(85),
     bearing: z.number().min(-360).max(360), easing: z.enum(['linear', 'easeInOut']),
+  }) }),
+  z.strictObject({ ...commandBase, type: z.literal('data_link.show'), params: z.strictObject({
+    sourceEntityId: z.string().min(1), targetEntityId: z.string().min(1),
+    linkKind: z.enum(['awacs-fighter', 'fighter-missile']),
   }) }),
   z.strictObject({ ...commandBase, type: z.literal('model.spawn'), params: z.strictObject({
     action: z.literal('model.spawn'), entityId: z.string().min(1), modelAssetId: z.string().regex(/^model:/),

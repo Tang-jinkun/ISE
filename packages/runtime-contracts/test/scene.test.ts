@@ -29,6 +29,13 @@ function validConfig(): SceneProjectConfig {
       modelAssetId: 'model:jf17',
       defaultTrajectoryAssetId: 'trajectory:ambala-rafale-1',
       initialState: 'normal'
+    }, {
+      entityId: 'entity-awacs',
+      displayName: 'Netra AWACS',
+      kind: 'aircraft',
+      modelAssetId: 'model:netra-awacs',
+      defaultTrajectoryAssetId: 'trajectory:india-awacs-1',
+      initialState: 'normal'
     }],
     tracks: [
       { trackId: 'subtitle-1', type: 'subtitle', label: 'Subtitles', visible: true, items: [{ ...item, params: { text: 'Contact', position: 'bottom', maxWidthPct: 80 } }] },
@@ -37,17 +44,36 @@ function validConfig(): SceneProjectConfig {
       { trackId: 'marker-1', type: 'marker', label: 'Marker', visible: true, items: [{ ...item, id: 'item-marker-1', params: { coordinates: [76.8, 30.4], label: 'Ambala', color: '#ff0000' } }] },
       { trackId: 'geojson-1', type: 'geojson', label: 'GeoJSON', visible: true, items: [{ ...item, id: 'item-geojson-1', assetId: 'geojson:airspace', params: { lineColor: '#00ffff', lineWidth: 2, fillColor: '#004455', fillOpacity: 0.2, circleColor: '#ffffff', circleRadius: 4, keepAfterEnd: false } }] },
       { trackId: 'camera-1', type: 'camera', label: 'Camera', visible: true, items: [{ ...item, id: 'item-camera-1', params: { center: [76.8, 30.4], zoom: 8, pitch: 45, bearing: 90, easing: 'easeInOut' } }] },
-      { trackId: 'model-1', type: 'model', label: 'Models', visible: true, items: [{ ...item, id: 'item-model-1', params: { action: 'model.follow_path', entityId: 'entity-jf17', trajectoryAssetId: 'trajectory:ambala-rafale-1' } }] }
+      { trackId: 'model-1', type: 'model', label: 'Models', visible: true, items: [{ ...item, id: 'item-model-1', params: { action: 'model.follow_path', entityId: 'entity-jf17', trajectoryAssetId: 'trajectory:ambala-rafale-1' } }] },
+      { trackId: 'data-link-1', type: 'data_link', label: 'Data link', visible: true, items: [{ ...item, id: 'item-data-link-1', params: { sourceEntityId: 'entity-jf17', targetEntityId: 'entity-awacs', linkKind: 'awacs-fighter' } }] }
     ],
     diagnostics: []
-  };
+  } as unknown as SceneProjectConfig;
 }
 
-test('accepts all seven frozen track variants', () => {
+test('accepts all eight frozen track variants', () => {
   const parsed = sceneProjectConfigSchema.parse(validConfig());
   assert.deepEqual(parsed.tracks.map(track => track.type), [
-    'subtitle', 'image', 'video', 'marker', 'geojson', 'camera', 'model'
+    'subtitle', 'image', 'video', 'marker', 'geojson', 'camera', 'model', 'data_link'
   ]);
+});
+
+test('data link tracks require distinct known endpoints and strict link kinds', () => {
+  const unknownEndpoint = validConfig() as SceneProjectConfig & { tracks: any[] };
+  unknownEndpoint.tracks[7].items[0].params.targetEntityId = 'entity:missing';
+  assert.equal(sceneProjectConfigSchema.safeParse(unknownEndpoint).success, false);
+
+  const sameEndpoint = validConfig() as SceneProjectConfig & { tracks: any[] };
+  sameEndpoint.tracks[7].items[0].params.targetEntityId = 'entity-jf17';
+  assert.equal(sceneProjectConfigSchema.safeParse(sameEndpoint).success, false);
+
+  const unknownKind = validConfig() as SceneProjectConfig & { tracks: any[] };
+  unknownKind.tracks[7].items[0].params.linkKind = 'fighter-fighter';
+  assert.equal(sceneProjectConfigSchema.safeParse(unknownKind).success, false);
+
+  const extraField = validConfig() as SceneProjectConfig & { tracks: any[] };
+  extraField.tracks[7].items[0].params.coordinates = [[76, 30], [77, 31]];
+  assert.equal(sceneProjectConfigSchema.safeParse(extraField).success, false);
 });
 
 test('accepts destroyed model state and rejects unknown states', () => {
