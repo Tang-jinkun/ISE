@@ -55,16 +55,6 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     || new Set(resolvedScenePlan.actorRouteAssignments.map(item => item.trajectoryAssetRef)).size !== assignments.size
   ) fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', resolvedScenePlan.resolvedScenePlanId)
 
-  const actorLifecycles = resolvedScenePlan.resolvedActors.map(actor => {
-    const referencedBeats = sceneBlueprint.sceneBeats.filter(beat =>
-      beat.subtitleId && beat.actorRefs.includes(actor.actorGroupRef))
-    if (referencedBeats.length === 0) fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
-    return {
-      actorInstanceRef: actor.actorInstanceId,
-      firstSceneBeatRef: referencedBeats[0]!.sceneBeatId,
-      lastSceneBeatRef: referencedBeats.at(-1)!.sceneBeatId,
-    }
-  })
   const motionSegments = resolvedScenePlan.resolvedActors.map(actor => {
     const assignment = assignments.get(actor.actorInstanceId)
     if (!assignment || assignment.sourceKind !== 'catalog' || !routeAssets.has(assignment.trajectoryAssetRef)) {
@@ -195,6 +185,22 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     entries.push(engagement)
     engagementsBySceneBeat.set(engagement.sceneBeatRef, entries)
   }
+  const actorLifecycles = resolvedScenePlan.resolvedActors.map(actor => {
+    const referencedBeats = sceneBlueprint.sceneBeats.filter(beat => {
+      if (!beat.subtitleId) return false
+      if (beat.actorRefs.includes(actor.actorGroupRef)) return true
+      return (engagementsBySceneBeat.get(beat.sceneBeatId) ?? []).some(engagement =>
+        engagement.launcherRef === actor.actorInstanceId
+        || engagement.weaponRef === actor.actorInstanceId
+        || engagement.targetRef === actor.actorInstanceId)
+    })
+    if (referencedBeats.length === 0) fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
+    return {
+      actorInstanceRef: actor.actorInstanceId,
+      firstSceneBeatRef: referencedBeats[0]!.sceneBeatId,
+      lastSceneBeatRef: referencedBeats.at(-1)!.sceneBeatId,
+    }
+  })
   const fighterMissileRelationSegments = weaponEngagements.map(engagement => ({
       segmentId: `data-link:fighter-missile:${engagement.launcherRef}:${engagement.weaponRef}`,
       sceneBeatRef: engagement.sceneBeatRef,
@@ -203,7 +209,6 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       linkKind: 'fighter-missile' as const,
       evidenceRefs: [...engagement.evidenceRefs],
     }))
-  const subtitleOrder = new Map(narrationPlan.beats.map((beat, index) => [beat.subtitleId, index]))
   const awacsRelationCandidates = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
       const supportText = [
         sceneBeat.purpose,
@@ -224,7 +229,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
         fighterGroups
           .filter(fighterGroup => fighterGroup.side === awacsGroup.side)
           .flatMap(fighterGroup => actorsForGroup(fighterGroup.groupId).map(fighterActor => ({
-            segmentId: `data-link:awacs-fighter:${awacsActor.actorInstanceId}:${fighterActor.actorInstanceId}`,
+            segmentId: `data-link:awacs-fighter:${awacsActor.actorInstanceId}:${fighterActor.actorInstanceId}:${sceneBeat.sceneBeatId}`,
             sceneBeatRef: sceneBeat.sceneBeatId,
             sourceRef: awacsActor.actorInstanceId,
             targetRef: fighterActor.actorInstanceId,
@@ -233,16 +238,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
           }))),
       ))
     })
-  const awacsRelationsByPair = new Map<string, (typeof awacsRelationCandidates)[number]>()
-  for (const relation of [...awacsRelationCandidates].sort((left, right) => {
-    const leftOrder = subtitleOrder.get(sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === left.sceneBeatRef)?.subtitleId ?? '') ?? Number.MAX_SAFE_INTEGER
-    const rightOrder = subtitleOrder.get(sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === right.sceneBeatRef)?.subtitleId ?? '') ?? Number.MAX_SAFE_INTEGER
-    return leftOrder - rightOrder || left.sceneBeatRef.localeCompare(right.sceneBeatRef) || left.segmentId.localeCompare(right.segmentId)
-  })) {
-    const pairKey = `${relation.linkKind}\u0000${relation.sourceRef}\u0000${relation.targetRef}`
-    if (!awacsRelationsByPair.has(pairKey)) awacsRelationsByPair.set(pairKey, relation)
-  }
-  const relationSegments = [...fighterMissileRelationSegments, ...awacsRelationsByPair.values()]
+  const relationSegments = [...fighterMissileRelationSegments, ...awacsRelationCandidates]
     .sort((left, right) => left.segmentId.localeCompare(right.segmentId))
   const shotPlan = narrationPlan.beats.flatMap(narrationBeat => {
     const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.subtitleId === narrationBeat.subtitleId)

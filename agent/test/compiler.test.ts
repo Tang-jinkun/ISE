@@ -763,23 +763,42 @@ test('choreography grounds every missile data link and only same-side supported 
   const relations = fixture.input.choreographyPlan.relationSegments
   const fighterMissile = relations.filter(relation => relation.linkKind === 'fighter-missile')
   const awacsFighter = relations.filter(relation => relation.linkKind === 'awacs-fighter')
+  const su30Relations = awacsFighter.filter(relation => relation.sourceRef === awacs && relation.targetRef === su30)
 
   assert.deepEqual(fighterMissile.map(relation => [relation.sourceRef, relation.targetRef]).sort(), fixture.input.choreographyPlan.weaponEngagements
     .map(engagement => [engagement.launcherRef, engagement.weaponRef]).sort())
-  assert.deepEqual(awacsFighter.map(relation => [relation.sourceRef, relation.targetRef]), fixture.input.resolvedScenePlan.resolvedActors
-    .filter(actor => actor.actorGroupRef === 'group:india-su30-adampur')
-    .map(actor => [awacs, actor.actorInstanceId]))
-  assert.ok(awacsFighter.every(relation => relation.evidenceRefs.includes('ev-first-strike')))
-  assert.ok(awacsFighter.every(relation => relation.sceneBeatRef === 'scene-beat-first-strike'))
+  assert.deepEqual(su30Relations.map(relation => relation.sceneBeatRef), [
+    'scene-beat-first-strike',
+    'scene-beat-intercept',
+  ])
+  assert.deepEqual(su30Relations.map(relation => relation.evidenceRefs), [
+    ['ev-first-strike'],
+    ['ev-intercept'],
+  ])
 
   const plan = compileFinalScene(fixture.input)
   const dataLinks = plan.commands.filter(command => command.type === 'data_link.show')
   assert.equal(dataLinks.length, relations.length)
+  assert.equal(new Set(dataLinks.map(command => command.commandId)).size, dataLinks.length)
   for (const command of dataLinks) {
     const subtitle = plan.subtitles.find(item => item.eventUnitId === command.eventUnitId)!
     assert.equal(command.startMs, subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
     assert.equal(command.startMs + command.durationMs, subtitle.startMs + subtitle.durationMs)
   }
+})
+
+test('actor lifecycle extends through later cross-beat weapon engagement uses', () => {
+  const fixture = realCrossBeatEngagementFixture()
+  const firstStrikeWeapon = fixture.input.resolvedScenePlan.resolvedActors.find(actor =>
+    actor.actorGroupRef === 'group:weapon-first-strike')!
+  const interception = fixture.input.choreographyPlan.weaponEngagements.find(engagement =>
+    engagement.sceneBeatRef === 'scene-beat-intercept')!
+  const lifecycle = fixture.input.choreographyPlan.actorLifecycles.find(item =>
+    item.actorInstanceRef === firstStrikeWeapon.actorInstanceId)!
+
+  assert.equal(interception.targetRef, firstStrikeWeapon.actorInstanceId)
+  assert.equal(lifecycle.firstSceneBeatRef, 'scene-beat-first-strike')
+  assert.equal(lifecycle.lastSceneBeatRef, 'scene-beat-intercept')
 })
 
 test('final compiler rejects an engagement subtitle too short for its four phase cameras', () => {
