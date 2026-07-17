@@ -402,7 +402,7 @@ function persistNarrative(
         eventUnitId: 'terminal-unit',
         text: 'Four JF-17 fighters depart Minhas.',
         evidenceRefs: ['terminal-evidence'],
-        importance: 'low',
+        importance: 'high',
       }],
       sceneRequirements: [{
         requirementId: 'terminal-requirement',
