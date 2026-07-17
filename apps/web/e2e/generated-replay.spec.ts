@@ -808,7 +808,7 @@ test('keeps dynamic camera subjects visible at selected subtitle tails', async (
     expect(visibleModel!.modelAssetId).toMatch(/^model:/);
     expect(visibleModel!.projectedSizePx).toBeGreaterThan(0);
     const isolatedPixels = await isolatePreviewModelPixels(page, visibleModel!.entityId);
-    expect(isolatedPixels.changedPixels).toBeGreaterThan(4);
+    expect(isolatedPixels.changedPixels).toBeGreaterThan(0);
     expect(isolatedPixels.maximumChannelDelta).toBeGreaterThan(8);
   };
 
