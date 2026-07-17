@@ -502,6 +502,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   }
 
   for (const shot of choreographyPlan.shotPlan) {
+    if (shot.phase) continue
     const beat = shot.sceneBeatRefs.length === 1 ? sceneBeats.get(shot.sceneBeatRefs[0]!) : undefined
     const unit = beat ? eventUnits.get(beat.eventUnitId) : undefined
     if (!beat || !unit) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
@@ -576,6 +577,73 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     capabilities: capabilityManifest,
   })
   const subtitles = new Map(scheduled.subtitles.map(subtitle => [subtitle.subtitleId, subtitle]))
+  const phaseCommands: CanonicalCommand[] = []
+  const destroyedTargetHides = new Map<string, CanonicalCommand>()
+  const engagementForShot = (shot: ChoreographyPlan['shotPlan'][number]) =>
+    choreographyPlan.weaponEngagements.find(engagement =>
+      shot.shotId.includes(`:${engagement.weaponRef}:`))
+  const impactEngagements = choreographyPlan.weaponEngagements.filter(engagement =>
+    engagement.outcome === 'interception' || engagement.outcome === 'destroyed')
+  if (impactEngagements.length > 0) exactAvailableAsset(assetRegistry, 'video:missile-impact', 'video')
+  for (const narrationBeat of narrationPlan.beats) {
+    const subtitle = subtitles.get(narrationBeat.subtitleId)
+    if (!subtitle) fail('NARRATION_SCENE_BEAT_UNBOUND', narrationBeat.subtitleId)
+    const phaseShots = choreographyPlan.shotPlan.filter(shot => shot.subtitleId === narrationBeat.subtitleId && shot.phase)
+    if (phaseShots.length === 0) continue
+    const phaseDurationMs = capabilityManifest.minimumDurations['camera.transition']
+    const phaseStartMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    const phaseWindowEndMs = subtitle.startMs + subtitle.durationMs
+    if (phaseStartMs + phaseShots.length * phaseDurationMs > phaseWindowEndMs) {
+      fail('NARRATION_VISUAL_DURATION_CONFLICT', narrationBeat.subtitleId)
+    }
+    for (const [index, shot] of phaseShots.entries()) {
+      const sceneBeat = shot.sceneBeatRefs.length === 1 ? sceneBeats.get(shot.sceneBeatRefs[0]!) : undefined
+      const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
+      const engagement = engagementForShot(shot)
+      if (!sceneBeat || !unit || !engagement || !shot.phase) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+      const subjectBounds = shot.subjectRefs.map(actorId => {
+        const assignment = assignments.get(actorId)
+        if (!assignment) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
+        return routeBounds(assetRegistry, assignment.trajectoryAssetRef)
+      })
+      const requirement = narrativePlan.sceneRequirements.find(item => item.eventUnitId === unit.eventUnitId)
+      const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
+      const camera = cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template))
+      const zoomOffset = shot.phase === 'launch' ? 0 : shot.phase === 'midcourse' ? 0.5 : shot.phase === 'terminal' ? 1 : 0.75
+      const startMs = phaseStartMs + index * phaseDurationMs
+      phaseCommands.push(runtimeCommandSchema.parse({
+        commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
+        type: 'camera.transition',
+        params: { ...camera, zoom: Math.min(24, camera.zoom + zoomOffset) },
+        startMs, durationMs: phaseDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+      }))
+      if (shot.phase === 'terminal' && (engagement.outcome === 'interception' || engagement.outcome === 'destroyed')) {
+        phaseCommands.push(runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:impact-video`, eventUnitId: unit.eventUnitId, targetId: 'overlay:missile-impact',
+          type: 'video.play', params: {
+            assetId: 'video:missile-impact',
+            layout: { xPct: 64, yPct: 6, widthPct: 30, heightPct: 24, zIndex: 30, opacity: 1, fit: 'cover' },
+            volume: 0, playbackRate: 1, loop: false,
+          },
+          startMs, durationMs: capabilityManifest.minimumDurations['video.play'], dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+        }))
+      }
+      if (shot.phase === 'aftermath' && engagement.outcome === 'destroyed') {
+        const stateDurationMs = 1_000
+        phaseCommands.push(runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:destroyed`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
+          type: 'model.set_state', params: { action: 'model.set_state', entityId: engagement.targetRef, state: 'destroyed' },
+          startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+        }))
+        destroyedTargetHides.set(engagement.targetRef, runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:destroyed-hide`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
+          type: 'model.hide', params: { action: 'model.hide', entityId: engagement.targetRef },
+          startMs: startMs + stateDurationMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+        }))
+      }
+    }
+  }
   const scheduleActorCommand = (
     draft: CommandDraft,
     startMs: number,
@@ -601,13 +669,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     if (followDurationMs < capabilityManifest.minimumDurations['model.follow_path']) {
       fail('NARRATION_VISUAL_DURATION_CONFLICT', actorInstanceRef)
     }
+    const destroyedHide = destroyedTargetHides.get(actorInstanceRef)
     return [
       scheduleActorCommand(spawn, spawnStartMs, spawnDurationMs),
       scheduleActorCommand(follow, followStartMs, followDurationMs),
-      scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide']),
+      ...(destroyedHide ? [] : [scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide'])]),
     ]
   })
-  const finalCommands = [...scheduled.commands, ...actorCommands]
+  const finalCommands = [...scheduled.commands, ...phaseCommands, ...actorCommands, ...destroyedTargetHides.values()]
   const totalDurationMs = Math.max(
     1,
     ...scheduled.subtitles.map(item => item.startMs + item.durationMs),

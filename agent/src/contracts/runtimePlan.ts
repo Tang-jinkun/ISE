@@ -7,7 +7,7 @@ export const runtimeEntitySchema = z.strictObject({
   kind: z.enum(['aircraft', 'missile', 'location', 'other']),
   modelAssetId: z.string().regex(/^model:[a-z0-9][a-z0-9._-]*$/).optional(),
   defaultTrajectoryAssetId: z.string().regex(/^trajectory:[a-z0-9][a-z0-9._-]*$/).optional(),
-  initialState: z.enum(['normal', 'warning', 'disabled', 'hidden']),
+  initialState: z.enum(['normal', 'warning', 'disabled', 'destroyed', 'hidden']),
 })
 export type RuntimeEntity = z.infer<typeof runtimeEntitySchema>
 
@@ -97,7 +97,7 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
     action: z.literal('model.follow_path'), entityId: z.string().min(1), trajectoryAssetId: z.string().regex(/^trajectory:/),
   }) }),
   z.strictObject({ ...commandBase, type: z.literal('model.set_state'), params: z.strictObject({
-    action: z.literal('model.set_state'), entityId: z.string().min(1), state: z.enum(['normal', 'warning', 'disabled', 'hidden']),
+    action: z.literal('model.set_state'), entityId: z.string().min(1), state: z.enum(['normal', 'warning', 'disabled', 'destroyed', 'hidden']),
   }) }),
   z.strictObject({ ...commandBase, type: z.literal('model.hide'), params: z.strictObject({
     action: z.literal('model.hide'), entityId: z.string().min(1),

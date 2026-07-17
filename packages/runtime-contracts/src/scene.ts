@@ -9,7 +9,7 @@ const coordinates = z.tuple([longitude, latitude]);
 const assetId = z.string().regex(
   /^(model|trajectory|video|image|geojson):[a-z0-9][a-z0-9._-]*$/
 );
-const state = z.enum(['normal', 'warning', 'disabled', 'hidden']);
+const state = z.enum(['normal', 'warning', 'disabled', 'destroyed', 'hidden']);
 
 export const diagnosticSchema = z.strictObject({
   code: nonEmptyId,

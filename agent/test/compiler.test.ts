@@ -505,6 +505,163 @@ function multiEngagementChoreographyFixture() {
   return { ...fixture, resolvedScenePlan, choreographyPlan }
 }
 
+function finalInputForEngagementFixture() {
+  const fixture = multiEngagementChoreographyFixture()
+  const launchUnit = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'unit-launch')!
+  const deploymentUnit = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'unit-deployment')!
+  const summaryUnit = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'unit-summary')!
+  fixture.eventPlan = {
+    ...fixture.eventPlan,
+    eventUnits: [
+      deploymentUnit,
+      { ...launchUnit, eventUnitId: 'unit-first-strike', evidenceRefs: ['ev-first-strike'] },
+      { ...launchUnit, eventUnitId: 'unit-intercept', evidenceRefs: ['ev-intercept'] },
+      { ...launchUnit, eventUnitId: 'unit-counterattack', evidenceRefs: ['ev-counterattack'] },
+      summaryUnit,
+    ],
+  }
+  const launchRequirement = fixture.narrativePlan.sceneRequirements.find(item => item.eventUnitId === 'unit-launch')!
+  fixture.narrativePlan = {
+    ...fixture.narrativePlan,
+    sourceEventPlan: { ...fixture.narrativePlan.sourceEventPlan, fingerprint: fingerprint(fixture.eventPlan) },
+    subtitles: fixture.narrationPlan.beats.map(beat => ({
+      subtitleId: beat.subtitleId,
+      eventUnitId: beat.eventUnitId,
+      text: beat.text,
+      evidenceRefs: beat.evidenceRefs,
+      importance: beat.importance,
+    })),
+    sceneRequirements: [
+      fixture.narrativePlan.sceneRequirements.find(item => item.eventUnitId === 'unit-deployment')!,
+      { ...launchRequirement, requirementId: 'requirement-first-strike', eventUnitId: 'unit-first-strike', attentionRequirements: ['video:engagement'] },
+      { ...launchRequirement, requirementId: 'requirement-intercept', eventUnitId: 'unit-intercept', attentionRequirements: ['video:engagement'] },
+      { ...launchRequirement, requirementId: 'requirement-counterattack', eventUnitId: 'unit-counterattack', attentionRequirements: ['video:engagement'] },
+      fixture.narrativePlan.sceneRequirements.find(item => item.eventUnitId === 'unit-summary')!,
+    ],
+  }
+  fixture.narrationPlan = {
+    ...fixture.narrationPlan,
+    sourceEventPlanFingerprint: fingerprint(fixture.eventPlan),
+    sourceNarrativePlanId: fixture.narrativePlan.narrativePlanId,
+  }
+  fixture.sceneBlueprint = {
+    ...fixture.sceneBlueprint,
+    sourceNarrationFingerprint: fingerprint(fixture.narrationPlan),
+  }
+  const assetRegistry = {
+    ...fixture.assetRegistry,
+    assets: [
+      ...fixture.assetRegistry.assets,
+      {
+        assetId: 'video:missile-impact' as const,
+        kind: 'video' as const,
+        displayName: 'Missile impact',
+        aliases: [],
+        fingerprint: `sha256:${'9'.repeat(64)}`,
+        size: 10,
+        availability: 'available' as const,
+        criticality: 'required' as const,
+        fallbackAssetIds: [],
+        allowFallback: false,
+        mediaType: 'video/mp4' as const,
+        video: { durationMs: 2_000, codec: 'h264' },
+      },
+    ],
+  }
+  const resolvedScenePlan = resolveSceneBlueprint({ blueprint: fixture.sceneBlueprint, assetRegistry })
+  const choreographyPlan = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan,
+    assetRegistry,
+  })
+  return {
+    fixture,
+    input: {
+      ...fixture.input,
+      eventPlan: fixture.eventPlan,
+      narrativePlan: fixture.narrativePlan,
+      narrationPlan: fixture.narrationPlan,
+      sceneBlueprint: fixture.sceneBlueprint,
+      resolvedScenePlan,
+      choreographyPlan,
+      assetRegistry,
+    },
+    resolvedScenePlan,
+    choreographyPlan,
+  }
+}
+
+test('final compiler emits automatic missile lifecycle, phased cameras, impact, and confirmed destruction commands', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const missiles = plan.entities.filter(entity => entity.kind === 'missile')
+  assert.equal(missiles.length, 3)
+  assert.deepEqual(new Set(missiles.map(entity => entity.modelAssetId)), new Set(['model:pl15e']))
+  assert.deepEqual(new Set(missiles.map(entity => entity.defaultTrajectoryAssetId)), new Set([
+    'trajectory:india-missile-1',
+    'trajectory:pakistan-missile-1',
+    'trajectory:pakistan-strike-missile-2',
+  ]))
+  for (const missile of missiles) {
+    assert.equal(plan.commands.filter(command => command.targetId === missile.entityId && command.type === 'model.spawn').length, 1)
+    assert.equal(plan.commands.filter(command => command.targetId === missile.entityId && command.type === 'model.follow_path').length, 1)
+    assert.equal(plan.commands.filter(command => command.targetId === missile.entityId && command.type === 'model.hide').length, 1)
+  }
+  for (const subtitleId of ['subtitle-first-strike', 'subtitle-intercept', 'subtitle-counterattack']) {
+    const subtitle = plan.subtitles.find(item => item.subtitleId === subtitleId)!
+    const cameras = plan.commands.filter((command): command is Extract<(typeof plan.commands)[number], { type: 'camera.transition' }> =>
+      command.type === 'camera.transition'
+      && command.commandId.includes(`scene-beat-${subtitleId.replace('subtitle-', '')}`))
+      .sort((left, right) => left.startMs - right.startMs)
+    assert.equal(cameras.length, 4)
+    assert.equal(cameras[0]?.startMs, subtitle.startMs + 800)
+    assert.ok(cameras[2]!.params.zoom > cameras[0]!.params.zoom)
+    assert.ok(cameras.every(command => command.startMs + command.durationMs <= subtitle.startMs + subtitle.durationMs))
+  }
+  const destroyed = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const destroyedState = plan.commands.find(command => command.type === 'model.set_state'
+    && command.targetId === destroyed.targetRef && command.params.state === 'destroyed')
+  const destroyedHide = plan.commands.find(command => command.type === 'model.hide' && command.targetId === destroyed.targetRef)
+  assert.ok(destroyedState)
+  assert.ok(destroyedHide)
+  assert.ok(destroyedHide.startMs >= destroyedState.startMs + 1_000)
+  assert.deepEqual(destroyedState.evidenceRefs, ['ev-counterattack'])
+  assert.deepEqual(destroyedHide.evidenceRefs, ['ev-counterattack'])
+  const impactVideos = plan.commands.filter(command => command.type === 'video.play' && command.params.assetId === 'video:missile-impact')
+  assert.equal(impactVideos.length, 2)
+  assert.ok(impactVideos.some(command => command.evidenceRefs.includes('ev-intercept')))
+  assert.ok(impactVideos.some(command => command.evidenceRefs.includes('ev-counterattack')))
+})
+
+test('final compiler rejects an engagement subtitle too short for its four phase cameras', () => {
+  const fixture = finalInputForEngagementFixture()
+  fixture.input.narrationPlan = {
+    ...fixture.input.narrationPlan,
+    beats: fixture.input.narrationPlan.beats.map(beat => beat.subtitleId === 'subtitle-first-strike'
+      ? { ...beat, estimatedDurationMs: SUBTITLE_VISUAL_LEAD_MS + 3_999 }
+      : beat),
+  }
+  fixture.input.sceneBlueprint = {
+    ...fixture.input.sceneBlueprint,
+    sourceNarrationFingerprint: fingerprint(fixture.input.narrationPlan),
+  }
+  fixture.input.resolvedScenePlan = resolveSceneBlueprint({
+    blueprint: fixture.input.sceneBlueprint,
+    assetRegistry: fixture.input.assetRegistry,
+  })
+  fixture.input.choreographyPlan = compileChoreography({
+    narrationPlan: fixture.input.narrationPlan,
+    sceneBlueprint: fixture.input.sceneBlueprint,
+    resolvedScenePlan: fixture.input.resolvedScenePlan,
+    assetRegistry: fixture.input.assetRegistry,
+  })
+
+  assert.throws(() => compileFinalScene(fixture.input), (error: unknown) =>
+    error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'NARRATION_VISUAL_DURATION_CONFLICT'))
+})
+
 test('compiles grounded missile engagements and four ordered phase shots', () => {
   const fixture = multiEngagementChoreographyFixture()
   const actorRef = (groupRef: string) => fixture.resolvedScenePlan.resolvedActors

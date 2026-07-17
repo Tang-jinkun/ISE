@@ -50,6 +50,20 @@ test('accepts all seven frozen track variants', () => {
   ]);
 });
 
+test('accepts destroyed model state and rejects unknown states', () => {
+  const destroyed = validConfig() as SceneProjectConfig & { tracks: any[] };
+  destroyed.tracks[6].items[0].params = {
+    action: 'model.set_state', entityId: 'entity-jf17', state: 'destroyed'
+  };
+  assert.equal(sceneProjectConfigSchema.safeParse(destroyed).success, true);
+
+  const unknown = validConfig() as SceneProjectConfig & { tracks: any[] };
+  unknown.tracks[6].items[0].params = {
+    action: 'model.set_state', entityId: 'entity-jf17', state: 'exploded'
+  };
+  assert.equal(sceneProjectConfigSchema.safeParse(unknown).success, false);
+});
+
 test('rejects unknown properties at the root and nested item levels', () => {
   assert.equal(sceneProjectConfigSchema.safeParse({ ...validConfig(), extra: true }).success, false);
   const nested = validConfig() as SceneProjectConfig & { tracks: any[] };
