@@ -32,6 +32,7 @@ const routingTracks: SceneTrack[] = [
   { trackId: 'markers', type: 'marker', label: 'Markers', visible: true, items: [] },
   { trackId: 'hidden-map', type: 'camera', label: 'Hidden camera', visible: false, items: [] },
   { trackId: 'models', type: 'model', label: 'Models', visible: true, items: [] },
+  { trackId: 'links', type: 'data_link', label: 'Links', visible: true, items: [] },
   { trackId: 'subtitles', type: 'subtitle', label: 'Subtitles', visible: true, items: [] },
   { trackId: 'hidden-video', type: 'video', label: 'Hidden video', visible: false, items: [] },
 ];
@@ -164,6 +165,15 @@ function sceneRuntimeHarness(
     ]),
     dispose: vi.fn(),
   };
+  const dataLinkRuntime = {
+    load: vi.fn(async (_tracks: SceneTrack[], _signal?: AbortSignal) => {
+      calls.push('data-link.load');
+    }),
+    apply: vi.fn((_timeMs: number, _snapshots: unknown[]) => {
+      calls.push(`data-link.apply:${clock.currentTimeMs}`);
+    }),
+    dispose: vi.fn(),
+  };
   let unlockAttempt = 0;
   const overlayRuntime = {
     load: vi.fn(async (_tracks: SceneTrack[], _signal?: AbortSignal) => {
@@ -191,6 +201,7 @@ function sceneRuntimeHarness(
     clock,
     mapRuntime: options.mapRuntime ?? mapRuntime,
     modelRuntime,
+    dataLinkRuntime,
     overlayRuntime,
     resources: options.resources ?? resources,
   } as unknown as SceneRuntimeDependencies;
@@ -207,6 +218,7 @@ function sceneRuntimeHarness(
     clock: clock.dispose.mock.calls.length,
     map: mapRuntime.dispose.mock.calls.length,
     model: modelRuntime.dispose.mock.calls.length,
+    dataLink: dataLinkRuntime.dispose.mock.calls.length,
     overlay: overlayRuntime.dispose.mock.calls.length,
     resources: resources.dispose.mock.calls.length,
   });
@@ -217,6 +229,7 @@ function sceneRuntimeHarness(
     emitClockFrame,
     mapRuntime,
     modelRuntime,
+    dataLinkRuntime,
     overlayRuntime,
     resources,
     overlayRoot,
@@ -256,11 +269,13 @@ it('routes visible tracks and loads components before one paused zero frame', as
   expect(harness.calls).toEqual([
     'map.load',
     'model.load',
+    'data-link.load',
     'overlay.load',
     'clock.duration:12000',
     'map.apply:0',
     'model.apply:0',
     'map.trails:0',
+    'data-link.apply:0',
     'overlay.apply:0:paused:seek',
   ]);
   expect((harness.mapRuntime.load.mock.calls[0]![0] as SceneTrack[]).map((track) => track.type)).toEqual([
@@ -269,13 +284,16 @@ it('routes visible tracks and loads components before one paused zero frame', as
   expect((harness.modelRuntime.load.mock.calls[0]![1] as SceneTrack[]).map((track) => track.type)).toEqual([
     'model',
   ]);
+  expect((harness.dataLinkRuntime.load.mock.calls[0]![0] as SceneTrack[]).map((track) => track.type)).toEqual([
+    'data_link',
+  ]);
   expect((harness.overlayRuntime.load.mock.calls[0]![0] as SceneTrack[]).map((track) => track.type)).toEqual([
     'subtitle',
   ]);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('0');
 });
 
-it('applies clock frames in map, model, trail, overlay order', async () => {
+it('applies clock frames in map, model, trail, data-link, overlay order', async () => {
   const harness = sceneRuntimeHarness();
   await harness.runtime.load(validConfig);
   harness.calls.length = 0;
@@ -286,6 +304,7 @@ it('applies clock frames in map, model, trail, overlay order', async () => {
     'map.apply:250',
     'model.apply:250',
     'map.trails:250',
+    'data-link.apply:250',
     'overlay.apply:250:playing:tick',
   ]);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('250');
@@ -313,6 +332,7 @@ it('unlocks media before starting the clock and applies a playing frame', async 
     'map.apply:0',
     'model.apply:0',
     'map.trails:0',
+    'data-link.apply:0',
     'overlay.apply:0:playing:tick',
   ]);
 });
@@ -414,6 +434,7 @@ it('pauses, seeks exactly once, applies a paused frame, and resumes prior playba
     'map.apply:6000',
     'model.apply:6000',
     'map.trails:6000',
+    'data-link.apply:6000',
     'overlay.apply:6000:paused:seek',
     'clock.play',
   ]);
@@ -432,6 +453,7 @@ it('seeks while paused without pausing or resuming the clock', async () => {
     'map.apply:2000',
     'model.apply:2000',
     'map.trails:2000',
+    'data-link.apply:2000',
     'overlay.apply:2000:paused:seek',
   ]);
   expect(harness.clock.isPlaying).toBe(false);
@@ -451,12 +473,14 @@ it('replay performs a non-resuming seek to zero before normal play', async () =>
     'map.apply:0',
     'model.apply:0',
     'map.trails:0',
+    'data-link.apply:0',
     'overlay.apply:0:paused:seek',
     'overlay.unlock',
     'clock.play',
     'map.apply:0',
     'model.apply:0',
     'map.trails:0',
+    'data-link.apply:0',
     'overlay.apply:0:playing:tick',
   ]);
 });
@@ -472,6 +496,7 @@ it('applies a paused terminal frame and does not restart at the configured durat
     'map.apply:12000',
     'model.apply:12000',
     'map.trails:12000',
+    'data-link.apply:12000',
     'overlay.apply:12000:paused:tick',
   ]);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('12000');
@@ -488,7 +513,7 @@ it('rolls back every component when a critical load rejects', async () => {
 
   await expect(harness.runtime.load(validConfig)).rejects.toThrow('missing GLB');
 
-  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, dataLink: 1, overlay: 1, resources: 1 });
   await expect(harness.runtime.play()).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
 });
 
@@ -519,7 +544,7 @@ it('aborts and rolls back once when disposed during an in-flight load', async ()
   gate.resolve();
 
   await expect(loading).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
-  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, dataLink: 1, overlay: 1, resources: 1 });
 });
 
 it('does not let a real MapRuntime register state after SceneRuntime disposal during readJson', async () => {
@@ -615,7 +640,7 @@ it('guards pre-load lifecycle calls and disposes every owner exactly once', asyn
   harness.runtime.dispose();
   harness.runtime.dispose();
 
-  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, dataLink: 1, overlay: 1, resources: 1 });
   expect(harness.listenerCount()).toBe(0);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBeUndefined();
   await expect(harness.runtime.play()).rejects.toMatchObject({ code: 'RUNTIME_DISPOSED' });
@@ -642,9 +667,9 @@ it('attempts every owner disposal exactly once when multiple owners throw', asyn
 
   expect(disposalError).toBeInstanceOf(AggregateError);
   expect((disposalError as AggregateError).errors).toEqual([overlayError, mapError]);
-  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, dataLink: 1, overlay: 1, resources: 1 });
   expect(harness.listenerCount()).toBe(0);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBeUndefined();
   expect(() => harness.runtime.dispose()).not.toThrow();
-  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, overlay: 1, resources: 1 });
+  expect(harness.disposals()).toEqual({ clock: 1, map: 1, model: 1, dataLink: 1, overlay: 1, resources: 1 });
 });

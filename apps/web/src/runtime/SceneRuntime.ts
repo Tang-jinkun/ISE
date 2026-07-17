@@ -7,6 +7,7 @@ import {
 } from '@ise/runtime-contracts';
 import { MapRuntime, type RuntimeTrail } from './MapRuntime';
 import { ModelRuntime, type ModelEntityFrameSnapshot } from './ModelRuntime';
+import { DataLinkRuntime } from './DataLinkRuntime';
 import { OverlayRuntime } from './OverlayRuntime';
 import { PlaybackClock } from './PlaybackClock';
 import { ResourceManager } from './ResourceManager';
@@ -40,6 +41,12 @@ interface OverlayRuntimePort {
   dispose(): void;
 }
 
+interface DataLinkRuntimePort {
+  load(tracks: SceneTrack[], signal?: AbortSignal): Promise<void>;
+  apply(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[]): void;
+  dispose(): void;
+}
+
 interface ResourceManagerPort {
   dispose(): void;
 }
@@ -48,6 +55,7 @@ export interface SceneRuntimeDependencies {
   clock: PlaybackClockPort;
   mapRuntime: MapRuntimePort;
   modelRuntime: ModelRuntimePort;
+  dataLinkRuntime: DataLinkRuntimePort;
   overlayRuntime: OverlayRuntimePort;
   resources: ResourceManagerPort;
 }
@@ -58,6 +66,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
   private readonly clock: PlaybackClockPort;
   private readonly mapRuntime: MapRuntimePort;
   private readonly modelRuntime: ModelRuntimePort;
+  private readonly dataLinkRuntime: DataLinkRuntimePort;
   private readonly overlayRuntime: OverlayRuntimePort;
   private readonly resources: ResourceManagerPort;
   private state: RuntimeState = 'idle';
@@ -78,6 +87,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
     this.clock = resolved.clock;
     this.mapRuntime = resolved.mapRuntime;
     this.modelRuntime = resolved.modelRuntime;
+    this.dataLinkRuntime = resolved.dataLinkRuntime;
     this.overlayRuntime = resolved.overlayRuntime;
     this.resources = resolved.resources;
     this.unsubscribeClock = this.clock.subscribe(this.handleClockFrame);
@@ -92,7 +102,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
     const controller = new AbortController();
     this.loadController = controller;
     this.state = 'loading';
-    let loadStage: 'map' | 'model' | 'overlay' | 'initial-frame' = 'map';
+    let loadStage: 'map' | 'model' | 'data-link' | 'overlay' | 'initial-frame' = 'map';
 
     try {
       const visibleTracks = config.tracks.filter((track) => track.visible);
@@ -107,6 +117,12 @@ export class SceneRuntimeImpl implements SceneRuntime {
         visibleTracks.filter(
           (track): track is Extract<SceneTrack, { type: 'model' }> => track.type === 'model',
         ),
+        controller.signal,
+      );
+      this.assertActiveLoad(controller);
+      loadStage = 'data-link';
+      await this.dataLinkRuntime.load(
+        visibleTracks.filter(isDataLinkTrack),
         controller.signal,
       );
       this.assertActiveLoad(controller);
@@ -262,9 +278,11 @@ export class SceneRuntimeImpl implements SceneRuntime {
     this.mapRuntime.applyBase(frame.timeMs);
     const trails = this.modelRuntime.apply(frame.timeMs);
     this.mapRuntime.applyTrails(trails);
+    const snapshots = this.modelRuntime.getFrameSnapshot();
+    this.dataLinkRuntime.apply(frame.timeMs, snapshots);
     this.overlayRuntime.apply(frame);
     this.options.overlayRoot.dataset.runtimeModels = JSON.stringify(
-      this.modelRuntime.getFrameSnapshot(),
+      snapshots,
     );
     this.options.overlayRoot.dataset.runtimeTimeMs = String(Math.round(frame.timeMs));
   }
@@ -356,6 +374,7 @@ export class SceneRuntimeImpl implements SceneRuntime {
 
     attempt(() => unsubscribeClock?.());
     attempt(() => this.overlayRuntime.dispose());
+    attempt(() => this.dataLinkRuntime.dispose());
     attempt(() => this.modelRuntime.dispose());
     attempt(() => this.mapRuntime.dispose());
     attempt(() => this.resources.dispose());
@@ -370,7 +389,10 @@ export class SceneRuntimeImpl implements SceneRuntime {
   }
 }
 
-function normalizeLoadError(error: unknown, stage: 'map' | 'model' | 'overlay' | 'initial-frame') {
+function normalizeLoadError(
+  error: unknown,
+  stage: 'map' | 'model' | 'data-link' | 'overlay' | 'initial-frame',
+) {
   if (error instanceof Error) return error;
   const suffix = error === undefined || error === null
     ? 'without an error'
@@ -390,6 +412,7 @@ function createBrowserDependencies(
     clock: new PlaybackClock(),
     mapRuntime: new MapRuntime(options.map, resources),
     modelRuntime: new ModelRuntime(options.map, resources),
+    dataLinkRuntime: new DataLinkRuntime(options.map),
     overlayRuntime: new OverlayRuntime(options.overlayRoot, resources, emitDiagnostic),
     resources,
   };
@@ -405,6 +428,12 @@ function isOverlayTrack(
   track: SceneTrack,
 ): track is Extract<SceneTrack, { type: 'subtitle' | 'image' | 'video' }> {
   return track.type === 'subtitle' || track.type === 'image' || track.type === 'video';
+}
+
+function isDataLinkTrack(
+  track: SceneTrack,
+): track is Extract<SceneTrack, { type: 'data_link' }> {
+  return track.type === 'data_link';
 }
 
 function disposedError(cause: unknown) {
