@@ -629,9 +629,9 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     'trajectory:india-awacs-1',
     'trajectory:pakistan-awacs-1',
   ]);
-  expect(aircraftEntities).toHaveLength(15);
+  expect(aircraftEntities).toHaveLength(12);
   expect(missileEntities).toHaveLength(3);
-  expect(sceneConfig.entities).toHaveLength(18);
+  expect(sceneConfig.entities).toHaveLength(15);
   expect(modelTracks).toHaveLength(sceneConfig.entities.length);
   expect(new Set(modelTrackEntityIds)).toEqual(new Set(entityIds));
   expect(new Set(entityIds).size).toBe(entityIds.length);

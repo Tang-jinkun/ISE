@@ -589,8 +589,8 @@ function Assert-FinalDomainInvariants {
   if ($ExpectedActorCount -gt 0) {
     $aircraftEntities = @($entities | Where-Object { (Get-PropertyValue $_ 'kind') -eq 'aircraft' })
     $missileEntities = @($entities | Where-Object { (Get-PropertyValue $_ 'kind') -eq 'missile' })
-    if ($entities.Count -ne 18 -or $aircraftEntities.Count -ne 15 -or $missileEntities.Count -ne 3) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan requires exactly 15 aircraft and 3 missile entities (18 total).'
+    if ($entities.Count -ne 15 -or $aircraftEntities.Count -ne 12 -or $missileEntities.Count -ne 3) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan requires exactly 12 aircraft and 3 missile entities (15 total).'
     }
 
     $expectedMissileRoutes = @(
@@ -1187,7 +1187,7 @@ function Invoke-RealFlow {
   }
 
   Assert-CompiledCorrelation $completed.Compiled $completed.Accepted $reviewArtifactId
-  Assert-FinalDomainInvariants $completed 18
+  Assert-FinalDomainInvariants $completed 15
   $eventPlan = Get-PropertyValue $completed.Accepted 'data'
   $narrationPlan = Get-PropertyValue $completed.Narration 'data'
   $sceneBlueprint = Get-PropertyValue $completed.SceneBlueprint 'data'
