@@ -11,6 +11,7 @@ import {
 import type { CapabilityManifest } from './capabilityManifest.ts'
 import type { InformationCardDraft } from './templates.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
+import { estimatedNarrationDurationMs } from '../planning/narrationPlanner.ts'
 
 export interface SchedulerInput {
   eventPlan: EventPlan
@@ -31,9 +32,7 @@ export interface ScheduledPlan {
 export const SUBTITLE_VISUAL_LEAD_MS = 800
 
 export function subtitleDurationMs(text: string, importance: 'high' | 'medium' | 'low'): number {
-  const spokenMs = Math.ceil([...text].filter(char => /\p{Script=Han}/u.test(char)).length / 4) * 1_000
-  const observationMs = importance === 'high' ? 2_000 : importance === 'medium' ? 1_000 : 0
-  return Math.max(4_000, spokenMs) + observationMs
+  return estimatedNarrationDurationMs(text, importance)
 }
 
 function schedule(input: SchedulerInput, removeMediumObservation: boolean): ScheduledPlan {

@@ -35,3 +35,25 @@ GREEN:
 - `agent/src/planning/narrationPlanner.ts`
 - `agent/src/tools/scenePlanTools.ts`
 - `agent/test/narrative-plan.test.ts`
+
+## Review Follow-up: Shared Estimator
+
+The scheduler's exported `subtitleDurationMs` now delegates to
+`estimatedNarrationDurationMs` in the narration planner. This removes the
+second Han-character and importance formula while preserving the scheduler's
+public API and dependency direction.
+
+The parity regression compares real `buildNarrationPlan` beat estimates with
+real `scheduleNarrative` subtitle durations for high, medium, and low
+importance, including Han-character rounding boundaries. It initially passed
+against the matching duplicate implementations. A controlled mutation from
+four to five Han characters per second in the scheduler made the test fail at
+the expected low-importance boundary (`4,000` instead of `5,000`), proving the
+test detects formula drift. The mutation was then removed before the shared
+estimator implementation.
+
+Follow-up verification:
+
+- NarrativePlan and compiler focused tests: 46 passed, 0 failed.
+- Agent TypeScript check: passed.
+- `git diff --check`: passed.

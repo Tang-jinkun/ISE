@@ -39,6 +39,7 @@ import { resolveSceneBlueprint } from '../src/planning/resolveSceneBlueprint.ts'
 import { compileChoreography } from '../src/compiler/choreographyCompiler.ts'
 import { indoPakTrajectoryScenario } from '../src/config/indoPakTrajectoryScenario.ts'
 import { capabilityManifest } from '../src/compiler/capabilityManifest.ts'
+import { buildNarrationPlan } from '../src/planning/narrationPlanner.ts'
 
 const hash = `sha256:${'1'.repeat(64)}`
 
@@ -476,6 +477,34 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
   ])
   assert.ok(plan.lineage.every(item => item.sourceArtifactIds.length === expectedSources.size
     && item.sourceArtifactIds.every(id => expectedSources.has(id))))
+})
+
+test('planner and scheduler keep exact subtitle duration parity across importance and Han boundaries', () => {
+  const source = input()
+  source.narrativePlan.sourceEventPlan.fingerprint = fingerprint(source.eventPlan)
+  source.narrativePlan.subtitles = [
+    { subtitleId: 'subtitle-high', eventUnitId: 'unit-1', text: '\u4e00'.repeat(3), evidenceRefs: ['ev-1'], importance: 'high' },
+    { subtitleId: 'subtitle-medium', eventUnitId: 'unit-1', text: '\u4e00'.repeat(16), evidenceRefs: ['ev-1'], importance: 'medium' },
+    { subtitleId: 'subtitle-low', eventUnitId: 'unit-1', text: '\u4e00'.repeat(17), evidenceRefs: ['ev-1'], importance: 'low' },
+  ]
+
+  const narrationPlan = buildNarrationPlan({
+    eventPlan: source.eventPlan,
+    narrativePlan: source.narrativePlan,
+  })
+  const scheduled = scheduleNarrative({
+    eventPlan: source.eventPlan,
+    narrativePlan: source.narrativePlan,
+    commandDrafts: [],
+    informationCardDrafts: [],
+    capabilities: capabilityManifest,
+  })
+
+  assert.deepEqual(
+    scheduled.subtitles.map(subtitle => subtitle.durationMs),
+    narrationPlan.beats.map(beat => beat.estimatedDurationMs),
+  )
+  assert.deepEqual(scheduled.subtitles.map(subtitle => subtitle.durationMs), [6_000, 5_000, 5_000])
 })
 
 test('actor lifecycle ignores unsubtitled boundary beats and binds the internal subtitled beat', () => {
