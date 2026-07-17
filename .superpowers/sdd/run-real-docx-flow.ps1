@@ -676,15 +676,33 @@ function Assert-FinalDomainInvariants {
     $hideItems = @($items | Where-Object {
       (Get-PropertyValue (Get-PropertyValue $_ 'params') 'action') -eq 'model.hide'
     })
+    $destroyedStateItems = @($items | Where-Object {
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'action') -eq 'model.set_state' -and
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'state') -eq 'destroyed'
+    })
     if ($spawnItems.Count -ne 1 -or $followItems.Count -ne 1 -or $hideItems.Count -ne 1) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must have one contiguous spawn/follow/hide lifecycle.'
+    }
+    if ($destroyedStateItems.Count -gt 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'A RuntimePlan entity may have at most one destroyed state transition.'
     }
     $spawnEndMs = [long](Get-PropertyValue $spawnItems[0] 'startMs') + [long](Get-PropertyValue $spawnItems[0] 'durationMs')
     $followStartMs = [long](Get-PropertyValue $followItems[0] 'startMs')
     $followEndMs = $followStartMs + [long](Get-PropertyValue $followItems[0] 'durationMs')
     $hideStartMs = [long](Get-PropertyValue $hideItems[0] 'startMs')
-    if ($followStartMs -ne $spawnEndMs -or $followEndMs -ne $hideStartMs) {
+    if ($followStartMs -ne $spawnEndMs) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must have one contiguous spawn/follow/hide lifecycle.'
+    }
+    if ($destroyedStateItems.Count -eq 0) {
+      if ($followEndMs -ne $hideStartMs) {
+        Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'A non-destroyed RuntimePlan entity must hide exactly when its follow interval ends.'
+      }
+      continue
+    }
+    $destroyedStartMs = [long](Get-PropertyValue $destroyedStateItems[0] 'startMs')
+    if ($destroyedStartMs -lt $followStartMs -or $destroyedStartMs -ge $followEndMs -or
+        $hideStartMs -ne $destroyedStartMs + 1000 -or $hideStartMs -gt $followEndMs) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'A destroyed RuntimePlan entity must transition during follow and hide exactly 1,000ms later without exceeding the follow interval.'
     }
   }
 
