@@ -135,6 +135,30 @@ function group(
   }
 }
 
+function weaponGroup(
+  groupId: string,
+  side: string,
+  behaviorProfile: string,
+  locationRef = '边境附近空域',
+): ActorGroup {
+  return {
+    ...group(groupId, 'missile', locationRef, side, 'weapon-launch'),
+    platformType: 'missile',
+    quantityDecision: {
+      value: 1,
+      constraint: 'unknown',
+      source: 'default',
+      evidenceRefs: [],
+      defaultPolicyId: 'single-launch/v1',
+      reason: 'Test fixture',
+    },
+    formationPattern: 'single',
+    leaderPolicy: 'single-member',
+    behaviorProfile,
+    lifecycle: 'event-scoped:event:weapon-test',
+  }
+}
+
 function instances(groupRef: string, count: number): ActorInstance[] {
   return Array.from({ length: count }, (_, ordinal) => ({
     actorInstanceId: `actor:${groupRef.replace(/^group:/, '')}:${ordinal + 1}`,
@@ -210,7 +234,9 @@ test('defines scenario-local route semantics and keeps AMBALA Su-30 routes as re
       ['formation:pakistan-jf17-minhas', 4],
       ['formation:pakistan-jf17-rafiki', 4],
       ['reserve:india-su30-ambala', 2],
-      ['weapon:indo-pak-missiles', 3],
+      ['weapon:india-first-strike', 1],
+      ['weapon:pakistan-intercept', 1],
+      ['weapon:pakistan-counterattack', 1],
     ],
   )
   const minhas = indoPakTrajectoryScenario.bundles.find(bundle => bundle.bundleId.endsWith('jf17-minhas'))
@@ -220,6 +246,35 @@ test('defines scenario-local route semantics and keeps AMBALA Su-30 routes as re
   assert.ok(minhas?.diagnostics.includes('OPERATOR_ROUTE_LABEL_DIFFERS_FROM_REPORT_ENTITY'))
   assert.ok(rafiki?.diagnostics.includes('OPERATOR_ROUTE_LABEL_DIFFERS_FROM_REPORT_ENTITY'))
   assert.ok(vampire?.diagnostics.some(item => item.includes('scenario-local callsign')))
+})
+
+test('binds weapon behavior profiles to their exact catalog routes without base location matching', () => {
+  const catalog = buildTrajectoryCatalog(snapshot())
+  const groups = [
+    weaponGroup('group:weapon-first-strike', 'india', 'weapon-launch/india-first-strike/v1', '边境附近空域'),
+    weaponGroup('group:weapon-intercept', 'pakistan', 'weapon-launch/pakistan-intercept/v1', '交战空域'),
+    weaponGroup('group:weapon-counterattack', 'pakistan', 'weapon-launch/pakistan-counterattack/v1', '交战空域'),
+  ]
+
+  const bundles = resolveFormationBundles(groups, catalog, indoPakTrajectoryScenario)
+
+  assert.deepEqual(bundles.map(bundle => [bundle.actorGroupRef, bundle.routeAssetRefs]), [
+    ['group:weapon-counterattack', ['trajectory:pakistan-strike-missile-2']],
+    ['group:weapon-first-strike', ['trajectory:india-missile-1']],
+    ['group:weapon-intercept', ['trajectory:pakistan-missile-1']],
+  ])
+  assert.equal(bundles.every(bundle => bundle.recommendedActorCount === 1), true)
+})
+
+test('rejects ambiguous weapon behavior profiles instead of selecting a route by bundle order', () => {
+  const catalog = buildTrajectoryCatalog(snapshot())
+
+  assert.throws(
+    () => resolveFormationBundles([
+      weaponGroup('group:weapon-ambiguous', 'pakistan', 'weapon-launch/v1', '交战空域'),
+    ], catalog, indoPakTrajectoryScenario),
+    expectCompilationCode('TRAJECTORY_SEMANTIC_MAPPING_UNRESOLVED'),
+  )
 })
 
 test('resolves exact normalized aliases plus location and carries mapping diagnostics', () => {

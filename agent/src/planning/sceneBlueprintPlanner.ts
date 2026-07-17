@@ -195,6 +195,18 @@ function weaponSide(unit: EventUnit, records: EvidenceRecord[]): 'india' | 'paki
   return 'unknown'
 }
 
+function weaponBehaviorProfile(unit: EventUnit, records: EvidenceRecord[], side: string): string {
+  if (side === 'india') return 'weapon-launch/india-first-strike/v1'
+  if (side !== 'pakistan') return 'weapon-launch/v1'
+  const groundedText = [unit.worldStateChange, ...records.map(recordText)].join('|')
+  const intercept = /intercept|incoming missile|拦截|来袭导弹/iu.test(groundedText)
+  const counterattack = /counterattack|rafale|阵风|反击/iu.test(groundedText)
+  if (intercept === counterattack) return 'weapon-launch/v1'
+  return intercept
+    ? 'weapon-launch/pakistan-intercept/v1'
+    : 'weapon-launch/pakistan-counterattack/v1'
+}
+
 function slug(value: string): string {
   const ascii = value.normalize('NFKC').toLocaleLowerCase('en-US')
     .replace(/[^a-z0-9]+/g, '-')
@@ -209,10 +221,11 @@ function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroup[] 
       .filter(record => isCompletedLaunchText(record.claim))
     if (!isExplicitLaunch(unit, completedLaunchRecords)) return []
     const entityName = weaponEntity(completedLaunchRecords)
+    const side = weaponSide(unit, completedLaunchRecords)
     return [{
       groupId: `group:weapon-${slug(unit.eventUnitId)}`,
       semanticEntityRef: entityName,
-      side: weaponSide(unit, completedLaunchRecords),
+      side,
       locationRef: unit.locationRefs[0] ?? 'location:unspecified',
       platformType: entityName,
       role: 'weapon-launch',
@@ -224,7 +237,7 @@ function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroup[] 
       }),
       formationPattern: 'single',
       leaderPolicy: 'single-member',
-      behaviorProfile: 'weapon-launch/v1',
+      behaviorProfile: weaponBehaviorProfile(unit, completedLaunchRecords, side),
       lifecycle: `event-scoped:${unit.eventUnitId}`,
     } satisfies ActorGroup]
   })

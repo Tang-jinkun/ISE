@@ -8,12 +8,7 @@ const rafaleIds = routeIds('ambala-rafale', 4)
 const ambalaSu30Ids = routeIds('ambala-su30mki', 2)
 const minhasIds = routeIds('minhas-j10ce', 4)
 const rafikiIds = routeIds('rafiki-j10ce', 4)
-const missileIds = [
-  'trajectory:india-missile-1',
-  'trajectory:pakistan-missile-1',
-  'trajectory:pakistan-strike-missile-2',
-] as const
-
+const missileAliases = ['missile', 'PL-15E', 'PL-15E\u5bfc\u5f39', '\u5bfc\u5f39']
 function routeIds(stem: string, count: number): `trajectory:${string}`[] {
   return Array.from({ length: count }, (_, index) => `trajectory:${stem}-${index + 1}` as const)
 }
@@ -26,11 +21,19 @@ function bundle(
   locationRefs: readonly string[],
   diagnostics: readonly string[] = [],
 ): ScenarioTrajectoryBundle {
+  const behaviorProfileRefs = bundleId === 'weapon:india-first-strike'
+    ? ['weapon-launch/india-first-strike/v1']
+    : bundleId === 'weapon:pakistan-intercept'
+      ? ['weapon-launch/pakistan-intercept/v1']
+      : bundleId === 'weapon:pakistan-counterattack'
+        ? ['weapon-launch/pakistan-counterattack/v1']
+        : ['fighter-formation/v1']
   return {
     bundleId,
     modelAssetRef,
     routeAssetRefs: [...routeAssetRefs],
     semanticEntityAliases: [...semanticEntityAliases],
+    behaviorProfileRefs,
     locationRefs: [...locationRefs],
     diagnostics: [...diagnostics],
   }
@@ -80,9 +83,9 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
       ['Reserve capacity; does not create actors'],
     ),
     bundle(
-      'weapon:indo-pak-missiles',
+      'weapon:india-first-strike',
       'model:pl15e',
-      missileIds,
+      ['trajectory:india-missile-1'],
       ['missile', 'PL-15E', 'PL-15E导弹', '导弹'],
       [
         'location:adampur', 'ADAMPUR', '阿达姆普尔',
@@ -90,6 +93,20 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
         'location:minhas', 'location:minas', 'MINHAS', 'MINAS', '米纳斯',
         'location:rafiki', 'RAFIKI', '拉菲基',
       ],
+    ),
+    bundle(
+      'weapon:pakistan-intercept',
+      'model:pl15e',
+      ['trajectory:pakistan-missile-1'],
+      missileAliases,
+      [],
+    ),
+    bundle(
+      'weapon:pakistan-counterattack',
+      'model:pl15e',
+      ['trajectory:pakistan-strike-missile-2'],
+      missileAliases,
+      [],
     ),
   ],
 })

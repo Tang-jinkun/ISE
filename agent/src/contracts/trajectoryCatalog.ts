@@ -46,6 +46,7 @@ export const scenarioTrajectoryBundleSchema = z.strictObject({
   modelAssetRef: modelAssetRefSchema,
   routeAssetRefs: z.array(trajectoryAssetRefSchema).min(1),
   semanticEntityAliases: z.array(z.string().min(1)).min(1),
+  behaviorProfileRefs: z.array(z.string().min(1)).min(1),
   locationRefs: z.array(z.string().min(1)),
   diagnostics: z.array(z.string().min(1)),
 })

@@ -252,7 +252,7 @@ function planningFixture(): {
       {
         eventUnitId: 'event:launch',
         title: 'Missile launch',
-        worldStateChange: 'Pakistan launches a PL-15E missile',
+        worldStateChange: 'Pakistan launches a PL-15E missile to intercept an incoming missile',
         participants: ['JF-17', 'PL-15E导弹'],
         locationRefs: ['米纳斯'],
         evidenceRefs: ['ev-launch'],
@@ -348,7 +348,7 @@ function planningFixture(): {
         confidence: 1, ambiguities: [],
       },
       {
-        evidenceId: 'ev-launch', sourceRef: 'docx:p7', claim: '巴方发射PL-15E导弹。',
+        evidenceId: 'ev-launch', sourceRef: 'docx:p7', claim: 'Pakistan launches a PL-15E missile to intercept an incoming missile.',
         kind: 'explicit_fact', entities: ['JF-17', 'PL-15E导弹'], locationExpression: '米纳斯',
         confidence: 1, ambiguities: [],
       },
@@ -563,6 +563,42 @@ test('uses only completed factual launch records when linked launch claims confl
   assert.equal(weapon?.semanticEntityRef, 'missile')
   assert.equal(weapon?.side, 'pakistan')
   assert.deepEqual(weapon?.quantityDecision.evidenceRefs, [])
+})
+
+test('derives exact scenario-local behavior profiles for grounded missile launch roles', () => {
+  const cases = [
+    {
+      state: 'India launches a missile as the first strike.',
+      claim: 'India launches a missile as the first strike.',
+      participants: ['印方苏-30MKI编队'],
+      expected: 'weapon-launch/india-first-strike/v1',
+    },
+    {
+      state: 'Pakistan launches a missile to intercept an incoming missile.',
+      claim: 'Pakistan launches a missile to intercept an incoming missile.',
+      participants: ['巴方JF-17编队'],
+      expected: 'weapon-launch/pakistan-intercept/v1',
+    },
+    {
+      state: 'Pakistan launches a missile in counterattack against Rafale.',
+      claim: 'Pakistan launches a missile in counterattack against Rafale.',
+      participants: ['巴方JF-17编队'],
+      expected: 'weapon-launch/pakistan-counterattack/v1',
+    },
+  ]
+  for (const { state, claim, participants, expected } of cases) {
+    const fixture = planningFixtureWithParticipants({ 'event:launch': participants })
+    const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+    launch.worldStateChange = state
+    fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+      ? { ...record, claim, entities: participants }
+      : record)
+    fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+    const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+    assert.equal(blueprint.actorGroups.find(group => group.role === 'weapon-launch')?.behaviorProfile, expected)
+  }
 })
 
 test('derives the weapon side from the launcher rather than an earlier opposing target participant', () => {
