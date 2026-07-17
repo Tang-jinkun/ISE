@@ -304,7 +304,7 @@ function multiActorCompilerFixture() {
     },
     formationPattern: formationPattern as string,
     leaderPolicy: role === 'weapon-launch' ? 'single-member' : 'stable-first-member',
-    behaviorProfile: role === 'weapon-launch' ? 'weapon-launch/v1' : 'fighter-formation/v1',
+    behaviorProfile: role === 'weapon-launch' ? 'weapon-launch/pakistan-intercept/v1' : 'fighter-formation/v1',
     lifecycle: role === 'weapon-launch' ? 'event-scoped:unit-launch' : 'scene-persistent',
   }))
   const fighterGroupRefs = actorGroups.filter(group => group.role === 'fighter-formation').map(group => group.groupId)
@@ -387,6 +387,286 @@ function multiActorCompilerFixture() {
     },
   }
 }
+
+function multiEngagementChoreographyFixture() {
+  const fixture = multiActorCompilerFixture()
+  const originalWeapon = fixture.sceneBlueprint.actorGroups.find(group => group.role === 'weapon-launch')!
+  const fighters = fixture.sceneBlueprint.actorGroups.filter(group => group.role === 'fighter-formation')
+  const weapons: SceneBlueprint['actorGroups'] = [
+    {
+      ...originalWeapon,
+      groupId: 'group:weapon-first-strike',
+      semanticEntityRef: 'missile',
+      side: 'india',
+      locationRef: '边境附近空域',
+      behaviorProfile: 'weapon-launch/india-first-strike/v1',
+      lifecycle: 'event-scoped:unit-first-strike',
+      quantityDecision: { ...originalWeapon.quantityDecision, evidenceRefs: ['ev-first-strike'] },
+    },
+    {
+      ...originalWeapon,
+      groupId: 'group:weapon-intercept',
+      semanticEntityRef: 'missile',
+      side: 'pakistan',
+      locationRef: '交战空域',
+      behaviorProfile: 'weapon-launch/pakistan-intercept/v1',
+      lifecycle: 'event-scoped:unit-intercept',
+      quantityDecision: { ...originalWeapon.quantityDecision, evidenceRefs: ['ev-intercept'] },
+    },
+    {
+      ...originalWeapon,
+      groupId: 'group:weapon-counterattack',
+      semanticEntityRef: 'missile',
+      side: 'pakistan',
+      locationRef: '交战空域',
+      behaviorProfile: 'weapon-launch/pakistan-counterattack/v1',
+      lifecycle: 'event-scoped:unit-counterattack',
+      quantityDecision: { ...originalWeapon.quantityDecision, evidenceRefs: ['ev-counterattack'] },
+    },
+  ]
+  const sourceLaunchBeat = fixture.narrationPlan.beats.find(beat => beat.subtitleId === 'subtitle-launch')!
+  const launchNarrationBeat = (subtitleId: string, eventUnitId: string, evidenceRef: string) => ({
+    ...sourceLaunchBeat,
+    subtitleId,
+    eventUnitId,
+    evidenceRefs: [evidenceRef],
+    estimatedDurationMs: 6_000,
+  })
+  const deploymentNarration = fixture.narrationPlan.beats.find(beat => beat.subtitleId === 'subtitle-deployment')!
+  const summaryNarration = fixture.narrationPlan.beats.find(beat => beat.subtitleId === 'subtitle-summary')!
+  fixture.narrationPlan = {
+    ...fixture.narrationPlan,
+    beats: [
+      deploymentNarration,
+      launchNarrationBeat('subtitle-first-strike', 'unit-first-strike', 'ev-first-strike'),
+      launchNarrationBeat('subtitle-intercept', 'unit-intercept', 'ev-intercept'),
+      launchNarrationBeat('subtitle-counterattack', 'unit-counterattack', 'ev-counterattack'),
+      summaryNarration,
+    ],
+  }
+  const sourceSceneBeat = fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-launch')!
+  const engagementSceneBeat = (
+    sceneBeatId: string,
+    subtitleId: string,
+    eventUnitId: string,
+    actorRefs: string[],
+    requiredFact: string,
+    forbiddenClaims = sourceSceneBeat.forbiddenClaims,
+  ) => ({
+    ...sourceSceneBeat,
+    sceneBeatId,
+    subtitleId,
+    eventUnitId,
+    actorRefs,
+    requiredFacts: [requiredFact],
+    forbiddenClaims,
+  })
+  fixture.sceneBlueprint = {
+    ...fixture.sceneBlueprint,
+    sourceNarrationFingerprint: fingerprint(fixture.narrationPlan),
+    actorGroups: [...fighters, ...weapons],
+    sceneBeats: [
+      fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-deployment')!,
+      engagementSceneBeat(
+        'scene-beat-first-strike',
+        'subtitle-first-strike',
+        'unit-first-strike',
+        ['group:weapon-first-strike', 'group:india-su30-adampur', 'group:pakistan-jf17-minhas'],
+        'Su-30MKI launches the first strike at a Pakistani fighter.',
+      ),
+      engagementSceneBeat(
+        'scene-beat-intercept',
+        'subtitle-intercept',
+        'unit-intercept',
+        ['group:weapon-intercept', 'group:pakistan-jf17-minhas', 'group:weapon-first-strike'],
+        'JF-17 intercepts the incoming Indian missile.',
+      ),
+      engagementSceneBeat(
+        'scene-beat-counterattack',
+        'subtitle-counterattack',
+        'unit-counterattack',
+        ['group:weapon-counterattack', 'group:pakistan-jf17-minhas', 'group:india-rafale-ambala'],
+        'JF-17 counterattacks one Rafale and destroys it.',
+        [],
+      ),
+      fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-summary')!,
+    ],
+  }
+  const resolvedScenePlan = resolveSceneBlueprint({
+    blueprint: fixture.sceneBlueprint,
+    assetRegistry: fixture.assetRegistry,
+  })
+  const choreographyPlan = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+  return { ...fixture, resolvedScenePlan, choreographyPlan }
+}
+
+test('compiles grounded missile engagements and four ordered phase shots', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  const actorRef = (groupRef: string) => fixture.resolvedScenePlan.resolvedActors
+    .find(actor => actor.actorGroupRef === groupRef)!.actorInstanceId
+  const firstStrike = actorRef('group:weapon-first-strike')
+  const intercept = actorRef('group:weapon-intercept')
+  const counterattack = actorRef('group:weapon-counterattack')
+  const su30 = actorRef('group:india-su30-adampur')
+  const jf17 = actorRef('group:pakistan-jf17-minhas')
+  const rafale = actorRef('group:india-rafale-ambala')
+
+  assert.deepEqual(fixture.choreographyPlan.weaponEngagements.map(engagement => ({
+    launcherRef: engagement.launcherRef,
+    weaponRef: engagement.weaponRef,
+    targetRef: engagement.targetRef,
+    outcome: engagement.outcome,
+    evidenceRefs: engagement.evidenceRefs,
+  })), [
+    { launcherRef: su30, weaponRef: firstStrike, targetRef: jf17, outcome: 'intercepted', evidenceRefs: ['ev-first-strike'] },
+    { launcherRef: jf17, weaponRef: intercept, targetRef: firstStrike, outcome: 'interception', evidenceRefs: ['ev-intercept'] },
+    { launcherRef: jf17, weaponRef: counterattack, targetRef: rafale, outcome: 'destroyed', evidenceRefs: ['ev-counterattack'] },
+  ])
+
+  const phases = ['launch', 'midcourse', 'terminal', 'aftermath'] as const
+  const phaseExpectations = [
+    ['subtitle-first-strike', su30, firstStrike, jf17],
+    ['subtitle-intercept', jf17, intercept, firstStrike],
+    ['subtitle-counterattack', jf17, counterattack, rafale],
+  ] as const
+  for (const [subtitleId, launcherRef, weaponRef, targetRef] of phaseExpectations) {
+    const shots = fixture.choreographyPlan.shotPlan.filter(shot => shot.subtitleId === subtitleId)
+    assert.deepEqual(shots.map(shot => shot.phase), phases)
+    assert.ok(shots.every(shot => shot.startConstraint === `time:${subtitleId}:subtitle-visual-lead`))
+    assert.deepEqual(shots.map(shot => shot.subjectRefs), [
+      [launcherRef, weaponRef],
+      [weaponRef, targetRef],
+      [weaponRef, targetRef],
+      [targetRef],
+    ])
+    assert.deepEqual(shots.map(shot => shot.visibilityRequirements), [
+      [launcherRef, weaponRef],
+      [weaponRef, targetRef],
+      [weaponRef, targetRef],
+      [targetRef],
+    ])
+  }
+  for (const subtitleId of ['subtitle-deployment', 'subtitle-summary']) {
+    const shots = fixture.choreographyPlan.shotPlan.filter(shot => shot.subtitleId === subtitleId)
+    assert.equal(shots.length, 1)
+    assert.equal(shots[0]?.phase, undefined)
+  }
+})
+
+test('keeps counterattack outcomes unconfirmed without grounded and allowed destruction facts', () => {
+  const cases = [
+    {
+      requiredFacts: ['JF-17 counterattacks the Rafale and drives it off.'],
+      forbiddenClaims: [],
+    },
+    {
+      requiredFacts: ['JF-17 counterattacks the Rafale and destroys it.'],
+      forbiddenClaims: ['confirmed destruction'],
+    },
+    {
+      requiredFacts: ['JF-17 counterattacks the Rafale and destroys it.'],
+      forbiddenClaims: ['confirmed outcome'],
+    },
+    {
+      requiredFacts: ['JF-17 counterattacks the Rafale and destroys it.'],
+      forbiddenClaims: ['confirmed target destruction'],
+    },
+    {
+      requiredFacts: ['JF-17 counterattacks the Rafale and destroys it.'],
+      forbiddenClaims: ['确认战果'],
+    },
+  ]
+  for (const { requiredFacts, forbiddenClaims } of cases) {
+    const fixture = multiEngagementChoreographyFixture()
+    fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-counterattack'
+      ? { ...beat, requiredFacts, forbiddenClaims }
+      : beat)
+    fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+
+    const choreography = compileChoreography({
+      narrationPlan: fixture.narrationPlan,
+      sceneBlueprint: fixture.sceneBlueprint,
+      resolvedScenePlan: fixture.resolvedScenePlan,
+      assetRegistry: fixture.assetRegistry,
+    })
+
+    assert.equal(
+      choreography.weaponEngagements.find(engagement => engagement.sceneBeatRef === 'scene-beat-counterattack')?.outcome,
+      'unconfirmed',
+    )
+  }
+})
+
+test('does not borrow global fighter actors when a counterattack beat omits its Rafale target', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-counterattack'
+    ? { ...beat, actorRefs: ['group:weapon-counterattack', 'group:pakistan-jf17-minhas'] }
+    : beat)
+  fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+
+  const choreography = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  assert.equal(
+    choreography.weaponEngagements.some(engagement => engagement.sceneBeatRef === 'scene-beat-counterattack'),
+    false,
+  )
+})
+
+test('emits independent engagements and phase shots for every weapon actor in one launch group', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  const originalActor = fixture.resolvedScenePlan.resolvedActors.find(actor =>
+    actor.actorGroupRef === 'group:weapon-counterattack')!
+  const originalAssignment = fixture.resolvedScenePlan.actorRouteAssignments.find(assignment =>
+    assignment.actorInstanceRef === originalActor.actorInstanceId)!
+  const duplicateActor = {
+    ...originalActor,
+    actorInstanceId: 'actor:weapon-counterattack:wingman-1',
+    role: 'wingman' as const,
+    ordinal: 1,
+  }
+  fixture.sceneBlueprint.actorGroups = fixture.sceneBlueprint.actorGroups.map(group => group.groupId === 'group:weapon-counterattack'
+    ? { ...group, quantityDecision: { ...group.quantityDecision, value: 2 } }
+    : group)
+  fixture.resolvedScenePlan = {
+    ...fixture.resolvedScenePlan,
+    sourceBlueprintFingerprint: fingerprint(fixture.sceneBlueprint),
+    resolvedActors: [...fixture.resolvedScenePlan.resolvedActors, duplicateActor],
+    actorRouteAssignments: [
+      ...fixture.resolvedScenePlan.actorRouteAssignments,
+      {
+        ...originalAssignment,
+        actorInstanceRef: duplicateActor.actorInstanceId,
+        trajectoryAssetRef: 'trajectory:ambala-su30mki-1',
+        segmentId: `${originalAssignment.segmentId}:wingman-1`,
+      },
+    ],
+  }
+
+  const choreography = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+  const engagements = choreography.weaponEngagements.filter(engagement =>
+    engagement.sceneBeatRef === 'scene-beat-counterattack')
+  const shots = choreography.shotPlan.filter(shot => shot.subtitleId === 'subtitle-counterattack')
+
+  assert.equal(engagements.length, 2)
+  assert.equal(new Set(engagements.map(engagement => engagement.weaponRef)).size, 2)
+  assert.equal(shots.length, 8)
+  assert.equal(new Set(shots.map(shot => shot.shotId)).size, 8)
+})
 
 test('the final Indo-Pak compiler emits exact multi-actor choreography with media and subtitle lead', () => {
   const fixture = multiActorCompilerFixture()

@@ -29,8 +29,9 @@ export const weaponEngagementSchema = z.strictObject({
   engagementId: z.string().min(1),
   sceneBeatRef: z.string().min(1),
   launcherRef: z.string().min(1),
+  weaponRef: z.string().min(1),
   targetRef: z.string().min(1),
-  outcome: z.string().min(1),
+  outcome: z.enum(['intercepted', 'interception', 'destroyed', 'unconfirmed']),
   evidenceRefs: z.array(z.string().min(1)),
 })
 
@@ -64,6 +65,7 @@ export const shotPlanEntrySchema = z.strictObject({
   }),
   transition: z.string().min(1),
   visibilityRequirements: z.array(z.string().min(1)),
+  phase: z.enum(['launch', 'midcourse', 'terminal', 'aftermath']).optional(),
 })
 
 export const overlayPlanEntrySchema = z.strictObject({
