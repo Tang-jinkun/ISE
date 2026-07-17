@@ -52,6 +52,14 @@ function runtimePlanWithEveryTrack(): CanonicalRuntimePlan {
         circleColor: '#fff', circleRadius: 2, keepAfterEnd: false,
       } },
       { ...common('camera-1', 'camera:main'), type: 'camera.transition', params: { center: [74.5, 32.5], zoom: 7, pitch: 45, bearing: 0, easing: 'easeInOut' } },
+      { ...common('camera-follow-actor-1', 'camera:main'), type: 'camera.follow_actor', params: {
+        action: 'camera.follow_actor', entityId: 'entity:jf17-1', framing: 'tracking', zoom: 10,
+        pitch: 40, bearing: 15, lookAheadMs: 300, transitionMs: 200,
+      } },
+      { ...common('camera-follow-group-1', 'camera:main'), type: 'camera.follow_group', params: {
+        action: 'camera.follow_group', entityIds: ['entity:jf17-1', 'entity:awacs-1'], framing: 'formation',
+        paddingPx: 30, minZoom: 5, maxZoom: 14, pitch: 35, bearing: -30, transitionMs: 400,
+      } },
       { ...common('data-link-1', 'data-link:entity:awacs-1:entity:jf17-1'), type: 'data_link.show', durationMs: 4_000, params: {
         sourceEntityId: 'entity:awacs-1', targetEntityId: 'entity:jf17-1', linkKind: 'awacs-fighter',
       } },
@@ -176,6 +184,17 @@ test('adapter groups all eight discriminated tracks and passes shared schema', (
   const config = new BaseRuntimeAdapter().adapt(runtimePlanWithEveryTrack(), 'runtime-artifact-1')
   assert.deepEqual(config.tracks.map(track => track.type).sort(), ['camera', 'data_link', 'geojson', 'image', 'marker', 'model', 'subtitle', 'video'])
   assert.deepEqual(sceneProjectConfigSchema.parse(config), config)
+})
+
+test('adapter preserves every dynamic camera follow parameter in the camera track', () => {
+  const cameraItems = new BaseRuntimeAdapter().adapt(runtimePlanWithEveryTrack(), 'runtime-artifact-1').tracks
+    .find(track => track.type === 'camera')!.items
+
+  assert.deepEqual(cameraItems.map(item => item.params), [
+    { center: [74.5, 32.5], zoom: 7, pitch: 45, bearing: 0, easing: 'easeInOut' },
+    { action: 'camera.follow_actor', entityId: 'entity:jf17-1', framing: 'tracking', zoom: 10, pitch: 40, bearing: 15, lookAheadMs: 300, transitionMs: 200 },
+    { action: 'camera.follow_group', entityIds: ['entity:jf17-1', 'entity:awacs-1'], framing: 'formation', paddingPx: 30, minZoom: 5, maxZoom: 14, pitch: 35, bearing: -30, transitionMs: 400 },
+  ])
 })
 
 test('adapter preserves every data link pair as an independently editable track', () => {

@@ -42,6 +42,7 @@ export const lineageSchema = z.strictObject({
 
 export const runtimeCommandTypeSchema = z.enum([
   'image.show', 'video.play', 'marker.show', 'geojson.show', 'camera.transition',
+  'camera.follow_actor', 'camera.follow_group',
   'data_link.show', 'model.spawn', 'model.follow_path', 'model.set_state', 'model.hide',
 ])
 export type RuntimeCommandType = z.infer<typeof runtimeCommandTypeSchema>
@@ -90,6 +91,18 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
     zoom: z.number().min(0).max(24), pitch: z.number().min(0).max(85),
     bearing: z.number().min(-360).max(360), easing: z.enum(['linear', 'easeInOut']),
   }) }),
+  z.strictObject({ ...commandBase, type: z.literal('camera.follow_actor'), params: z.strictObject({
+    action: z.literal('camera.follow_actor'), entityId: z.string().min(1), framing: z.enum(['tracking', 'close']),
+    zoom: z.number().min(0).max(24), pitch: z.number().min(0).max(85), bearing: z.number().min(-360).max(360),
+    lookAheadMs: z.number().int().nonnegative(), transitionMs: z.number().int().nonnegative(),
+  }) }),
+  z.strictObject({ ...commandBase, type: z.literal('camera.follow_group'), params: z.strictObject({
+    action: z.literal('camera.follow_group'),
+    entityIds: z.array(z.string().min(1)).min(1).refine(ids => new Set(ids).size === ids.length, 'entityIds must be unique'),
+    framing: z.enum(['global', 'formation', 'engagement']), paddingPx: z.number().finite().nonnegative(),
+    minZoom: z.number().min(0).max(24), maxZoom: z.number().min(0).max(24),
+    pitch: z.number().min(0).max(85), bearing: z.number().min(-360).max(360), transitionMs: z.number().int().nonnegative(),
+  }).refine(params => params.minZoom <= params.maxZoom, { message: 'minZoom must not exceed maxZoom', path: ['minZoom'] }) }),
   z.strictObject({ ...commandBase, type: z.literal('data_link.show'), params: z.strictObject({
     sourceEntityId: z.string().min(1), targetEntityId: z.string().min(1),
     linkKind: z.enum(['awacs-fighter', 'fighter-missile']),

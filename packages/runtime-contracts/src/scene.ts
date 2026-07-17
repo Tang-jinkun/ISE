@@ -81,13 +81,43 @@ const geojsonParamsSchema = z.strictObject({
   circleRadius: z.number().finite().nonnegative(),
   keepAfterEnd: z.boolean()
 });
-const cameraParamsSchema = z.strictObject({
+const cameraTransitionParamsSchema = z.strictObject({
   center: coordinates,
   zoom: z.number().finite().min(0).max(24),
   pitch: z.number().finite().min(0).max(85),
   bearing: z.number().finite().min(-360).max(360),
   easing: z.enum(['linear', 'easeInOut'])
 });
+const cameraFollowActorParamsSchema = z.strictObject({
+  action: z.literal('camera.follow_actor'),
+  entityId: nonEmptyId,
+  framing: z.enum(['tracking', 'close']),
+  zoom: z.number().finite().min(0).max(24),
+  pitch: z.number().finite().min(0).max(85),
+  bearing: z.number().finite().min(-360).max(360),
+  lookAheadMs: milliseconds,
+  transitionMs: milliseconds
+});
+const cameraFollowGroupParamsSchema = z.strictObject({
+  action: z.literal('camera.follow_group'),
+  entityIds: z.array(nonEmptyId).min(1),
+  framing: z.enum(['global', 'formation', 'engagement']),
+  paddingPx: z.number().finite().nonnegative(),
+  minZoom: z.number().finite().min(0).max(24),
+  maxZoom: z.number().finite().min(0).max(24),
+  pitch: z.number().finite().min(0).max(85),
+  bearing: z.number().finite().min(-360).max(360),
+  transitionMs: milliseconds
+}).superRefine((params, context) => {
+  if (params.minZoom > params.maxZoom) {
+    context.addIssue({ code: 'custom', path: ['minZoom'], message: 'minZoom must not exceed maxZoom' });
+  }
+});
+const cameraParamsSchema = z.union([
+  cameraTransitionParamsSchema,
+  cameraFollowActorParamsSchema,
+  cameraFollowGroupParamsSchema
+]);
 const dataLinkParamsSchema = z.strictObject({
   sourceEntityId: nonEmptyId,
   targetEntityId: nonEmptyId,
@@ -200,6 +230,27 @@ export const sceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine
       for (const [itemIndex, trackItem] of track.items.entries()) {
         if (!entityIds.has(trackItem.params.entityId)) {
           context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'entityId'], message: 'Unknown model entityId' });
+        }
+      }
+    }
+    if (track.type === 'camera') {
+      for (const [itemIndex, trackItem] of track.items.entries()) {
+        if ('action' in trackItem.params && trackItem.params.action === 'camera.follow_actor') {
+          if (!entityIds.has(trackItem.params.entityId)) {
+            context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'entityId'], message: 'Unknown camera follow actor entityId' });
+          }
+        }
+        if ('action' in trackItem.params && trackItem.params.action === 'camera.follow_group') {
+          const groupEntityIds = new Set<string>();
+          for (const [entityIndex, entityId] of trackItem.params.entityIds.entries()) {
+            if (!entityIds.has(entityId)) {
+              context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'entityIds', entityIndex], message: 'Unknown camera follow group entityId' });
+            }
+            if (groupEntityIds.has(entityId)) {
+              context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'entityIds', entityIndex], message: 'Duplicate camera follow group entityId' });
+            }
+            groupEntityIds.add(entityId);
+          }
         }
       }
     }

@@ -3,6 +3,7 @@ import test from 'node:test'
 import { documentIrSchema } from '../src/contracts/document.ts'
 import { evidenceIrSchema } from '../src/contracts/evidence.ts'
 import { eventPlanSchema } from '../src/contracts/eventPlan.ts'
+import { canonicalRuntimePlanSchema } from '../src/contracts/runtimePlan.ts'
 
 test('EventPlan requires evidence or inference on every EventUnit', () => {
   const result = eventPlanSchema.safeParse({
@@ -107,6 +108,39 @@ test('EvidenceIR confidence includes zero and one but rejects values outside the
   }
 })
 
+test('CanonicalRuntimePlan supports strict actor and group camera follow commands', () => {
+  const command = {
+    commandId: 'camera-1', eventUnitId: 'unit-1', targetId: 'camera:main', startMs: 0, durationMs: 1_000,
+    dependsOn: [], onFailure: 'abort', evidenceRefs: ['ev-1'],
+  }
+  const actorFollow = canonicalRuntimePlanSchema.safeParse({
+    ...validRuntimePlan(),
+    commands: [{ ...command, type: 'camera.follow_actor', params: {
+      action: 'camera.follow_actor', entityId: 'entity-1', framing: 'close', zoom: 10,
+      pitch: 35, bearing: 15, lookAheadMs: 400, transitionMs: 200,
+    } }],
+  })
+  assert.equal(actorFollow.success, true)
+
+  const groupFollow = canonicalRuntimePlanSchema.safeParse({
+    ...validRuntimePlan(),
+    commands: [{ ...command, type: 'camera.follow_group', params: {
+      action: 'camera.follow_group', entityIds: ['entity-1', 'entity-2'], framing: 'engagement',
+      paddingPx: 20, minZoom: 5, maxZoom: 12, pitch: 40, bearing: -15, transitionMs: 300,
+    } }],
+  })
+  assert.equal(groupFollow.success, true)
+
+  const invalid = canonicalRuntimePlanSchema.safeParse({
+    ...validRuntimePlan(),
+    commands: [{ ...command, type: 'camera.follow_group', params: {
+      action: 'camera.follow_group', entityIds: ['entity-1', 'entity-1'], framing: 'global',
+      paddingPx: -1, minZoom: 13, maxZoom: 12, pitch: 90, bearing: 0, transitionMs: 0,
+    } }],
+  })
+  assert.equal(invalid.success, false)
+})
+
 function validEventPlan() {
   return {
     schemaVersion: 'event-plan/v1' as const,
@@ -161,5 +195,25 @@ function validEvidenceIr() {
       confidence: 1,
       ambiguities: [],
     }],
+  }
+}
+
+function validRuntimePlan() {
+  return {
+    schemaVersion: 'canonical-runtime-plan/v1' as const,
+    planId: 'runtime-1',
+    sourceDocumentId: 'doc-1',
+    eventPlanArtifactId: 'event-artifact-1',
+    eventPlanId: 'event-plan-1',
+    narrativePlanId: 'narrative-1',
+    capabilityManifestVersion: 'ise-capabilities/v1' as const,
+    assetRegistryVersion: 'registry-1',
+    totalDurationMs: 1_000,
+    entities: [],
+    subtitles: [],
+    commands: [],
+    informationCards: [],
+    lineage: [],
+    diagnostics: [],
   }
 }

@@ -76,6 +76,38 @@ test('data link tracks require distinct known endpoints and strict link kinds', 
   assert.equal(sceneProjectConfigSchema.safeParse(extraField).success, false);
 });
 
+test('camera tracks support strict actor and group follow actions with known unique entities', () => {
+  const actorFollow = validConfig() as SceneProjectConfig & { tracks: any[] };
+  actorFollow.tracks[5].items[0].params = {
+    action: 'camera.follow_actor', entityId: 'entity-jf17', framing: 'tracking', zoom: 12,
+    pitch: 45, bearing: 90, lookAheadMs: 500, transitionMs: 250
+  };
+  assert.equal(sceneProjectConfigSchema.safeParse(actorFollow).success, true);
+
+  const groupFollow = validConfig() as SceneProjectConfig & { tracks: any[] };
+  groupFollow.tracks[5].items[0].params = {
+    action: 'camera.follow_group', entityIds: ['entity-jf17', 'entity-awacs'], framing: 'formation',
+    paddingPx: 24, minZoom: 6, maxZoom: 14, pitch: 30, bearing: -45, transitionMs: 500
+  };
+  assert.equal(sceneProjectConfigSchema.safeParse(groupFollow).success, true);
+
+  const unknownActor = validConfig() as SceneProjectConfig & { tracks: any[] };
+  unknownActor.tracks[5].items[0].params = { ...actorFollow.tracks[5].items[0].params, entityId: 'missing' };
+  assert.equal(sceneProjectConfigSchema.safeParse(unknownActor).success, false);
+
+  const unknownGroup = validConfig() as SceneProjectConfig & { tracks: any[] };
+  unknownGroup.tracks[5].items[0].params = { ...groupFollow.tracks[5].items[0].params, entityIds: ['entity-jf17', 'missing'] };
+  assert.equal(sceneProjectConfigSchema.safeParse(unknownGroup).success, false);
+
+  const duplicateGroup = validConfig() as SceneProjectConfig & { tracks: any[] };
+  duplicateGroup.tracks[5].items[0].params = { ...groupFollow.tracks[5].items[0].params, entityIds: ['entity-jf17', 'entity-jf17'] };
+  assert.equal(sceneProjectConfigSchema.safeParse(duplicateGroup).success, false);
+
+  const invalidBounds = validConfig() as SceneProjectConfig & { tracks: any[] };
+  invalidBounds.tracks[5].items[0].params = { ...groupFollow.tracks[5].items[0].params, minZoom: 15, maxZoom: 14 };
+  assert.equal(sceneProjectConfigSchema.safeParse(invalidBounds).success, false);
+});
+
 test('accepts destroyed model state and rejects unknown states', () => {
   const destroyed = validConfig() as SceneProjectConfig & { tracks: any[] };
   destroyed.tracks[6].items[0].params = {

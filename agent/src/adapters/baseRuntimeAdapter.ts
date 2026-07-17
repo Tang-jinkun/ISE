@@ -16,6 +16,8 @@ function commandTrackType(command: CanonicalCommand): TrackType {
     case 'marker.show': return 'marker'
     case 'geojson.show': return 'geojson'
     case 'camera.transition': return 'camera'
+    case 'camera.follow_actor':
+    case 'camera.follow_group': return 'camera'
     case 'data_link.show': return 'data_link'
     case 'model.spawn':
     case 'model.follow_path':
@@ -109,6 +111,8 @@ function toTrackItem(command: CanonicalCommand): unknown {
         easing: command.params.easing,
       },
     }
+    case 'camera.follow_actor':
+    case 'camera.follow_group': return { ...common, params: { ...command.params } }
     case 'data_link.show': return {
       ...common,
       params: {

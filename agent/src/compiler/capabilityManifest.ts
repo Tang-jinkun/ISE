@@ -12,6 +12,7 @@ export const capabilityManifest: CapabilityManifest = {
   version: 'ise-capabilities/v1',
   commands: [
     'image.show', 'video.play', 'marker.show', 'geojson.show', 'camera.transition',
+    'camera.follow_actor', 'camera.follow_group',
     'data_link.show', 'model.spawn', 'model.follow_path', 'model.set_state', 'model.hide',
   ],
   modelActions: ['model.spawn', 'model.follow_path', 'model.set_state', 'model.hide'],
@@ -21,6 +22,8 @@ export const capabilityManifest: CapabilityManifest = {
     'marker.show': 4_000,
     'geojson.show': 4_000,
     'camera.transition': 1_000,
+    'camera.follow_actor': 1_000,
+    'camera.follow_group': 1_000,
     'data_link.show': 1_000,
     'model.spawn': 500,
     'model.follow_path': 4_000,
