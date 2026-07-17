@@ -60,6 +60,11 @@ foreach ($name in @(
   'Fail-Flow',
   'Get-PropertyValue',
   'Require-String',
+  'Test-OrdinalEqual',
+  'New-OrdinalStringSet',
+  'Test-OrdinalUnique',
+  'Test-OrdinalSetEqual',
+  'Test-OrdinalContains',
   'Require-EnvelopeData',
   'ConvertTo-JsonText',
   'Copy-EventUnits',
@@ -325,6 +330,7 @@ try { Assert-FinalDomainInvariants $selection 3 }
 catch { $wrongActorCountRejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:' }
 if (-not $wrongActorCountRejected) { throw 'Expected the report-specific actor count invariant to reject drift.' }
 
+$script:InvariantRejectionFailures = [System.Collections.Generic.List[string]]::new()
 function Assert-InvariantRejected {
   param([scriptblock]$Mutate, [string]$Label)
   $invalidSelection = (ConvertTo-JsonText $selection) | ConvertFrom-Json
@@ -332,7 +338,7 @@ function Assert-InvariantRejected {
   $rejected = $false
   try { Assert-FinalDomainInvariants $invalidSelection }
   catch { $rejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:' }
-  if (-not $rejected) { throw "Expected final-domain rejection: $Label" }
+  if (-not $rejected) { $script:InvariantRejectionFailures.Add($Label) }
 }
 Assert-InvariantRejected {
   param($value)
@@ -342,6 +348,33 @@ Assert-InvariantRejected {
   param($value)
   $value.ResolvedScenePlan.data.actorRouteAssignments[1].trajectoryAssetRef = 'trajectory:a'
 } 'duplicate route'
+Assert-InvariantRejected {
+  param($value)
+  $value.ResolvedScenePlan.data.actorRouteAssignments[0].actorInstanceRef = 'Actor:A'
+} 'case-drift assignment actor reference'
+Assert-InvariantRejected {
+  param($value)
+  $value.ChoreographyPlan.data.actorInstances[0].actorInstanceId = 'Actor:A'
+} 'case-drift choreography actor id'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.runtimePlan.entities[0].entityId = 'Actor:A'
+  foreach ($item in $value.Compiled.data.sceneProjectConfig.tracks[0].items) {
+    $item.params.entityId = 'Actor:A'
+  }
+} 'case-drift runtime entity id'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.runtimePlan.commands[0].params.entityId = 'Actor:A'
+} 'case-drift follow command entity id'
+Assert-InvariantRejected {
+  param($value)
+  $value.ResolvedScenePlan.data.actorRouteAssignments[0].trajectoryAssetRef = 'Trajectory:A'
+} 'case-drift assignment route reference'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.runtimePlan.lineage[0].sourceArtifactIds[0] = 'Accepted-1'
+} 'case-drift runtime lineage artifact id'
 Assert-InvariantRejected {
   param($value)
   $value.ResolvedScenePlan.data.diagnostics = @([pscustomobject]@{ code = 'TRAJECTORY_SYNTHESIZED' })
@@ -392,6 +425,9 @@ Assert-InvariantRejected {
   param($value)
   $value.Compiled.data.sceneProjectConfig.tracks[0].items[2].startMs += 1
 } 'follow end differs from hide start'
+if ($script:InvariantRejectionFailures.Count -ne 0) {
+  throw "Expected final-domain rejections: $($script:InvariantRejectionFailures -join ', ')"
+}
 
 $ambiguous = @($artifacts) + [pscustomobject]@{
   artifactId = 'narration-1'; type = 'ise.narration-plan/v1'; superseded = $false

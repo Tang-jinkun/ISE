@@ -39,6 +39,48 @@ function Require-String {
   return [string]$Value
 }
 
+function Test-OrdinalEqual {
+  param($Left, $Right)
+  return ($Left -is [string] -and $Right -is [string] -and
+    [string]::Equals([string]$Left, [string]$Right, [System.StringComparison]::Ordinal))
+}
+
+function New-OrdinalStringSet {
+  param($Values)
+  $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+  foreach ($value in @($Values)) {
+    if (-not ($value -is [string]) -or [string]::IsNullOrWhiteSpace([string]$value)) { return $null }
+    $null = $set.Add([string]$value)
+  }
+  return ,$set
+}
+
+function Test-OrdinalUnique {
+  param($Values)
+  $items = @($Values)
+  $set = New-OrdinalStringSet $items
+  return ($null -ne $set -and $set.Count -eq $items.Count)
+}
+
+function Test-OrdinalSetEqual {
+  param($Left, $Right)
+  $leftItems = @($Left)
+  $rightItems = @($Right)
+  $leftSet = New-OrdinalStringSet $leftItems
+  $rightSet = New-OrdinalStringSet $rightItems
+  return ($null -ne $leftSet -and $null -ne $rightSet -and
+    $leftSet.Count -eq $leftItems.Count -and $rightSet.Count -eq $rightItems.Count -and
+    $leftSet.SetEquals($rightSet))
+}
+
+function Test-OrdinalContains {
+  param($Values, $Expected)
+  foreach ($value in @($Values)) {
+    if (Test-OrdinalEqual $value $Expected) { return $true }
+  }
+  return $false
+}
+
 function Require-OpaqueId {
   param($Value, [string]$Code, [string]$Field)
   $id = Require-String $Value $Code $Field
@@ -509,13 +551,11 @@ function Assert-FinalDomainInvariants {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' "Expected exactly $ExpectedActorCount resolved actors from the source report, received $($resolvedActors.Count)."
   }
 
-  $actorIds = @($resolvedActors | ForEach-Object { Get-PropertyValue $_ 'actorInstanceId' } | Sort-Object -Unique)
-  $assignmentActorIds = @($assignments | ForEach-Object { Get-PropertyValue $_ 'actorInstanceRef' } | Sort-Object -Unique)
+  $actorIds = @($resolvedActors | ForEach-Object { Get-PropertyValue $_ 'actorInstanceId' })
+  $assignmentActorIds = @($assignments | ForEach-Object { Get-PropertyValue $_ 'actorInstanceRef' })
   $trajectoryIds = @($assignments | ForEach-Object { Get-PropertyValue $_ 'trajectoryAssetRef' })
-  if ($actorIds.Count -ne $resolvedActors.Count -or
-      $assignmentActorIds.Count -ne $assignments.Count -or
-      ($actorIds -join '|') -ne ($assignmentActorIds -join '|') -or
-      @($trajectoryIds | Sort-Object -Unique).Count -ne $trajectoryIds.Count -or
+  if (-not (Test-OrdinalSetEqual $actorIds $assignmentActorIds) -or
+      -not (Test-OrdinalUnique $trajectoryIds) -or
       @($assignments | Where-Object { (Get-PropertyValue $_ 'sourceKind') -ne 'catalog' }).Count -ne 0 -or
       @(Get-PropertyValue $resolved 'fallbackTrajectoryRecipes').Count -ne 0) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved actors require unique catalog route assignments without fallback recipes.'
@@ -538,13 +578,11 @@ function Assert-FinalDomainInvariants {
 
   $choreographyActorIds = @(@(Get-PropertyValue $choreography 'actorInstances') | ForEach-Object {
     Get-PropertyValue $_ 'actorInstanceId'
-  } | Sort-Object -Unique)
+  })
   $entities = @(Get-PropertyValue $runtime 'entities')
-  $entityIds = @($entities | ForEach-Object { Get-PropertyValue $_ 'entityId' } | Sort-Object -Unique)
-  if ($choreographyActorIds.Count -ne $actorIds.Count -or
-      ($choreographyActorIds -join '|') -ne ($actorIds -join '|') -or
-      $entityIds.Count -ne $actorIds.Count -or
-      ($entityIds -join '|') -ne ($actorIds -join '|')) {
+  $entityIds = @($entities | ForEach-Object { Get-PropertyValue $_ 'entityId' })
+  if (-not (Test-OrdinalSetEqual $choreographyActorIds $actorIds) -or
+      -not (Test-OrdinalSetEqual $entityIds $actorIds)) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Choreography and RuntimePlan entities must exactly match resolved actors.'
   }
 
@@ -618,12 +656,14 @@ function Assert-FinalDomainInvariants {
   foreach ($entity in $entities) {
     $entityId = Get-PropertyValue $entity 'entityId'
     $entityFollows = @($followCommands | Where-Object {
-      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId') -eq $entityId
+      Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId') $entityId
     })
-    $assignment = @($assignments | Where-Object { (Get-PropertyValue $_ 'actorInstanceRef') -eq $entityId })
+    $assignment = @($assignments | Where-Object {
+      Test-OrdinalEqual (Get-PropertyValue $_ 'actorInstanceRef') $entityId
+    })
     if ($entityFollows.Count -ne 1 -or $assignment.Count -ne 1 -or
-        (Get-PropertyValue (Get-PropertyValue $entityFollows[0] 'params') 'trajectoryAssetId') -ne (Get-PropertyValue $assignment[0] 'trajectoryAssetRef') -or
-        (Get-PropertyValue $entity 'defaultTrajectoryAssetId') -ne (Get-PropertyValue $assignment[0] 'trajectoryAssetRef')) {
+        -not (Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $entityFollows[0] 'params') 'trajectoryAssetId') (Get-PropertyValue $assignment[0] 'trajectoryAssetRef')) -or
+        -not (Test-OrdinalEqual (Get-PropertyValue $entity 'defaultTrajectoryAssetId') (Get-PropertyValue $assignment[0] 'trajectoryAssetRef'))) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must follow its unique resolved route exactly once.'
     }
   }
@@ -642,7 +682,7 @@ function Assert-FinalDomainInvariants {
   foreach ($lineage in $runtimeLineage) {
     $sourceIds = @(Get-PropertyValue $lineage 'sourceArtifactIds')
     foreach ($expectedId in $expectedLineageIds) {
-      if ($sourceIds -notcontains $expectedId) {
+      if (-not (Test-OrdinalContains $sourceIds $expectedId)) {
         Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan lineage omits a final-domain artifact.'
       }
     }
@@ -650,9 +690,9 @@ function Assert-FinalDomainInvariants {
 
   $acceptedId = Get-PropertyValue $Selection.Accepted 'artifactId'
   $compiledId = Get-PropertyValue $Selection.Compiled 'artifactId'
-  if ((Get-PropertyValue $runtime 'eventPlanArtifactId') -ne $acceptedId -or
-      (Get-PropertyValue $scene 'eventPlanArtifactId') -ne $acceptedId -or
-      (Get-PropertyValue $scene 'runtimePlanArtifactId') -ne $compiledId) {
+  if (-not (Test-OrdinalEqual (Get-PropertyValue $runtime 'eventPlanArtifactId') $acceptedId) -or
+      -not (Test-OrdinalEqual (Get-PropertyValue $scene 'eventPlanArtifactId') $acceptedId) -or
+      -not (Test-OrdinalEqual (Get-PropertyValue $scene 'runtimePlanArtifactId') $compiledId)) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Compiled RuntimePlan and SceneProjectConfig lineage is inconsistent.'
   }
 
@@ -663,7 +703,7 @@ function Assert-FinalDomainInvariants {
   foreach ($subtitle in @(Get-PropertyValue $runtime 'subtitles')) {
     $eventUnitId = Get-PropertyValue $subtitle 'eventUnitId'
     $visuals = @($commands | Where-Object {
-      (Get-PropertyValue $_ 'eventUnitId') -eq $eventUnitId -and
+      (Test-OrdinalEqual (Get-PropertyValue $_ 'eventUnitId') $eventUnitId) -and
       $visualTypes -contains (Get-PropertyValue $_ 'type')
     } | Sort-Object { [int](Get-PropertyValue $_ 'startMs') })
     if ($visuals.Count -gt 0 -and
