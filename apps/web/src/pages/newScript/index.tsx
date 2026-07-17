@@ -592,6 +592,15 @@ export default function Script() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const projectLoadRequestRef = useRef(0);
   const sessionBindingVersionRef = useRef(0);
+  const currentProjectIdRef = useRef(projectId);
+  const mountedRef = useRef(true);
+  const sendOperationRef = useRef(0);
+  currentProjectIdRef.current = projectId;
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    sendOperationRef.current += 1;
+  }, []);
 
   useEffect(() => {
     const requestId = ++projectLoadRequestRef.current;
@@ -600,6 +609,13 @@ export default function Script() {
 
     setAgentSessionId('');
     setHasSentInitialMessage(false);
+    sendOperationRef.current += 1;
+    setSending(false);
+    setMessages([]);
+    setInput('');
+    setPendingAttachment(null);
+    setPreparedAttachment(null);
+    setOperationError(null);
     useAgentSessionStore.setState({
       sessionId: null,
       status: 'idle',
@@ -683,6 +699,17 @@ export default function Script() {
     ) return;
     const objective = text || '请解析附件并生成可审核、可播放的场景。';
 
+    const sendProjectId = projectId;
+    const sendRequestId = projectLoadRequestRef.current;
+    const operationId = ++sendOperationRef.current;
+    let expectedBindingVersion = sessionBindingVersionRef.current;
+    const isStale = () =>
+      !mountedRef.current ||
+      currentProjectIdRef.current !== sendProjectId ||
+      projectLoadRequestRef.current !== sendRequestId ||
+      sessionBindingVersionRef.current !== expectedBindingVersion ||
+      sendOperationRef.current !== operationId;
+
     setSending(true);
     setOperationError(null);
 
@@ -694,15 +721,20 @@ export default function Script() {
       const uploaded = attachment && !prepared
         ? await uploadFile(attachment, { fileType: 'application' })
         : null;
+      if (isStale()) return;
       const needsSession = !prepared && !agentSessionId;
-      const sessionId =
-        prepared?.sessionId ??
-        (needsSession ? (await createAgentSession()).sessionId : agentSessionId);
+      let sessionId = prepared?.sessionId ?? agentSessionId;
+      if (needsSession) {
+        const created = await createAgentSession();
+        if (isStale()) return;
+        sessionId = created.sessionId;
+      }
 
       if (uploaded) {
         const attached = await attachAgentFile(sessionId, {
           fileId: uploaded.data.id
         });
+        if (isStale()) return;
         setPreparedAttachment({
           file: attachment!,
           sessionId,
@@ -711,15 +743,18 @@ export default function Script() {
       }
       if (needsSession) {
         sessionBindingVersionRef.current += 1;
+        expectedBindingVersion = sessionBindingVersionRef.current;
+        if (isStale()) return;
         useAgentSessionStore.getState().open(sessionId);
         setAgentSessionId(sessionId);
-        if (projectId) {
-          await updateScript(projectId, {
+        if (sendProjectId) {
+          await updateScript(sendProjectId, {
             config: JSON.stringify({
               agentSessionId: sessionId,
               artifactIds: []
             })
           });
+          if (isStale()) return;
         }
       }
       const queued = await sendAgentMessage(sessionId, {
@@ -727,17 +762,21 @@ export default function Script() {
           ? objective
           : buildGenerationObjective(objective)
       });
+      if (isStale()) return;
       setHasSentInitialMessage(true);
       appendUserMessage(text || `附件：${attachment!.name}`, queued.runId);
       setInput('');
       setPendingAttachment(null);
       setPreparedAttachment(null);
     } catch (error) {
+      if (isStale()) return;
       const content = errorText(error, '智能体接口调用失败');
       setOperationError(content);
       message.error(content);
     } finally {
-      setSending(false);
+      if (mountedRef.current && sendOperationRef.current === operationId) {
+        setSending(false);
+      }
     }
   };
 

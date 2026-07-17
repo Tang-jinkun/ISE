@@ -547,6 +547,51 @@ describe('NewScript real Agent flow', () => {
     });
   });
 
+  it('abandons an in-flight send when switching to another project', async () => {
+    mocks.getScript.mockResolvedValueOnce({
+      data: { id: 'script-1', title: '脚本一', config: '{}', conversation: [] }
+    });
+    let resolveSession!: (value: { sessionId: string; status: 'idle' }) => void;
+    mocks.createAgentSession.mockReturnValueOnce(new Promise((resolve) => {
+      resolveSession = resolve;
+    }));
+    const view = renderNewScript();
+    setObjective('P1 生成请求');
+    selectReport();
+    await sendWhenReady();
+    await waitFor(() => expect(mocks.createAgentSession).toHaveBeenCalledTimes(1));
+
+    mocks.getScript.mockResolvedValueOnce({
+      data: {
+        id: 'script-2', title: '脚本二',
+        config: JSON.stringify({ agentSessionId: 'session-p2' }),
+        conversation: []
+      }
+    });
+    mocks.projectId = 'script-2';
+    view.rerender(
+      <MemoryRouter initialEntries={['/new-script?projectId=script-2']}>
+        <NewScript />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(mocks.useAgentSession).toHaveBeenCalledWith('session-p2');
+      expect(useAgentSessionStore.getState().sessionId).toBe('session-p2');
+    });
+
+    resolveSession({ sessionId: 'session-p1', status: 'idle' });
+    await act(async () => Promise.resolve());
+
+    expect(useAgentSessionStore.getState().sessionId).toBe('session-p2');
+    expect(mocks.updateScript).not.toHaveBeenCalledWith(
+      'script-1',
+      expect.objectContaining({ config: expect.stringContaining('session-p1') })
+    );
+    expect(mocks.sendAgentMessage).not.toHaveBeenCalled();
+    expect(screen.queryByText('report.docx')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('描述你想生成的场景...')).toHaveValue('');
+  });
+
   it('keeps the project id when returning to the legacy workspace', () => {
     renderNewScript();
 
