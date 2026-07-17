@@ -156,10 +156,13 @@ it('renders altitude-aware endpoints from model Mercator positions with distinct
   expect(map.getSource(sourceId)).toBeUndefined();
 });
 
-it('keeps data links two pixels wide at the current canvas resolution', async () => {
+it('keeps line and point sizes in CSS pixels on a DPR two canvas', async () => {
   const { map, renderers, runtime } = rendererHarness();
-  map.getCanvas().width = 1_280;
-  map.getCanvas().height = 720;
+  const canvas = map.getCanvas();
+  canvas.width = 1_280;
+  canvas.height = 720;
+  Object.defineProperty(canvas, 'clientWidth', { value: 640, configurable: true });
+  Object.defineProperty(canvas, 'clientHeight', { value: 360, configurable: true });
   await runtime.load([
     dataLinkTrack([link('fighter-to-missile', 'fighter', 'missile', 'fighter-missile')]),
   ]);
@@ -170,9 +173,19 @@ it('keeps data links two pixels wide at the current canvas resolution', async ()
 
   const lineItem = renderedLines(map, renderers[0]!)[0]!;
   const material = lineItem.material as LineMaterial & { linewidth: number };
+  const objects = new Map(renderedObjects(map, renderers[0]!).map((object) => [object.name, object]));
   expect(lineItem.type).toBe('Line2');
   expect(material.linewidth).toBe(2);
-  expect(material.resolution.toArray()).toEqual([1_280, 720]);
+  expect(material.resolution.toArray()).toEqual([640, 360]);
+  expect((objects.get('fighter-to-missile:source') as THREE.Points<
+    THREE.BufferGeometry, THREE.PointsMaterial
+  >).material.size).toBe(12);
+  expect((objects.get('fighter-to-missile:target') as THREE.Points<
+    THREE.BufferGeometry, THREE.PointsMaterial
+  >).material.size).toBe(18);
+  expect((objects.get('fighter-to-missile:packet-0') as THREE.Points<
+    THREE.BufferGeometry, THREE.PointsMaterial
+  >).material.size).toBe(14);
 });
 
 it('moves a bright packet source to target and intensifies the target on arrival', async () => {
@@ -208,6 +221,31 @@ it('moves a bright packet source to target and intensifies the target on arrival
     expect.closeTo(0.4), expect.closeTo(0.5), expect.closeTo(0.0003),
   ]);
   expect((target.material as THREE.PointsMaterial).size).toBeGreaterThan(baseTargetSize);
+});
+
+it('reaches the target and emphasizes arrival within a minimum one second link', async () => {
+  const { map, renderers, runtime } = rendererHarness();
+  await runtime.load([
+    dataLinkTrack([link('fighter-to-missile', 'fighter', 'missile', 'fighter-missile', 0, 1_000)]),
+  ]);
+  const endpoints = [
+    snapshot('fighter', 77, 31, true, [0.2, 0.3, 0.0001]),
+    snapshot('missile', 78, 32, true, [0.4, 0.5, 0.0003]),
+  ];
+
+  runtime.apply(0, endpoints);
+  const objects = new Map(renderedObjects(map, renderers[0]!).map((object) => [object.name, object]));
+  const target = objects.get('fighter-to-missile:target') as THREE.Points<
+    THREE.BufferGeometry, THREE.PointsMaterial
+  >;
+  const packet = objects.get('fighter-to-missile:packet-0') as THREE.Points;
+  const baseTargetSize = target.material.size;
+  runtime.apply(700, endpoints);
+
+  expect(pointPosition(packet)).toEqual([
+    expect.closeTo(0.4), expect.closeTo(0.5), expect.closeTo(0.0003),
+  ]);
+  expect(target.material.size).toBeGreaterThan(baseTargetSize);
 });
 
 it('recomputes packet position deterministically after seeking backward', async () => {

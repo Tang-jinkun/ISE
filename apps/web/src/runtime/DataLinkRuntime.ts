@@ -20,7 +20,6 @@ const pointColors = {
 } as const;
 const packetTravelMs = 1_200;
 const packetArrivalHoldMs = 300;
-const packetCycleMs = packetTravelMs + packetArrivalHoldMs;
 const sourceMarkerSizePx = 6;
 const targetMarkerSizePx = 9;
 const packetSizePx = 7;
@@ -36,6 +35,7 @@ interface DataLinkInstance {
   targetMarker: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   packet: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   targetBaseColor: THREE.Color;
+  arrivalIntensity: number;
 }
 
 const browserDependencies: DataLinkRuntimeDependencies = {
@@ -98,6 +98,7 @@ export class DataLinkRuntime {
         targetMarker,
         packet,
         targetBaseColor: new THREE.Color(colors.target),
+        arrivalIntensity: 0,
       });
     }
     if (!this.listenerRegistered) {
@@ -137,19 +138,20 @@ export class DataLinkRuntime {
       end.data.needsUpdate = true;
       setPointOffset(sourceMarker, [0, 0, 0]);
       setPointOffset(targetMarker, delta);
-      const packetState = dataPacketState(timeMs, item.startMs);
+      const packetState = dataPacketState(timeMs, item.startMs, item.durationMs);
+      instance.arrivalIntensity = packetState.arrivalIntensity;
       setPointOffset(packet, [
         delta[0] * packetState.progress,
         delta[1] * packetState.progress,
         delta[2] * packetState.progress,
       ]);
       packet.material.opacity = 0.98 * packetState.packetOpacity;
-      targetMarker.material.size = targetMarkerSizePx + 5 * packetState.arrivalIntensity;
       targetMarker.material.opacity = 0.9 + 0.1 * packetState.arrivalIntensity;
       targetMarker.material.color
         .copy(targetBaseColor)
         .lerp(new THREE.Color(0xffffff), 0.7 * packetState.arrivalIntensity);
     }
+    this.updateScreenSpaceMetrics();
     this.map.triggerRepaint();
   }
 
@@ -208,7 +210,7 @@ export class DataLinkRuntime {
           antialias: true,
         });
         this.renderer.autoClear = false;
-        this.updateMaterialResolution();
+        this.updateScreenSpaceMetrics();
       },
       render: (_gl, matrix) => {
         const projectionMatrix =
@@ -220,7 +222,7 @@ export class DataLinkRuntime {
                 }
               ).defaultProjectionData.mainMatrix;
         this.camera.projectionMatrix.fromArray(projectionMatrix);
-        this.updateMaterialResolution();
+        this.updateScreenSpaceMetrics();
         this.renderer?.resetState();
         this.renderer?.render(this.scene, this.camera);
       },
@@ -235,10 +237,18 @@ export class DataLinkRuntime {
     this.renderer = undefined;
   }
 
-  private updateMaterialResolution() {
+  private updateScreenSpaceMetrics() {
     const canvas = this.map.getCanvas();
-    for (const { line } of this.instances) {
-      line.material.resolution.set(canvas.width, canvas.height);
+    const cssWidth = canvas.clientWidth || canvas.width || 1;
+    const cssHeight = canvas.clientHeight || canvas.height || 1;
+    const pixelRatio = canvas.width > 0 ? canvas.width / cssWidth : 1;
+    for (const instance of this.instances) {
+      instance.line.material.resolution.set(cssWidth, cssHeight);
+      instance.sourceMarker.material.size = sourceMarkerSizePx * pixelRatio;
+      instance.targetMarker.material.size = (
+        targetMarkerSizePx + 5 * instance.arrivalIntensity
+      ) * pixelRatio;
+      instance.packet.material.size = packetSizePx * pixelRatio;
     }
   }
 
@@ -291,17 +301,20 @@ function setInstanceVisibility(instance: DataLinkInstance, visible: boolean) {
   }
 }
 
-function dataPacketState(timeMs: number, startMs: number) {
+function dataPacketState(timeMs: number, startMs: number, durationMs: number) {
+  const arrivalHoldMs = Math.min(packetArrivalHoldMs, Math.max(0, durationMs - 1));
+  const travelMs = Math.max(1, Math.min(packetTravelMs, durationMs - arrivalHoldMs));
+  const cycleMs = travelMs + arrivalHoldMs;
   const elapsedMs = Math.max(0, timeMs - startMs);
-  const cycleTimeMs = elapsedMs % packetCycleMs;
-  if (cycleTimeMs < packetTravelMs) {
+  const cycleTimeMs = elapsedMs % cycleMs;
+  if (cycleTimeMs < travelMs) {
     return {
-      progress: cycleTimeMs / packetTravelMs,
+      progress: cycleTimeMs / travelMs,
       packetOpacity: 1,
       arrivalIntensity: 0,
     };
   }
-  const holdProgress = (cycleTimeMs - packetTravelMs) / packetArrivalHoldMs;
+  const holdProgress = arrivalHoldMs > 0 ? (cycleTimeMs - travelMs) / arrivalHoldMs : 1;
   return {
     progress: 1,
     packetOpacity: 1 - holdProgress,
