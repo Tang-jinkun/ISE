@@ -1,8 +1,10 @@
 import { cn } from '@/lib/utils';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  type DragResult,
   type DraggerProps,
   type GuideLine,
+  type ResizeResult,
   type ResizeHandleType
 } from './types';
 import { checkCollision, getSnapLines } from './utils';
@@ -53,6 +55,8 @@ export const Dragger: React.FC<DraggerProps> = ({
   // Internal state for drag/resize deltas
   const startPos = useRef({ x: 0, y: 0 });
   const startRect = useRef({ x, y, w, h });
+  const latestDragResult = useRef<DragResult | null>(null);
+  const latestResizeResult = useRef<ResizeResult | null>(null);
   const resizeHandle = useRef<ResizeHandleType | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -86,12 +90,16 @@ export const Dragger: React.FC<DraggerProps> = ({
 
     startPos.current = { x: e.clientX, y: e.clientY };
     startRect.current = { x, y, w, h };
+    latestDragResult.current = {
+      x,
+      y,
+      isColliding: false,
+      collisions: [],
+      activeGuides: []
+    };
 
     setIsDragging(true);
     onDragStart?.();
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const handleMouseMove = (e: MouseEvent) => {
@@ -153,13 +161,15 @@ export const Dragger: React.FC<DraggerProps> = ({
       return;
     }
 
-    onDrag?.({
+    const result = {
       x: newX,
       y: newY,
       isColliding: colliding,
       collisions,
       activeGuides: guides
-    });
+    };
+    latestDragResult.current = result;
+    onDrag?.(result);
   };
 
   const handleMouseUp = () => {
@@ -169,17 +179,8 @@ export const Dragger: React.FC<DraggerProps> = ({
     setActiveGuides([]);
     setIsColliding(false);
 
-    // We pass the final state (which matches last onDrag call if parent updated, or props if not)
-    onDragEnd?.({
-      x,
-      y,
-      isColliding: false,
-      collisions: [],
-      activeGuides: []
-    });
-
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
+    onDragEnd?.(latestDragResult.current!);
+    latestDragResult.current = null;
   };
 
   // Resize Handlers
@@ -193,13 +194,19 @@ export const Dragger: React.FC<DraggerProps> = ({
 
     startPos.current = { x: e.clientX, y: e.clientY };
     startRect.current = { x, y, w, h };
+    latestResizeResult.current = {
+      x,
+      y,
+      width: w,
+      height: h,
+      isColliding: false,
+      collisions: [],
+      activeGuides: []
+    };
     resizeHandle.current = direction;
 
     setIsResizing(true);
     onResizeStart?.();
-
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeUp);
   };
 
   const handleResizeMove = (e: MouseEvent) => {
@@ -257,7 +264,7 @@ export const Dragger: React.FC<DraggerProps> = ({
     // Update internal state
     setCurrentRect({ x: newX, y: newY, w: newW, h: newH });
 
-    onResize?.({
+    const result = {
       x: newX,
       y: newY,
       width: newW,
@@ -265,35 +272,37 @@ export const Dragger: React.FC<DraggerProps> = ({
       isColliding: false,
       collisions: [],
       activeGuides: guides
-    });
+    };
+    latestResizeResult.current = result;
+    onResize?.(result);
   };
 
   const handleResizeUp = () => {
     setIsResizing(false);
     resizeHandle.current = null;
-    onResizeEnd?.({
-      x,
-      y,
-      width: w,
-      height: h,
-      isColliding: false,
-      collisions: [],
-      activeGuides: []
-    });
-
-    document.removeEventListener('mousemove', handleResizeMove);
-    document.removeEventListener('mouseup', handleResizeUp);
+    onResizeEnd?.(latestResizeResult.current!);
+    latestResizeResult.current = null;
   };
 
-  // Cleanup
   useEffect(() => {
+    if (!isDragging) return;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeUp);
+    return () => {
       document.removeEventListener('mousemove', handleResizeMove);
       document.removeEventListener('mouseup', handleResizeUp);
     };
-  }, [isDragging, isResizing]);
+  }, [isResizing]);
 
   // Render Handles
   const renderHandle = (dir: ResizeHandleType) => (

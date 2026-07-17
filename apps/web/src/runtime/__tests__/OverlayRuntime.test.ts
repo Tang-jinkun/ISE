@@ -287,8 +287,29 @@ it('positions top and bottom subtitles and uses half-open active intervals', asy
   ) as HTMLElement;
   expect(top.style.display).not.toBe('none');
   expect(top.style.top).toBe('5%');
-  expect(top.style.maxWidth).toBe('60%');
+  expect(top.style.maxWidth).toBe('min(60%, calc(100% - 32px))');
   expect(bottom.style.bottom).toBe('5%');
+  expect(bottom.style.width).toBe('max-content');
+  expect(bottom.style.maxWidth).toBe('min(60%, calc(100% - 32px))');
+  expect(bottom.style.boxSizing).toBe('border-box');
+  expect(bottom.style.padding).toBe('10px 16px');
+  expect(bottom.style.color).toBe('rgb(17, 24, 39)');
+  expect(bottom.style.backgroundColor).toBe('rgba(255, 255, 255, 0.84)');
+  expect(bottom.style.backdropFilter).toBe('blur(12px) saturate(140%)');
+  expect(
+    (bottom.style as CSSStyleDeclaration & { webkitBackdropFilter: string })
+      .webkitBackdropFilter,
+  ).toBe('blur(12px) saturate(140%)');
+  expect(bottom.style.borderRadius).toBe('8px');
+  expect(bottom.style.border).toBe('1px solid rgba(255, 255, 255, 0.6)');
+  expect(bottom.style.boxShadow).toBe('0 4px 16px rgba(15, 23, 42, 0.12)');
+  expect(bottom.style.textAlign).toBe('center');
+  expect(bottom.style.fontSize).toBe('16px');
+  expect(bottom.style.fontWeight).toBe('500');
+  expect(bottom.style.lineHeight).toBe('1.6');
+  expect(bottom.style.whiteSpace).toBe('pre-wrap');
+  expect(bottom.style.overflowWrap).toBe('anywhere');
+  expect(bottom.style.letterSpacing).toBe('0px');
 
   runtime.apply({ timeMs: 1_000, playing: false, forceMediaSeek: true });
   expect(top.style.display).toBe('none');
