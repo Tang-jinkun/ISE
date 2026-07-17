@@ -98,6 +98,23 @@ function renderedLines(
   return scene.children.filter((child): child is Line2 => child instanceof Line2);
 }
 
+function renderedObjects(
+  map: FakeMap,
+  renderer: { render: ReturnType<typeof vi.fn> },
+) {
+  renderedLines(map, renderer);
+  return [...(renderer.render.mock.calls.at(-1)![0] as THREE.Scene).children];
+}
+
+function pointPosition(point: THREE.Points) {
+  const position = point.geometry.getAttribute('position') as THREE.BufferAttribute;
+  return [
+    point.position.x + position.getX(0),
+    point.position.y + position.getY(0),
+    point.position.z + position.getZ(0),
+  ];
+}
+
 function lineOffsets(lineItem: Line2) {
   const start = lineItem.geometry.getAttribute('instanceStart') as THREE.InterleavedBufferAttribute;
   const end = lineItem.geometry.getAttribute('instanceEnd') as THREE.InterleavedBufferAttribute;
@@ -156,6 +173,84 @@ it('keeps data links two pixels wide at the current canvas resolution', async ()
   expect(lineItem.type).toBe('Line2');
   expect(material.linewidth).toBe(2);
   expect(material.resolution.toArray()).toEqual([1_280, 720]);
+});
+
+it('moves a bright packet source to target and intensifies the target on arrival', async () => {
+  const { map, renderers, runtime } = rendererHarness();
+  await runtime.load([
+    dataLinkTrack([link('fighter-to-missile', 'fighter', 'missile', 'fighter-missile', 0, 5_000)]),
+  ]);
+  const endpoints = [
+    snapshot('fighter', 77, 31, true, [0.2, 0.3, 0.0001]),
+    snapshot('missile', 78, 32, true, [0.4, 0.5, 0.0003]),
+  ];
+
+  runtime.apply(0, endpoints);
+  const objects = new Map(renderedObjects(map, renderers[0]!).map((object) => [object.name, object]));
+  const source = objects.get('fighter-to-missile:source') as THREE.Points;
+  const target = objects.get('fighter-to-missile:target') as THREE.Points;
+  const packet = objects.get('fighter-to-missile:packet-0') as THREE.Points;
+  expect(source).toBeInstanceOf(THREE.Points);
+  expect(target).toBeInstanceOf(THREE.Points);
+  expect(packet).toBeInstanceOf(THREE.Points);
+  expect((source.material as THREE.PointsMaterial).sizeAttenuation).toBe(false);
+  expect((source.material as THREE.PointsMaterial).size)
+    .toBeLessThan((target.material as THREE.PointsMaterial).size);
+  expect(pointPosition(packet)).toEqual([0.2, 0.3, 0.0001]);
+  const baseTargetSize = (target.material as THREE.PointsMaterial).size;
+
+  runtime.apply(600, endpoints);
+  expect(pointPosition(packet)).toEqual([
+    expect.closeTo(0.3), expect.closeTo(0.4), expect.closeTo(0.0002),
+  ]);
+  runtime.apply(1_200, endpoints);
+  expect(pointPosition(packet)).toEqual([
+    expect.closeTo(0.4), expect.closeTo(0.5), expect.closeTo(0.0003),
+  ]);
+  expect((target.material as THREE.PointsMaterial).size).toBeGreaterThan(baseTargetSize);
+});
+
+it('recomputes packet position deterministically after seeking backward', async () => {
+  const { map, renderers, runtime } = rendererHarness();
+  await runtime.load([
+    dataLinkTrack([link('awacs-to-fighter', 'awacs', 'fighter', 'awacs-fighter', 100, 5_000)]),
+  ]);
+  const endpoints = [
+    snapshot('awacs', 76, 30, true, [0.1, 0.2, 0.0001]),
+    snapshot('fighter', 77, 31, true, [0.5, 0.6, 0.0005]),
+  ];
+
+  runtime.apply(700, endpoints);
+  const packet = renderedObjects(map, renderers[0]!)
+    .find((object) => object.name === 'awacs-to-fighter:packet-0') as THREE.Points;
+  const firstMidpoint = pointPosition(packet);
+  runtime.apply(1_000, endpoints);
+  runtime.apply(700, endpoints);
+
+  expect(pointPosition(packet)).toEqual(firstMidpoint);
+});
+
+it('hides endpoint markers and packets when the link cannot render', async () => {
+  const { map, renderers, runtime } = rendererHarness();
+  await runtime.load([
+    dataLinkTrack([link('fighter-to-missile', 'fighter', 'missile', 'fighter-missile', 100, 200)]),
+  ]);
+  const partialEndpoints = [snapshot('fighter', 77, 31, true, [0.2, 0.3, 0.0001])];
+
+  runtime.apply(150, partialEndpoints);
+  const visuals = renderedObjects(map, renderers[0]!);
+  expect(visuals.map((object) => object.name)).toEqual([
+    'fighter-to-missile',
+    'fighter-to-missile:source',
+    'fighter-to-missile:target',
+    'fighter-to-missile:packet-0',
+  ]);
+  expect(visuals.every((object) => !object.visible)).toBe(true);
+  runtime.apply(300, [
+    ...partialEndpoints,
+    snapshot('missile', 78, 32, true, [0.4, 0.5, 0.0003]),
+  ]);
+  expect(visuals.every((object) => !object.visible)).toBe(true);
 });
 
 it('updates line endpoints from the current moving model snapshots', async () => {
@@ -249,14 +344,26 @@ it('restores the custom layer and latest lines after a style reload', async () =
 it('unregisters its listener and removes the custom layer idempotently', async () => {
   const { map, renderers, runtime } = rendererHarness();
   await runtime.load([dataLinkTrack([link('awacs-to-fighter', 'awacs', 'fighter', 'awacs-fighter')])]);
+  const visuals = renderedObjects(map, renderers[0]!);
+  const geometryDisposals = visuals.map((object) => vi.spyOn(
+    (object as Line2 | THREE.Points).geometry,
+    'dispose',
+  ));
+  const materialDisposals = visuals.map((object) => vi.spyOn(
+    (object as Line2 | THREE.Points).material as THREE.Material,
+    'dispose',
+  ));
 
   runtime.dispose();
   runtime.dispose();
 
+  expect(visuals).toHaveLength(4);
   expect(map.listenerCount('style.load')).toBe(0);
   expect(map.removeLayer).toHaveBeenCalledTimes(1);
   expect(map.removeLayer).toHaveBeenCalledWith(layerId);
   expect(map.removeSource).not.toHaveBeenCalled();
   expect(renderers[0]!.dispose).toHaveBeenCalledTimes(1);
+  expect(geometryDisposals.every((dispose) => dispose.mock.calls.length === 1)).toBe(true);
+  expect(materialDisposals.every((dispose) => dispose.mock.calls.length === 1)).toBe(true);
   expect(map.layerIds()).toEqual([]);
 });
