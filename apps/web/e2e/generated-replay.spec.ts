@@ -157,6 +157,18 @@ function isFollowPathItem(item: ModelTrackItem): item is FollowPathItem {
   return item.params.action === 'model.follow_path';
 }
 
+function expectRegisteredRuntimeRoutes(
+  models: RuntimeModelSnapshot[],
+  registeredRoutes: ReadonlySet<string>,
+) {
+  expect(models.length).toBeGreaterThan(0);
+  const routes = models.map((item) => item.trajectoryAssetId ?? item.defaultTrajectoryAssetId);
+  expect(routes.every((route): route is string => route !== undefined)).toBe(true);
+  const exposedRoutes = routes.filter((route): route is string => route !== undefined);
+  expect(new Set(exposedRoutes).size).toBe(exposedRoutes.length);
+  for (const route of exposedRoutes) expect(registeredRoutes.has(route)).toBe(true);
+}
+
 function followAcceptanceSamples(follows: FollowPathItem[]) {
   const eligible = follows
     .filter((item) => item.durationMs > 2)
@@ -585,6 +597,9 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   const samples = persistedAcceptanceSamples(sceneConfig);
   const entityIds = sceneConfig.entities.map((entity) => entity.entityId);
   const defaultRoutes = sceneConfig.entities.map((entity) => entity.defaultTrajectoryAssetId);
+  const registeredRoutes = new Set(
+    defaultRoutes.filter((route): route is string => route !== undefined),
+  );
   const modelTracks = sceneConfig.tracks.filter(
     (track): track is ModelTrack => track.type === 'model',
   );
@@ -679,7 +694,9 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
         (await runtimeModelSnapshots(page)).find((item) => item.visible && item.entityId === entityId),
       )
       .not.toBeUndefined();
-    const first = (await runtimeModelSnapshots(page)).find(
+    const firstModels = (await runtimeModelSnapshots(page)).filter((item) => item.visible);
+    expectRegisteredRuntimeRoutes(firstModels, registeredRoutes);
+    const first = firstModels.find(
       (item) => item.visible && item.entityId === entityId,
     )!;
     expect(first.modelAssetId).toMatch(/^model:/);
@@ -687,7 +704,9 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     firstCanvas ??= await canvasPixels(page);
 
     await seekRuntimeHarness(page, sample.lateMs);
-    const second = (await runtimeModelSnapshots(page)).find(
+    const secondModels = (await runtimeModelSnapshots(page)).filter((item) => item.visible);
+    expectRegisteredRuntimeRoutes(secondModels, registeredRoutes);
+    const second = secondModels.find(
       (item) => item.visible && item.entityId === entityId,
     );
     expect(second).toBeDefined();

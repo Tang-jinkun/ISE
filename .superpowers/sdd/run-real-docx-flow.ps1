@@ -551,26 +551,38 @@ function Assert-FinalDomainInvariants {
   $modelTracks = @(@(Get-PropertyValue $scene 'tracks') | Where-Object {
     (Get-PropertyValue $_ 'type') -eq 'model'
   })
-  $modelTrackEntityIds = @()
+  $runtimeEntityIds = @($entities | ForEach-Object { Get-PropertyValue $_ 'entityId' })
+  $runtimeEntityIdSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+  foreach ($runtimeEntityId in $runtimeEntityIds) {
+    if (-not ($runtimeEntityId -is [string]) -or [string]::IsNullOrWhiteSpace([string]$runtimeEntityId) -or
+        -not $runtimeEntityIdSet.Add([string]$runtimeEntityId)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
+    }
+  }
+  $modelTrackEntityIdSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
   foreach ($track in $modelTracks) {
     $items = @(Get-PropertyValue $track 'items')
-    $itemEntityIds = @($items | ForEach-Object {
-      Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId'
-    })
-    $trackEntityIds = @($itemEntityIds | Where-Object {
-      $_ -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$_)
-    } | Sort-Object -Unique)
-    if ($items.Count -eq 0 -or $trackEntityIds.Count -ne 1 -or
-        @($itemEntityIds | Where-Object { $_ -ne $trackEntityIds[0] }).Count -ne 0) {
+    $trackEntityIdSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($item in $items) {
+      $itemEntityId = Get-PropertyValue (Get-PropertyValue $item 'params') 'entityId'
+      if (-not ($itemEntityId -is [string]) -or [string]::IsNullOrWhiteSpace([string]$itemEntityId)) {
+        Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each model track must contain commands for exactly one RuntimePlan entity.'
+      }
+      $null = $trackEntityIdSet.Add([string]$itemEntityId)
+    }
+    if ($items.Count -eq 0 -or $trackEntityIdSet.Count -ne 1) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each model track must contain commands for exactly one RuntimePlan entity.'
     }
-    $modelTrackEntityIds += $trackEntityIds[0]
+    $null = $modelTrackEntityIdSet.Add(@($trackEntityIdSet)[0])
   }
-  $uniqueModelTrackEntityIds = @($modelTrackEntityIds | Sort-Object -Unique)
-  if ($modelTracks.Count -ne $entities.Count -or
-      $uniqueModelTrackEntityIds.Count -ne $entityIds.Count -or
-      ($uniqueModelTrackEntityIds -join '|') -ne ($entityIds -join '|')) {
+  if ($modelTracks.Count -ne $runtimeEntityIds.Count -or
+      $modelTrackEntityIdSet.Count -ne $runtimeEntityIdSet.Count) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
+  }
+  foreach ($runtimeEntityId in $runtimeEntityIds) {
+    if (-not $modelTrackEntityIdSet.Contains([string]$runtimeEntityId)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
+    }
   }
 
   foreach ($track in $modelTracks) {

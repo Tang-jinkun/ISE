@@ -84,3 +84,32 @@ git diff --check
 ## Concerns
 
 - Persisted track/style E2E remains to be executed against an operator-provided real Scene and access token. The environment had no reusable Scene, and creating one was outside Task 4 authority.
+
+## Review Follow-Up
+
+### RED: ordinal entity identity
+
+After adding a mutation that changed one item in the `actor:a` model track to `Actor:A`, the contract command exited `1` with:
+
+```text
+Expected final-domain rejection: case-drift entity id in one model track
+```
+
+This proved the prior PowerShell `Sort-Object -Unique` and `-ne` checks incorrectly treated entity identity as case-insensitive.
+
+### GREEN: ordinal entity identity
+
+The model-track gate now uses `HashSet[string]` instances constructed with `StringComparer.Ordinal` for RuntimePlan entities, per-track entity ids, and the complete model-track entity set. The contract command then exited `0`, including `FINAL_DOMAIN_INVARIANTS=ok` and all previously retained checks.
+
+### Runtime route exposure
+
+Persisted desktop acceptance again inspects visible runtime model snapshots at every selected early and late follow sample. Each visible model must expose `trajectoryAssetId` or `defaultTrajectoryAssetId`; every exposed route must belong to the persisted registered-route set and be unique among visible models. The three follow-window, post-6,000 ms, position/quaternion, and subtitle style assertions remain in place.
+
+### Follow-Up Verification
+
+- `powershell -ExecutionPolicy Bypass -File .\.superpowers\sdd\test-run-real-docx-flow.ps1`: exit `0`; all eight contract/export status lines were `ok`.
+- `npm run typecheck -w @ise/web`: exit `0`; `tsc --noEmit` produced no diagnostics.
+- `npm run test:e2e -w @ise/web -- --list --project=desktop-chromium e2e/generated-replay.spec.ts`: exit `0`; two desktop tests discovered.
+- `git diff --check`: exit `0`; no whitespace errors, only repository line-ending warnings.
+
+No Scene was generated and no external model was invoked during this follow-up. The existing persisted-browser environment concern remains unchanged.

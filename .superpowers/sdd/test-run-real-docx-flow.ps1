@@ -43,7 +43,8 @@ foreach ($marker in @(
   'async function seekPreviewRuntime',
   'expect(modelTracks).toHaveLength(13)',
   'function followAcceptanceSamples',
-  'function assertPersistedSubtitleStyle'
+  'function assertPersistedSubtitleStyle',
+  'function expectRegisteredRuntimeRoutes'
 )) {
   if (-not $e2eText.Contains($marker)) {
     throw "Persisted desktop acceptance is missing dynamic Preview camera marker: $marker"
@@ -373,6 +374,10 @@ Assert-InvariantRejected {
   param($value)
   $value.Compiled.data.sceneProjectConfig.tracks[0].items += $value.Compiled.data.sceneProjectConfig.tracks[1].items[0]
 } 'multiple entities in one model track'
+Assert-InvariantRejected {
+  param($value)
+  $value.Compiled.data.sceneProjectConfig.tracks[0].items[2].params.entityId = 'Actor:A'
+} 'case-drift entity id in one model track'
 Assert-InvariantRejected {
   param($value)
   $value.Compiled.data.sceneProjectConfig.tracks[0].items = @(
