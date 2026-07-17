@@ -149,12 +149,20 @@ async function runtimeModelSnapshots(page: Page) {
 type ModelTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'model' }>;
 type ModelTrackItem = ModelTrack['items'][number];
 type CameraTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'camera' }>;
+type DataLinkTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'data_link' }>;
 type FollowPathItem = ModelTrackItem & {
   params: Extract<ModelTrackItem['params'], { action: 'model.follow_path' }>;
+};
+type DestroyedStateItem = ModelTrackItem & {
+  params: Extract<ModelTrackItem['params'], { action: 'model.set_state' }> & { state: 'destroyed' };
 };
 
 function isFollowPathItem(item: ModelTrackItem): item is FollowPathItem {
   return item.params.action === 'model.follow_path';
+}
+
+function isDestroyedStateItem(item: ModelTrackItem): item is DestroyedStateItem {
+  return item.params.action === 'model.set_state' && item.params.state === 'destroyed';
 }
 
 function expectRegisteredRuntimeRoutes(
@@ -600,6 +608,8 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   const registeredRoutes = new Set(
     defaultRoutes.filter((route): route is string => route !== undefined),
   );
+  const aircraftEntities = sceneConfig.entities.filter((entity) => entity.kind === 'aircraft');
+  const missileEntities = sceneConfig.entities.filter((entity) => entity.kind === 'missile');
   const modelTracks = sceneConfig.tracks.filter(
     (track): track is ModelTrack => track.type === 'model',
   );
@@ -610,10 +620,28 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   });
   const followEntityIds = samples.follows.map((item) => item.params.entityId);
   const followRoutes = samples.follows.map((item) => item.params.trajectoryAssetId);
-  expect(sceneConfig.entities.filter((entity) => entity.kind === 'aircraft')).toHaveLength(13);
-  expect(modelTracks).toHaveLength(13);
+  const expectedMissileRoutes = new Set([
+    'trajectory:india-missile-1',
+    'trajectory:pakistan-missile-1',
+    'trajectory:pakistan-strike-missile-2',
+  ]);
+  const expectedAwacsRoutes = new Set([
+    'trajectory:india-awacs-1',
+    'trajectory:pakistan-awacs-1',
+  ]);
+  expect(aircraftEntities).toHaveLength(15);
+  expect(missileEntities).toHaveLength(3);
+  expect(sceneConfig.entities).toHaveLength(18);
+  expect(modelTracks).toHaveLength(sceneConfig.entities.length);
   expect(new Set(modelTrackEntityIds)).toEqual(new Set(entityIds));
   expect(new Set(entityIds).size).toBe(entityIds.length);
+  expect(new Set(missileEntities.map((entity) => entity.defaultTrajectoryAssetId)))
+    .toEqual(expectedMissileRoutes);
+  expect(new Set(
+    aircraftEntities
+      .map((entity) => entity.defaultTrajectoryAssetId)
+      .filter((route): route is string => route !== undefined && expectedAwacsRoutes.has(route)),
+  )).toEqual(expectedAwacsRoutes);
   expect(defaultRoutes.every((route): route is string => route !== undefined)).toBe(true);
   expect(new Set(defaultRoutes).size).toBe(defaultRoutes.length);
   expect(followEntityIds).toHaveLength(entityIds.length);
@@ -625,6 +653,35 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
         ?.defaultTrajectoryAssetId,
     ).toBe(item.params.trajectoryAssetId);
   }
+
+  const dataLinkTracks = sceneConfig.tracks.filter(
+    (track): track is DataLinkTrack => track.type === 'data_link',
+  );
+  const dataLinkItems = dataLinkTracks.flatMap((track) => track.items);
+  expect(dataLinkTracks.length).toBeGreaterThan(0);
+  expect(dataLinkItems.length).toBeGreaterThan(0);
+  expect(new Set(dataLinkItems.map((item) => item.params.linkKind)))
+    .toEqual(new Set(['awacs-fighter', 'fighter-missile']));
+  for (const item of dataLinkItems) {
+    expect(entityIds).toContain(item.params.sourceEntityId);
+    expect(entityIds).toContain(item.params.targetEntityId);
+  }
+
+  const destroyedStates = modelTracks
+    .flatMap((track) => track.items)
+    .filter(isDestroyedStateItem);
+  expect(destroyedStates).toHaveLength(1);
+  const destroyedState = destroyedStates[0]!;
+  const destroyedTargetId = destroyedState.params.entityId;
+  const destroyedHides = modelTracks
+    .flatMap((track) => track.items)
+    .filter((item) => (
+      item.params.action === 'model.hide'
+      && item.params.entityId === destroyedTargetId
+      && item.startMs >= destroyedState.startMs + 1_000
+    ));
+  expect(destroyedHides).toHaveLength(1);
+  const destroyedHide = destroyedHides[0]!;
   await playRuntimeHarness(page);
 
   const maximumTimeMs = Number(
@@ -683,6 +740,25 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
 
   await seekRuntimeHarness(page, samples.subtitle.timeMs);
   await assertPersistedSubtitleStyle(page);
+
+  await seekRuntimeHarness(page, Math.max(0, destroyedState.startMs - 1));
+  const beforeDestroyed = (await runtimeModelSnapshots(page))
+    .find((item) => item.entityId === destroyedTargetId);
+  expect(beforeDestroyed).toBeDefined();
+  expect(beforeDestroyed!.visible).toBe(true);
+  await seekRuntimeHarness(page, destroyedState.startMs + 500);
+  const duringDestroyed = (await runtimeModelSnapshots(page))
+    .find((item) => item.entityId === destroyedTargetId);
+  expect(duringDestroyed).toBeDefined();
+  expect(duringDestroyed!.visible).toBe(true);
+  expect(duringDestroyed!.quaternion.some(
+    (value, index) => value !== beforeDestroyed!.quaternion[index],
+  )).toBe(true);
+  await seekRuntimeHarness(page, destroyedHide.startMs);
+  const afterDestroyedHide = (await runtimeModelSnapshots(page))
+    .find((item) => item.entityId === destroyedTargetId);
+  expect(afterDestroyedHide).toBeDefined();
+  expect(afterDestroyedHide!.visible).toBe(false);
 
   const modelPairs: Array<{ first: RuntimeModelSnapshot; second: RuntimeModelSnapshot }> = [];
   let firstCanvas: Uint8ClampedArray | undefined;
@@ -785,6 +861,34 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     .toBeGreaterThan(0.95);
   await expectNonBlankCanvas(page);
   const initialCamera = await previewMapCamera(page);
+  const dataLinkItem = dataLinkItems.find((item) => item.params.linkKind === 'awacs-fighter')
+    ?? dataLinkItems[0]!;
+  expect(dataLinkItem.durationMs).toBeGreaterThan(1);
+  const dataLinkTimeMs = dataLinkItem.startMs + Math.max(
+    1,
+    Math.min(dataLinkItem.durationMs - 1, Math.floor(dataLinkItem.durationMs / 2)),
+  );
+  await seekPreviewRuntime(page, dataLinkTimeMs);
+  await expect.poll(() => page.evaluate(() => {
+    const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+    if (!map || !map.getSource('ise:data-links')) return 0;
+    return map.querySourceFeatures('ise:data-links')
+      .filter((feature) => feature.geometry.type === 'LineString').length;
+  })).toBeGreaterThan(0);
+  const dataLinkStyle = await page.evaluate(() => {
+    const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+    if (!map) throw new Error('The preview Mapbox map is not available.');
+    return {
+      source: Boolean(map.getSource('ise:data-links')),
+      awacsFighterLayer: map.getLayer('ise:data-links:awacs-fighter')?.type,
+      fighterMissileLayer: map.getLayer('ise:data-links:fighter-missile')?.type,
+    };
+  });
+  expect(dataLinkStyle).toEqual({
+    source: true,
+    awacsFighterLayer: 'line',
+    fighterMissileLayer: 'line',
+  });
   expect(samples.cameraTimes.every(
     (timeMs) => timeMs >= 0 && timeMs < sceneConfig.totalDurationMs,
   )).toBe(true);

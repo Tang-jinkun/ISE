@@ -586,6 +586,44 @@ function Assert-FinalDomainInvariants {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Choreography and RuntimePlan entities must exactly match resolved actors.'
   }
 
+  if ($ExpectedActorCount -gt 0) {
+    $aircraftEntities = @($entities | Where-Object { (Get-PropertyValue $_ 'kind') -eq 'aircraft' })
+    $missileEntities = @($entities | Where-Object { (Get-PropertyValue $_ 'kind') -eq 'missile' })
+    if ($entities.Count -ne 18 -or $aircraftEntities.Count -ne 15 -or $missileEntities.Count -ne 3) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan requires exactly 15 aircraft and 3 missile entities (18 total).'
+    }
+
+    $expectedMissileRoutes = @(
+      'trajectory:india-missile-1',
+      'trajectory:pakistan-missile-1',
+      'trajectory:pakistan-strike-missile-2'
+    )
+    $missileRoutes = @($missileEntities | ForEach-Object { Get-PropertyValue $_ 'defaultTrajectoryAssetId' })
+    if (-not (Test-OrdinalSetEqual $missileRoutes $expectedMissileRoutes)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan missile entities must use the three exact scenario missile routes.'
+    }
+
+    $expectedAwacsRoutes = @('trajectory:india-awacs-1', 'trajectory:pakistan-awacs-1')
+    $awacsRoutes = @($aircraftEntities | ForEach-Object { Get-PropertyValue $_ 'defaultTrajectoryAssetId' } | Where-Object {
+      Test-OrdinalContains $expectedAwacsRoutes $_
+    })
+    if (-not (Test-OrdinalSetEqual $awacsRoutes $expectedAwacsRoutes)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan aircraft entities must include the two exact scenario AWACS routes.'
+    }
+
+    $weaponEngagements = @(Get-PropertyValue $choreography 'weaponEngagements')
+    if ($weaponEngagements.Count -ne 3) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'ChoreographyPlan requires exactly three weapon engagements.'
+    }
+    $relationLinkKinds = @(@(Get-PropertyValue $choreography 'relationSegments') | ForEach-Object {
+      Get-PropertyValue $_ 'linkKind'
+    })
+    if (-not (Test-OrdinalContains $relationLinkKinds 'awacs-fighter') -or
+        -not (Test-OrdinalContains $relationLinkKinds 'fighter-missile')) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'ChoreographyPlan relation segments must include AWACS-fighter and fighter-missile data links.'
+    }
+  }
+
   $modelTracks = @(@(Get-PropertyValue $scene 'tracks') | Where-Object {
     (Get-PropertyValue $_ 'type') -eq 'model'
   })
@@ -621,6 +659,10 @@ function Assert-FinalDomainInvariants {
     if (-not $modelTrackEntityIdSet.Contains([string]$runtimeEntityId)) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
     }
+  }
+  $sceneEntityIds = @(@(Get-PropertyValue $scene 'entities') | ForEach-Object { Get-PropertyValue $_ 'entityId' })
+  if (-not (Test-OrdinalSetEqual $sceneEntityIds $runtimeEntityIds)) {
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig entities must exactly match RuntimePlan entities.'
   }
 
   foreach ($track in $modelTracks) {
@@ -668,6 +710,85 @@ function Assert-FinalDomainInvariants {
     }
   }
 
+  if ($ExpectedActorCount -gt 0) {
+    $dataLinkCommands = @($commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'data_link.show' })
+    $commandLinkKinds = @($dataLinkCommands | ForEach-Object {
+      Get-PropertyValue (Get-PropertyValue $_ 'params') 'linkKind'
+    })
+    if (-not (Test-OrdinalContains $commandLinkKinds 'awacs-fighter') -or
+        -not (Test-OrdinalContains $commandLinkKinds 'fighter-missile')) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan data_link.show commands must include both supported link kinds.'
+    }
+
+    $dataLinkItems = @(@(Get-PropertyValue $scene 'tracks') | Where-Object {
+      (Get-PropertyValue $_ 'type') -eq 'data_link'
+    } | ForEach-Object { @(Get-PropertyValue $_ 'items') })
+    $sceneLinkKinds = @($dataLinkItems | ForEach-Object {
+      Get-PropertyValue (Get-PropertyValue $_ 'params') 'linkKind'
+    })
+    if ($dataLinkItems.Count -lt 1 -or
+        -not (Test-OrdinalContains $sceneLinkKinds 'awacs-fighter') -or
+        -not (Test-OrdinalContains $sceneLinkKinds 'fighter-missile')) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig data_link items must include both supported link kinds.'
+    }
+
+    $impactVideos = @($commands | Where-Object {
+      (Get-PropertyValue $_ 'type') -eq 'video.play' -and
+      (Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $_ 'params') 'assetId') 'video:missile-impact')
+    })
+    if ($impactVideos.Count -lt 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan requires at least one exact video:missile-impact command.'
+    }
+
+    $destroyedEngagements = @(@(Get-PropertyValue $choreography 'weaponEngagements') | Where-Object {
+      (Get-PropertyValue $_ 'outcome') -eq 'destroyed'
+    })
+    $destroyedStates = @($commands | Where-Object {
+      (Get-PropertyValue $_ 'type') -eq 'model.set_state' -and
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'state') -eq 'destroyed'
+    })
+    if ($destroyedEngagements.Count -ne 1 -or $destroyedStates.Count -ne 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Exactly one evidence-grounded target must receive model.set_state destroyed.'
+    }
+    $destroyedTargetId = Get-PropertyValue $destroyedEngagements[0] 'targetRef'
+    $destroyedStateTargetId = Get-PropertyValue (Get-PropertyValue $destroyedStates[0] 'params') 'entityId'
+    $destroyedHides = @($commands | Where-Object {
+      (Get-PropertyValue $_ 'type') -eq 'model.hide' -and
+      (Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId') $destroyedTargetId)
+    })
+    if (-not (Test-OrdinalEqual $destroyedStateTargetId $destroyedTargetId) -or
+        $destroyedHides.Count -ne 1 -or
+        [long](Get-PropertyValue $destroyedHides[0] 'startMs') -lt [long](Get-PropertyValue $destroyedStates[0] 'startMs') + 1000) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The destroyed target must remain present for at least 1,000ms before its model.hide command.'
+    }
+    $engagementEvidenceRefs = @(Get-PropertyValue $destroyedEngagements[0] 'evidenceRefs')
+    $destroyedStateEvidenceRefs = @(Get-PropertyValue $destroyedStates[0] 'evidenceRefs')
+    $destroyedHideEvidenceRefs = @(Get-PropertyValue $destroyedHides[0] 'evidenceRefs')
+    if ($engagementEvidenceRefs.Count -lt 1 -or
+        $destroyedStateEvidenceRefs.Count -lt 1 -or
+        $destroyedHideEvidenceRefs.Count -lt 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The destroyed engagement, state command, and hide command require non-empty evidence references.'
+    }
+    foreach ($engagementEvidenceRef in $engagementEvidenceRefs) {
+      if (-not (Test-OrdinalContains $destroyedStateEvidenceRefs $engagementEvidenceRef) -or
+          -not (Test-OrdinalContains $destroyedHideEvidenceRefs $engagementEvidenceRef)) {
+        Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Destroyed state and hide commands must preserve all engagement evidence references.'
+      }
+    }
+
+    $cameraCommands = @($commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'camera.transition' })
+    foreach ($phase in @('launch', 'midcourse', 'terminal', 'aftermath')) {
+      $phaseSuffix = ":$phase`:camera"
+      $phaseCameras = @($cameraCommands | Where-Object {
+        $commandId = Get-PropertyValue $_ 'commandId'
+        $commandId -is [string] -and $commandId.EndsWith($phaseSuffix, [System.StringComparison]::Ordinal)
+      })
+      if ($phaseCameras.Count -lt 1) {
+        Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' "RuntimePlan camera commands must cover the $phase engagement phase."
+      }
+    }
+  }
+
   $expectedLineageIds = @(
     Get-PropertyValue $Selection.Accepted 'artifactId'
     Get-PropertyValue $Selection.Narration 'artifactId'
@@ -698,7 +819,7 @@ function Assert-FinalDomainInvariants {
 
   $visualTypes = @(
     'image.show', 'video.play', 'marker.show', 'geojson.show', 'camera.transition',
-    'model.spawn', 'model.follow_path', 'model.set_state', 'model.hide'
+    'data_link.show', 'model.spawn', 'model.follow_path', 'model.set_state', 'model.hide'
   )
   foreach ($subtitle in @(Get-PropertyValue $runtime 'subtitles')) {
     $eventUnitId = Get-PropertyValue $subtitle 'eventUnitId'
@@ -1066,7 +1187,7 @@ function Invoke-RealFlow {
   }
 
   Assert-CompiledCorrelation $completed.Compiled $completed.Accepted $reviewArtifactId
-  Assert-FinalDomainInvariants $completed 13
+  Assert-FinalDomainInvariants $completed 18
   $eventPlan = Get-PropertyValue $completed.Accepted 'data'
   $narrationPlan = Get-PropertyValue $completed.Narration 'data'
   $sceneBlueprint = Get-PropertyValue $completed.SceneBlueprint 'data'
