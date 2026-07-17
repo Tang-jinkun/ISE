@@ -149,13 +149,50 @@ function fighterGroups(evidence: EvidenceIR): ActorGroup[] {
   return groups
 }
 
-function isExplicitLaunch(unit: EventUnit, evidence: EvidenceIR): boolean {
-  if (!/launch|fire|发射/u.test(`${unit.title}|${unit.worldStateChange}|${unit.narrativePurpose}`.toLocaleLowerCase('en-US'))) return false
-  return factualRecords(evidence).some(record => unit.evidenceRefs.includes(record.evidenceId) && /launch|fire|发射/u.test(record.claim.toLocaleLowerCase('en-US')))
+function isExplicitLaunch(unit: EventUnit, completedLaunchRecords: EvidenceRecord[]): boolean {
+  if (!isCompletedLaunchText(unit.worldStateChange)) return false
+  return completedLaunchRecords.length > 0
 }
 
-function weaponEntity(unit: EventUnit): string | undefined {
-  return unit.participants.find(participant => /weapon|missile|导弹|pl[-‐‑‒–—―]?\d/iu.test(participant))
+function isCompletedLaunchText(value: string): boolean {
+  if (/\b(?:did\s+not|didn't|not)\s+(?:launch(?:ed|ing)?|fire(?:d|ing)?)\b|\b(?:was|were|is|are|be|been|being)\s+(?:not|never)\s+(?:launch(?:ed|ing)?|fire(?:d|ing)?)\b|\bfailed\s+to\s+(?:launch|fire)\b|\b(?:launch|fire)\b\s+(?:was\s+)?(?:cancelled|canceled|aborted)\b|未发射|没有发射|取消发射|中止发射|发射取消|发射中止/iu.test(value)) return false
+  if (/发射准备|准备发射|计划发射|授权发射|发射阵位|火控开启|预发射|pre[-\s]?launch|fire[-\s]?control|\bprepare(?:d|s|ing)?\b|\bplan(?:ned|s|ning)?\b|\bauthori[sz](?:e|ed|es|ing|ation)?\b/iu.test(value)) return false
+  return /\blaunch(?:es|ed|ing)?\b|\bfire(?:s|d|ing)?\b|发射/iu.test(value)
+}
+
+function weaponEntity(records: EvidenceRecord[]): string {
+  const explicitEntity = records.flatMap(record => record.entities)
+    .find(entity => /\b(?:pl|aim|r)[-‐‑‒–—―]?\d+[a-z0-9-]*/iu.test(entity))
+  if (explicitEntity) return explicitEntity
+
+  const groundedText = records.map(recordText).join('|')
+  const modelRef = groundedText.match(/\b(?:pl|aim|r)[-‐‑‒–—―]?\d+[a-z0-9-]*/iu)?.[0]
+  return modelRef ?? 'missile'
+}
+
+function weaponSide(unit: EventUnit, records: EvidenceRecord[]): 'india' | 'pakistan' | 'unknown' {
+  const sourceTexts = [...records.map(record => record.claim), unit.worldStateChange]
+  for (const text of sourceTexts) {
+    const launchIndex = text.search(/\blaunch(?:es|ed|ing)?\b|\bfire(?:s|d|ing)?\b|发射/iu)
+    if (launchIndex < 0) continue
+    const prefix = text.slice(0, launchIndex)
+    if (/\b(?:was|were|is|are|be|been|being)\s*$/iu.test(prefix) || /被[^。；，,]{0,40}$/u.test(prefix)) continue
+    const launcherCandidates = [
+      ...jf17Aliases.map(alias => ({ alias, side: 'pakistan' as const })),
+      ...currentFighters.flatMap(fighter => fighter.aliases.map(alias => ({ alias, side: 'india' as const }))),
+      { alias: '巴方', side: 'pakistan' as const },
+      { alias: 'Pakistan', side: 'pakistan' as const },
+      { alias: '印方', side: 'india' as const },
+      { alias: 'India', side: 'india' as const },
+    ]
+      .map(candidate => ({ ...candidate, index: text.toLocaleLowerCase('en-US').lastIndexOf(candidate.alias.toLocaleLowerCase('en-US'), launchIndex) }))
+      .filter(candidate => candidate.index >= 0 && !/[.;,，；]/u.test(text.slice(candidate.index + candidate.alias.length, launchIndex)))
+      .filter(candidate => !/\b(?:and|before|after|while|then|engage(?:d|s|ment)?)\b|\b(?:a|the)\s+missile\b/iu.test(
+        text.slice(candidate.index + candidate.alias.length, launchIndex)))
+      .sort((left, right) => right.index - left.index)
+    if (launcherCandidates[0]) return launcherCandidates[0].side
+  }
+  return 'unknown'
 }
 
 function slug(value: string): string {
@@ -167,14 +204,15 @@ function slug(value: string): string {
 
 function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroup[] {
   return eventPlan.eventUnits.flatMap(unit => {
-    if (!isExplicitLaunch(unit, evidence)) return []
-    const entityName = weaponEntity(unit)
-    if (!entityName) return []
-    const records = factualRecords(evidence).filter(record => unit.evidenceRefs.includes(record.evidenceId))
+    const completedLaunchRecords = factualRecords(evidence)
+      .filter(record => unit.evidenceRefs.includes(record.evidenceId))
+      .filter(record => isCompletedLaunchText(record.claim))
+    if (!isExplicitLaunch(unit, completedLaunchRecords)) return []
+    const entityName = weaponEntity(completedLaunchRecords)
     return [{
       groupId: `group:weapon-${slug(unit.eventUnitId)}`,
       semanticEntityRef: entityName,
-      side: /pakistan|巴方/u.test(`${unit.title}|${unit.worldStateChange}`.toLocaleLowerCase('en-US')) ? 'pakistan' : 'unknown',
+      side: weaponSide(unit, completedLaunchRecords),
       locationRef: unit.locationRefs[0] ?? 'location:unspecified',
       platformType: entityName,
       role: 'weapon-launch',
@@ -182,7 +220,7 @@ function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroup[] 
         entityName,
         platformType: 'weapon',
         role: 'launch',
-        evidence: scopedEvidence(evidence, records),
+        evidence: scopedEvidence(evidence, completedLaunchRecords),
       }),
       formationPattern: 'single',
       leaderPolicy: 'single-member',

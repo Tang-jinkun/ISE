@@ -465,6 +465,234 @@ function planningFixtureWithParticipants(
   return fixture
 }
 
+test('creates an event-scoped generic missile actor from grounded launch facts when participants omit the weapon', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:launch': ['巴方JF-17编队'],
+  })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  launch.worldStateChange = 'Pakistan launches a missile toward the opposing formation'
+  fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+    ? {
+        ...record,
+        claim: '巴方JF-17编队发射导弹，攻击对方编队。',
+        entities: ['巴方JF-17编队'],
+      }
+    : record)
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+  const narrationPlan = buildNarrationPlan(fixture)
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
+  const weapon = blueprint.actorGroups.find(group => group.role === 'weapon-launch')
+
+  assert.deepEqual(weapon, {
+    groupId: 'group:weapon-event-launch',
+    semanticEntityRef: 'missile',
+    side: 'pakistan',
+    locationRef: '米纳斯',
+    platformType: 'missile',
+    role: 'weapon-launch',
+    quantityDecision: {
+      value: 1,
+      constraint: 'unknown',
+      source: 'default',
+      evidenceRefs: [],
+      defaultPolicyId: 'single-launch/v1',
+      reason: 'No explicit quantity; applied single-launch/v1',
+    },
+    formationPattern: 'single',
+    leaderPolicy: 'single-member',
+    behaviorProfile: 'weapon-launch/v1',
+    lifecycle: 'event-scoped:event:launch',
+  })
+  assert.equal(
+    blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:launch')?.actorRefs.includes(weapon!.groupId),
+    true,
+  )
+})
+
+test('uses generic missile when only ungrounded event text or participants name a specific missile model', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:launch': ['巴方JF-17编队', 'PL-15E导弹'],
+  })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  launch.title = 'PL-15E missile launch'
+  launch.worldStateChange = 'Pakistan launches a PL-15E missile'
+  fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+    ? {
+        ...record,
+        claim: '巴方JF-17编队发射导弹。',
+        entities: ['巴方JF-17编队'],
+      }
+    : record)
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+  const weapon = blueprint.actorGroups.find(group => group.role === 'weapon-launch')
+
+  assert.equal(weapon?.semanticEntityRef, 'missile')
+  assert.equal(weapon?.platformType, 'missile')
+})
+
+test('uses only completed factual launch records when linked launch claims conflict', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:launch': ['印方阵风编队', '巴方JF-17编队'],
+  })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  launch.worldStateChange = 'Pakistan launches a missile.'
+  launch.evidenceRefs = ['ev-launch-negative', 'ev-launch-positive']
+  fixture.evidence.records = fixture.evidence.records.flatMap(record => record.evidenceId === 'ev-launch'
+    ? [
+        {
+          ...record,
+          evidenceId: 'ev-launch-negative',
+          claim: 'India did not launch a PL-15 missile.',
+          entities: ['India', 'PL-15 missile'],
+        },
+        {
+          ...record,
+          evidenceId: 'ev-launch-positive',
+          claim: 'Pakistan launches a missile.',
+          entities: ['Pakistan'],
+        },
+      ]
+    : [record])
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+  const weapon = blueprint.actorGroups.find(group => group.role === 'weapon-launch')
+
+  assert.equal(weapon?.semanticEntityRef, 'missile')
+  assert.equal(weapon?.side, 'pakistan')
+  assert.deepEqual(weapon?.quantityDecision.evidenceRefs, [])
+})
+
+test('derives the weapon side from the launcher rather than an earlier opposing target participant', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:launch': ['印方阵风编队', '巴方JF-17编队'],
+  })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  launch.worldStateChange = 'Pakistani JF-17 launches a missile at the Indian Rafale formation'
+  fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+    ? {
+        ...record,
+        claim: '巴方JF-17编队发射导弹，攻击印方阵风编队。',
+        entities: ['巴方JF-17编队', '印方阵风编队'],
+      }
+    : record)
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+  assert.equal(blueprint.actorGroups.find(group => group.role === 'weapon-launch')?.side, 'pakistan')
+})
+
+test('keeps weapon side unknown when no launcher can be identified', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:launch': ['印方阵风编队', '巴方JF-17编队'],
+  })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  launch.worldStateChange = 'A missile is launched during the engagement'
+  fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+    ? {
+        ...record,
+        claim: '交战中发射导弹。',
+        entities: [],
+      }
+    : record)
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+  assert.equal(blueprint.actorGroups.find(group => group.role === 'weapon-launch')?.side, 'unknown')
+})
+
+test('does not create weapon actors for preparatory Chinese or English launch language', () => {
+  const cases = [
+    { state: '巴方完成导弹发射准备，火控开启。', claim: '巴方完成导弹发射准备，火控开启。' },
+    { state: 'Pakistan plans to launch a missile.', claim: 'Pakistan plans to launch a missile.' },
+  ]
+  for (const { state, claim } of cases) {
+    const fixture = planningFixtureWithParticipants({ 'event:launch': ['巴方JF-17编队'] })
+    const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+    launch.worldStateChange = state
+    fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+      ? { ...record, claim, entities: ['巴方JF-17编队'] }
+      : record)
+    fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+    const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+    assert.equal(blueprint.actorGroups.some(group => group.role === 'weapon-launch'), false, state)
+  }
+})
+
+test('does not create weapon actors for negated, cancelled, or aborted launch claims', () => {
+  const cases = [
+    'Pakistan did not launch a missile.',
+    'The missile was not launched.',
+    'The missile was never launched.',
+    'The missile failed to launch.',
+    'The missile launch was cancelled.',
+    'The missile launch was aborted.',
+    '巴方未发射导弹。',
+    '巴方没有发射导弹。',
+    '巴方取消发射导弹。',
+  ]
+  for (const claim of cases) {
+    const fixture = planningFixtureWithParticipants({ 'event:launch': ['巴方JF-17编队'] })
+    const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+    launch.worldStateChange = claim
+    fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+      ? { ...record, claim, entities: ['巴方JF-17编队'] }
+      : record)
+    fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+    const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+    assert.equal(blueprint.actorGroups.some(group => group.role === 'weapon-launch'), false, claim)
+  }
+})
+
+test('allows a completed launch when only the title contains pre-launch language', () => {
+  const fixture = planningFixtureWithParticipants({ 'event:launch': ['巴方JF-17编队'] })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  launch.title = 'Pre-launch checks'
+  launch.worldStateChange = 'Pakistan launches a missile.'
+  fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+    ? { ...record, claim: 'Pakistan launches a missile.', entities: ['巴方JF-17编队'] }
+    : record)
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+  assert.equal(blueprint.actorGroups.some(group => group.role === 'weapon-launch'), true)
+})
+
+test('keeps weapon side unknown for passive or non-attributable launch language with both sides mentioned', () => {
+  const cases = [
+    'Pakistani JF-17 and Indian Rafale engaged before a missile was launched.',
+    'Pakistani JF-17 and Indian Rafale engaged before a missile launched.',
+  ]
+  for (const claim of cases) {
+    const fixture = planningFixtureWithParticipants({
+      'event:launch': ['巴方JF-17编队', '印方阵风编队'],
+    })
+    const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+    launch.worldStateChange = claim
+    fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+      ? {
+          ...record,
+          claim,
+          entities: ['巴方JF-17编队', '印方阵风编队'],
+        }
+      : record)
+    fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+    const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+    assert.equal(blueprint.actorGroups.find(group => group.role === 'weapon-launch')?.side, 'unknown', claim)
+  }
+})
+
 test('binds scenario-local platform formation labels to their known fighter groups', () => {
   const fixture = planningFixtureWithParticipants({
     'event:deployment': ['印方苏-30MKI编队', '印方阵风编队', '巴方JF-17编队'],
