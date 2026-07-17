@@ -1012,10 +1012,10 @@
       "aliases": [
         "Pakistan missile 2"
       ],
-      "fingerprint": "sha256:7c9ca446dec948e52594fa511cc0b61efb7ea177e8b9bb1ec5b976dfc9cd0d3b",
+      "fingerprint": "sha256:65c40f08c007053477fbe306d7c65bb2e959c9cfee3f1cad4968606745b231c4",
       "sourceRelativePath": "json/巴方打击导弹2.json",
       "objectName": "demo-assets/trajectory/pakistan-strike-missile-2.json",
-      "size": 2152,
+      "size": 2156,
       "availability": "available",
       "criticality": "required",
       "fallbackAssetIds": [],
@@ -1033,10 +1033,10 @@
         "bounds": [
           [
             74.34155677403001,
-            30.395005910420608
+            30.140867221002928
           ],
           [
-            75.26201261894998,
+            75.82738288312065,
             31.484798927790926
           ]
         ]

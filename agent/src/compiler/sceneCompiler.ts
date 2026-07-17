@@ -655,6 +655,17 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         shotIntervals.set(shot.shotId, [visualStartMs, visualEndMs])
       }
     }
+    for (const shot of phaseShots) {
+      const engagement = engagementForShot(shot)
+      const interval = shotIntervals.get(shot.shotId)
+      if (shot.phase !== 'terminal' || engagement?.outcome !== 'destroyed' || !interval) continue
+      const weaponPlayback = actorPlaybackWindows.get(engagement.weaponRef)
+      if (!weaponPlayback) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+      actorPlaybackWindows.set(engagement.weaponRef, {
+        ...weaponPlayback,
+        followEndMs: interval[1],
+      })
+    }
     for (const shot of subtitleShots) {
       const sceneBeat = shot.sceneBeatRefs.length === 1 ? sceneBeats.get(shot.sceneBeatRefs[0]!) : undefined
       const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
@@ -668,7 +679,8 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         ? [engagement!.launcherRef, engagement!.weaponRef]
         : shot.phase === 'midcourse'
           ? [engagement!.weaponRef, engagement!.targetRef]
-          : shot.phase === 'terminal' && engagement?.outcome === 'interception'
+          : shot.phase === 'terminal'
+            && (engagement?.outcome === 'interception' || engagement?.outcome === 'destroyed')
             ? [engagement.weaponRef, engagement.targetRef]
           : shot.phase === 'aftermath' && engagement?.outcome === 'interception'
             ? [engagement.launcherRef, engagement.weaponRef]
@@ -745,7 +757,8 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
             layout: { xPct: 64, yPct: 6, widthPct: 30, heightPct: 24, zIndex: 30, opacity: 1, fit: 'cover' },
             volume: 0, playbackRate: 1, loop: false,
           },
-          startMs, durationMs: capabilityManifest.minimumDurations['video.play'], dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
+          startMs: followStartMs, durationMs: endMs - followStartMs,
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
         }))
         if (engagement!.outcome === 'interception') {
           const interceptedHide = runtimeCommandSchema.parse({

@@ -751,6 +751,50 @@ test('dynamic camera destroyed target hide starts when the aftermath interval en
   assert.equal(hide.startMs, aftermath.startMs + aftermath.durationMs)
 })
 
+test('dynamic camera destroyed terminal follows the missile and target together', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const terminal = plan.commands.find(command =>
+    command.commandId.includes(`:${engagement.weaponRef}:terminal:follow`))
+
+  assert.equal(terminal?.type, 'camera.follow_group')
+  if (terminal?.type !== 'camera.follow_group') assert.fail('Expected destroyed terminal group follow')
+  assert.deepEqual(terminal.params.entityIds, [engagement.weaponRef, engagement.targetRef])
+})
+
+test('destroyed engagement ends the missile path when the target enters destroyed state', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const missileFollow = plan.commands.find(command =>
+    command.type === 'model.follow_path' && command.targetId === engagement.weaponRef)!
+  const missileHide = plan.commands.find(command =>
+    command.type === 'model.hide' && command.targetId === engagement.weaponRef)!
+  const destroyed = plan.commands.find(command =>
+    command.type === 'model.set_state'
+    && command.targetId === engagement.targetRef
+    && command.params.state === 'destroyed')!
+
+  assert.equal(missileFollow.startMs + missileFollow.durationMs, destroyed.startMs)
+  assert.equal(missileHide.startMs, destroyed.startMs)
+})
+
+test('destroyed engagement impact video covers the stable terminal follow', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const terminalFollow = plan.commands.find(command =>
+    command.commandId.includes(`:${engagement.weaponRef}:terminal:follow`))!
+  const impactVideo = plan.commands.find(command =>
+    command.type === 'video.play'
+    && command.commandId.includes(`:${engagement.weaponRef}:terminal:impact-video`))!
+
+  assert.equal(impactVideo.startMs, terminalFollow.startMs)
+  assert.equal(impactVideo.durationMs, terminalFollow.durationMs)
+  assert.ok(impactVideo.durationMs > capabilityManifest.minimumDurations['video.play'])
+})
+
 function realCrossBeatEngagementFixture() {
   const fixture = finalInputForEngagementFixture()
   const indiaAwacsGroup: SceneBlueprint['actorGroups'][number] = {
