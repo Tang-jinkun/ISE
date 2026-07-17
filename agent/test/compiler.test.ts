@@ -724,14 +724,19 @@ test('dynamic camera engagement intervals cover the complete visual window witho
   assert.ok(cameras.every(command => command.commandId.endsWith(':camera') || command.commandId.endsWith(':follow-group') || command.commandId.endsWith(':follow-actor')))
 })
 
-test('dynamic camera interception aftermath retains launcher and weapon after hiding the target', () => {
+test('dynamic camera interception terminal and aftermath retain surviving engagement actors', () => {
   const fixture = finalInputForEngagementFixture()
   const plan = compileFinalScene(fixture.input)
   const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const terminal = plan.commands.find(command =>
+    command.commandId.includes(`:${engagement.weaponRef}:terminal:follow`))
   const aftermath = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'camera.follow_group' }> =>
     command.type === 'camera.follow_group' && command.commandId.includes(`:${engagement.weaponRef}:aftermath:follow-group`))!
   const targetHide = plan.commands.find(command => command.type === 'model.hide' && command.targetId === engagement.targetRef)!
 
+  assert.equal(terminal?.type, 'camera.follow_group')
+  if (terminal?.type !== 'camera.follow_group') assert.fail('Expected interception terminal group follow')
+  assert.deepEqual(terminal.params.entityIds, [engagement.weaponRef, engagement.targetRef])
   assert.deepEqual(aftermath.params.entityIds, [engagement.launcherRef, engagement.weaponRef])
   assert.ok(targetHide.startMs < aftermath.startMs)
 })

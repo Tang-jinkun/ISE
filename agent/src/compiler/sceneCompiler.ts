@@ -684,6 +684,8 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         ? [engagement!.launcherRef, engagement!.weaponRef]
         : shot.phase === 'midcourse'
           ? [engagement!.weaponRef, engagement!.targetRef]
+          : shot.phase === 'terminal' && engagement?.outcome === 'interception'
+            ? [engagement.weaponRef, engagement.targetRef]
           : shot.phase === 'aftermath' && engagement?.outcome === 'interception'
             ? [engagement.launcherRef, engagement.weaponRef]
             : shot.phase
