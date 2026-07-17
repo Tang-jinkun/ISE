@@ -373,6 +373,35 @@ it('exposes the applied GLB transform and trajectory orientation as a readonly f
   ]);
 });
 
+it('exposes the entity default route and the active route for spawn and follow snapshots', async () => {
+  const { runtime } = modelHarness();
+  const items = modelActionTrack([
+    action(0, 1, { action: 'model.spawn', entityId: 'one' }),
+    action(1_000, 2_000, {
+      action: 'model.follow_path',
+      entityId: 'one',
+      trajectoryAssetId: 'trajectory:active-follow',
+    }),
+  ]);
+  await runtime.load([rafale('one')], [items]);
+
+  runtime.apply(500);
+  expect(runtime.getFrameSnapshot()[0]).toEqual(
+    expect.objectContaining({
+      defaultTrajectoryAssetId: 'trajectory:ambala-rafale-1',
+      trajectoryAssetId: 'trajectory:ambala-rafale-1',
+    }),
+  );
+
+  runtime.apply(1_500);
+  expect(runtime.getFrameSnapshot()[0]).toEqual(
+    expect.objectContaining({
+      defaultTrajectoryAssetId: 'trajectory:ambala-rafale-1',
+      trajectoryAssetId: 'trajectory:active-follow',
+    }),
+  );
+});
+
 it('keeps a physically tiny GLB at least 24 pixels wide at zoom 7', async () => {
   const nativeExtent = 100;
   const zoom = 7;

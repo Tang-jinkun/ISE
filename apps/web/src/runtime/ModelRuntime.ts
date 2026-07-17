@@ -35,6 +35,7 @@ export interface ModelRuntimeDependencies {
 export interface ModelFrameState {
   visible: boolean;
   state: SceneEntity['initialState'];
+  trajectoryAssetId?: string;
   sample?: TrajectorySample;
   trail: RuntimeTrail;
 }
@@ -42,6 +43,8 @@ export interface ModelFrameState {
 export interface ModelEntityFrameSnapshot {
   entityId: string;
   modelAssetId?: string;
+  defaultTrajectoryAssetId?: string;
+  trajectoryAssetId?: string;
   visible: boolean;
   projectedSizePx?: number;
   appliedScale?: number;
@@ -108,6 +111,7 @@ export function reduceModelFrame(
   const seekTimeMs = finiteTime(timeMs);
   let spawned = false;
   let state = entity.initialState;
+  let trajectoryAssetId: string | undefined;
   let sample: TrajectorySample | undefined;
   let trail: RuntimeTrail = { entityId: entity.entityId, coordinates: [] };
 
@@ -120,6 +124,7 @@ export function reduceModelFrame(
         trajectoryId,
       );
     }
+    trajectoryAssetId = trajectoryId;
     sample = sampleTrajectory(trajectory, clamp01(progress) * trajectory.durationMs);
     const coordinates: Array<readonly [number, number]> = trajectory.points
       .slice(0, sample.tailEndIndex)
@@ -172,6 +177,7 @@ export function reduceModelFrame(
   return {
     visible: spawned && state !== 'hidden' && sample !== undefined,
     state,
+    ...(trajectoryAssetId ? { trajectoryAssetId } : {}),
     sample,
     trail,
   };
@@ -352,6 +358,10 @@ export class ModelRuntime {
     return this.instances.map(({ entity, object, frame, appliedScale, projectedSizePx }) => ({
       entityId: entity.entityId,
       ...(entity.modelAssetId ? { modelAssetId: entity.modelAssetId } : {}),
+      ...(entity.defaultTrajectoryAssetId
+        ? { defaultTrajectoryAssetId: entity.defaultTrajectoryAssetId }
+        : {}),
+      ...(frame?.trajectoryAssetId ? { trajectoryAssetId: frame.trajectoryAssetId } : {}),
       visible: object.visible,
       ...(appliedScale !== undefined ? { appliedScale } : {}),
       ...(projectedSizePx !== undefined ? { projectedSizePx } : {}),
