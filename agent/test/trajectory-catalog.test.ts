@@ -346,8 +346,8 @@ test('binds weapon behavior profiles to preferred and compatible real catalog ro
   assert.deepEqual(bundles.map(bundle => [bundle.actorGroupRef, bundle.routeAssetRefs]), [
     ['group:weapon-counterattack', [
       'trajectory:pakistan-strike-missile-2',
-      'trajectory:india-missile-1',
       'trajectory:pakistan-missile-1',
+      'trajectory:india-missile-1',
     ]],
     ['group:weapon-first-strike', [
       'trajectory:india-missile-1',
@@ -356,8 +356,8 @@ test('binds weapon behavior profiles to preferred and compatible real catalog ro
     ]],
     ['group:weapon-intercept', [
       'trajectory:pakistan-missile-1',
-      'trajectory:india-missile-1',
       'trajectory:pakistan-strike-missile-2',
+      'trajectory:india-missile-1',
     ]],
   ])
   assert.equal(bundles.every(bundle => bundle.recommendedActorCount === 3), true)
@@ -497,6 +497,64 @@ test('uses compatible real missile routes when evidence specifies repeated launc
   assert.deepEqual(
     new Set(assignments.map(item => item.trajectoryAssetRef)),
     new Set(missileRoutes),
+  )
+})
+
+test('keeps repeated Pakistan interception missiles on Pakistan routes before cross-side fallback', () => {
+  const actorGroup = weaponGroup(
+    'group:weapon-intercept',
+    'pakistan',
+    'weapon-launch/pakistan-intercept/v1',
+  )
+  const bundles = resolveFormationBundles(
+    [actorGroup],
+    buildTrajectoryCatalog(snapshot()),
+    indoPakTrajectoryScenario,
+  )
+
+  const assignments = assignActorRoutes(instances(actorGroup.groupId, 2), bundles)
+
+  assert.deepEqual(assignments.map(item => item.trajectoryAssetRef), [
+    'trajectory:pakistan-missile-1',
+    'trajectory:pakistan-strike-missile-2',
+  ])
+})
+
+test('keeps repeated Pakistan counterattack missiles on Pakistan routes before cross-side fallback', () => {
+  const actorGroup = weaponGroup(
+    'group:weapon-counterattack',
+    'pakistan',
+    'weapon-launch/pakistan-counterattack/v1',
+  )
+  const bundles = resolveFormationBundles(
+    [actorGroup],
+    buildTrajectoryCatalog(snapshot()),
+    indoPakTrajectoryScenario,
+  )
+
+  const assignments = assignActorRoutes(instances(actorGroup.groupId, 2), bundles)
+
+  assert.deepEqual(assignments.map(item => item.trajectoryAssetRef), [
+    'trajectory:pakistan-strike-missile-2',
+    'trajectory:pakistan-missile-1',
+  ])
+})
+
+test('reports missile quantity beyond the real trajectory inventory as capacity exhaustion', () => {
+  const actorGroup = weaponGroup(
+    'group:weapon-counterattack',
+    'pakistan',
+    'weapon-launch/pakistan-counterattack/v1',
+  )
+  const bundles = resolveFormationBundles(
+    [actorGroup],
+    buildTrajectoryCatalog(snapshot()),
+    indoPakTrajectoryScenario,
+  )
+
+  assert.throws(
+    () => assignActorRoutes(instances(actorGroup.groupId, missileRoutes.length + 1), bundles),
+    expectCompilationCode('TRAJECTORY_BUNDLE_CAPACITY_EXCEEDED'),
   )
 })
 

@@ -14,14 +14,26 @@ const missileRoutePool = [
   'trajectory:pakistan-missile-1',
   'trajectory:pakistan-strike-missile-2',
 ] as const
+type MissileRoute = typeof missileRoutePool[number]
+type MissileSide = 'india' | 'pakistan'
+const missileRoutesBySide: Record<MissileSide, readonly MissileRoute[]> = {
+  india: ['trajectory:india-missile-1'],
+  pakistan: ['trajectory:pakistan-missile-1', 'trajectory:pakistan-strike-missile-2'],
+}
 function routeIds(stem: string, count: number): `trajectory:${string}`[] {
   return Array.from({ length: count }, (_, index) => `trajectory:${stem}-${index + 1}` as const)
 }
 
 function preferredMissileRoutes(
-  preferred: typeof missileRoutePool[number],
+  preferred: MissileRoute,
+  side: MissileSide,
 ): `trajectory:${string}`[] {
-  return [preferred, ...missileRoutePool.filter(route => route !== preferred)]
+  const sameSideRoutes = missileRoutesBySide[side]
+  return [
+    preferred,
+    ...sameSideRoutes.filter(route => route !== preferred),
+    ...missileRoutePool.filter(route => !sameSideRoutes.includes(route)),
+  ]
 }
 
 function bundle(
@@ -112,7 +124,7 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
     bundle(
       'weapon:india-first-strike',
       'model:pl15e',
-      preferredMissileRoutes('trajectory:india-missile-1'),
+      preferredMissileRoutes('trajectory:india-missile-1', 'india'),
       ['missile', 'PL-15E', 'PL-15E导弹', '导弹'],
       ['weapon-launch/india-first-strike/v1'],
       [
@@ -125,7 +137,7 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
     bundle(
       'weapon:pakistan-intercept',
       'model:pl15e',
-      preferredMissileRoutes('trajectory:pakistan-missile-1'),
+      preferredMissileRoutes('trajectory:pakistan-missile-1', 'pakistan'),
       missileAliases,
       ['weapon-launch/pakistan-intercept/v1'],
       [],
@@ -133,7 +145,7 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
     bundle(
       'weapon:pakistan-counterattack',
       'model:pl15e',
-      preferredMissileRoutes('trajectory:pakistan-strike-missile-2'),
+      preferredMissileRoutes('trajectory:pakistan-strike-missile-2', 'pakistan'),
       missileAliases,
       ['weapon-launch/pakistan-counterattack/v1'],
       [],
