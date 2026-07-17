@@ -123,7 +123,7 @@ function sceneRuntimeHarness(
     load: vi.fn(async (_tracks: SceneTrack[], _signal?: AbortSignal) => {
       calls.push('map.load');
     }),
-    applyBase: vi.fn((timeMs: number) => calls.push(`map.apply:${timeMs}`)),
+    applyBase: vi.fn((timeMs: number, _snapshots: unknown[]) => calls.push(`map.apply:${timeMs}`)),
     applyTrails: vi.fn(() => calls.push(`map.trails:${clock.currentTimeMs}`)),
     dispose: vi.fn(),
   };
@@ -272,8 +272,8 @@ it('routes visible tracks and loads components before one paused zero frame', as
     'data-link.load',
     'overlay.load',
     'clock.duration:12000',
-    'map.apply:0',
     'model.apply:0',
+    'map.apply:0',
     'map.trails:0',
     'data-link.apply:0',
     'overlay.apply:0:paused:seek',
@@ -293,7 +293,7 @@ it('routes visible tracks and loads components before one paused zero frame', as
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('0');
 });
 
-it('applies clock frames in map, model, trail, data-link, overlay order', async () => {
+it('applies clock frames in model, map, trail, data-link, overlay order', async () => {
   const harness = sceneRuntimeHarness();
   await harness.runtime.load(validConfig);
   harness.calls.length = 0;
@@ -301,13 +301,16 @@ it('applies clock frames in map, model, trail, data-link, overlay order', async 
   harness.emitClockFrame({ timeMs: 250, playing: true, forceMediaSeek: false });
 
   expect(harness.calls).toEqual([
-    'map.apply:250',
     'model.apply:250',
+    'map.apply:250',
     'map.trails:250',
     'data-link.apply:250',
     'overlay.apply:250:playing:tick',
   ]);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('250');
+  expect(harness.mapRuntime.applyBase.mock.calls[0]![1]).toEqual([
+    expect.objectContaining({ entityId: 'aircraft-1', visible: true }),
+  ]);
   expect(JSON.parse(harness.overlayRoot.dataset.runtimeModels ?? '')).toEqual([
     expect.objectContaining({
       entityId: 'aircraft-1',
@@ -329,8 +332,8 @@ it('unlocks media before starting the clock and applies a playing frame', async 
   expect(harness.calls).toEqual([
     'overlay.unlock',
     'clock.play',
-    'map.apply:0',
     'model.apply:0',
+    'map.apply:0',
     'map.trails:0',
     'data-link.apply:0',
     'overlay.apply:0:playing:tick',
@@ -431,8 +434,8 @@ it('pauses, seeks exactly once, applies a paused frame, and resumes prior playba
   expect(harness.calls).toEqual([
     'clock.pause',
     'clock.seek:6000',
-    'map.apply:6000',
     'model.apply:6000',
+    'map.apply:6000',
     'map.trails:6000',
     'data-link.apply:6000',
     'overlay.apply:6000:paused:seek',
@@ -450,8 +453,8 @@ it('seeks while paused without pausing or resuming the clock', async () => {
 
   expect(harness.calls).toEqual([
     'clock.seek:2000',
-    'map.apply:2000',
     'model.apply:2000',
+    'map.apply:2000',
     'map.trails:2000',
     'data-link.apply:2000',
     'overlay.apply:2000:paused:seek',
@@ -470,15 +473,15 @@ it('replay performs a non-resuming seek to zero before normal play', async () =>
   expect(harness.calls).toEqual([
     'clock.pause',
     'clock.seek:0',
-    'map.apply:0',
     'model.apply:0',
+    'map.apply:0',
     'map.trails:0',
     'data-link.apply:0',
     'overlay.apply:0:paused:seek',
     'overlay.unlock',
     'clock.play',
-    'map.apply:0',
     'model.apply:0',
+    'map.apply:0',
     'map.trails:0',
     'data-link.apply:0',
     'overlay.apply:0:playing:tick',
@@ -493,8 +496,8 @@ it('applies a paused terminal frame and does not restart at the configured durat
   harness.emitClockFrame({ timeMs: 12_000, playing: false, forceMediaSeek: false });
 
   expect(harness.calls).toEqual([
-    'map.apply:12000',
     'model.apply:12000',
+    'map.apply:12000',
     'map.trails:12000',
     'data-link.apply:12000',
     'overlay.apply:12000:paused:tick',

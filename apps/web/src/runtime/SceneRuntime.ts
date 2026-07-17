@@ -22,7 +22,7 @@ import type {
 
 interface MapRuntimePort {
   load(tracks: SceneTrack[], signal?: AbortSignal): Promise<void>;
-  applyBase(timeMs: number): void;
+  applyBase(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[]): void;
   applyTrails(trails: RuntimeTrail[]): void;
   dispose(): void;
 }
@@ -275,10 +275,10 @@ export class SceneRuntimeImpl implements SceneRuntime {
   }
 
   private applyFrame(frame: RuntimeFrame) {
-    this.mapRuntime.applyBase(frame.timeMs);
     const trails = this.modelRuntime.apply(frame.timeMs);
-    this.mapRuntime.applyTrails(trails);
     const snapshots = this.modelRuntime.getFrameSnapshot();
+    this.mapRuntime.applyBase(frame.timeMs, snapshots);
+    this.mapRuntime.applyTrails(trails);
     this.dataLinkRuntime.apply(frame.timeMs, snapshots);
     this.overlayRuntime.apply(frame);
     this.options.overlayRoot.dataset.runtimeModels = JSON.stringify(

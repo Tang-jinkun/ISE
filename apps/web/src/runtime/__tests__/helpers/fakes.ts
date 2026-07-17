@@ -31,6 +31,7 @@ export class FakeMap {
   markerCount = 0;
   lastJump: Record<string, unknown> | undefined;
   readonly easeTo = vi.fn();
+  readonly cameraForBounds = vi.fn();
   readonly triggerRepaint = vi.fn();
   private camera: { center: [number, number]; zoom: number; pitch: number; bearing: number };
   private layers = new Map<string, any>();

@@ -3,11 +3,23 @@ import { runtimeMapEngine } from '@/lib/mapEngine';
 import type mapboxgl from 'mapbox-gl';
 import { z } from 'zod';
 import { SceneRuntimeError } from './errors';
+import type { ModelEntityFrameSnapshot } from './ModelRuntime';
 import type { ResourceManager } from './ResourceManager';
 
 type MarkerItem = Extract<SceneTrack, { type: 'marker' }>['items'][number];
 type GeojsonItem = Extract<SceneTrack, { type: 'geojson' }>['items'][number];
 type CameraItem = Extract<SceneTrack, { type: 'camera' }>['items'][number];
+type CameraParams = CameraItem['params'];
+type StaticCameraParams = Extract<CameraParams, { center: [number, number] }>;
+type DynamicCameraParams = Exclude<CameraParams, StaticCameraParams>;
+type StaticCameraItem = Omit<CameraItem, 'params'> & { params: StaticCameraParams };
+type DynamicCameraItem = Omit<CameraItem, 'params'> & { params: DynamicCameraParams };
+type ActorCameraItem = Omit<CameraItem, 'params'> & {
+  params: Extract<DynamicCameraParams, { action: 'camera.follow_actor' }>;
+};
+type GroupCameraItem = Omit<CameraItem, 'params'> & {
+  params: Extract<DynamicCameraParams, { action: 'camera.follow_group' }>;
+};
 
 interface CameraState {
   center: [number, number];
@@ -59,6 +71,7 @@ export class MapRuntime {
   private readonly renderedTrails = new Set<string>();
   private readonly acquiredGeojsonAssetIds: string[] = [];
   private lastTimeMs = 0;
+  private lastSnapshots: readonly ModelEntityFrameSnapshot[] = [];
   private lastTrails: RuntimeTrail[] = [];
   private listenerRegistered = false;
   private disposed = false;
@@ -126,7 +139,9 @@ export class MapRuntime {
         throw new Error(`Camera intervals overlap: ${previous.id} and ${item.id}`);
       }
       this.cameraItems.push({ item, start: cameraStart });
-      cameraStart = cameraTarget(item);
+      if (isStaticCameraItem(item)) {
+        cameraStart = cameraTarget(item);
+      }
       previous = item;
     }
 
@@ -137,14 +152,15 @@ export class MapRuntime {
     }
   }
 
-  applyBase(timeMs: number) {
+  applyBase(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[] = []) {
     if (this.disposed) {
       return;
     }
     this.lastTimeMs = finiteTime(timeMs);
+    this.lastSnapshots = snapshots;
     this.applyMarkers(this.lastTimeMs);
     this.applyGeojson(this.lastTimeMs);
-    this.applyCamera(this.lastTimeMs);
+    this.applyCamera(this.lastTimeMs, snapshots);
   }
 
   applyTrails(trails: RuntimeTrail[]) {
@@ -230,7 +246,7 @@ export class MapRuntime {
     }
     this.renderedGeojson.clear();
     this.renderedTrails.clear();
-    this.applyBase(this.lastTimeMs);
+    this.applyBase(this.lastTimeMs, this.lastSnapshots);
     this.applyTrails(this.lastTrails);
   };
 
@@ -352,15 +368,44 @@ export class MapRuntime {
     this.renderedGeojson.delete(id);
   }
 
-  private applyCamera(timeMs: number) {
+  private applyCamera(timeMs: number, snapshots: readonly ModelEntityFrameSnapshot[]) {
     if (!this.initialCamera) {
       return;
     }
-    let state = this.initialCamera;
+    const staticState = this.staticCameraState(timeMs);
+    const dynamicItem = this.cameraItems
+      .map(({ item }) => item)
+      .find((item) => isDynamicCameraItem(item) && isActive(item, timeMs));
+    if (!dynamicItem || !isDynamicCameraItem(dynamicItem)) {
+      this.map.jumpTo(staticState);
+      return;
+    }
+    const target = dynamicCameraTarget(this.map, dynamicItem, snapshots);
+    if (!target) {
+      this.map.jumpTo(staticState);
+      return;
+    }
+    const transitionMs = dynamicItem.params.transitionMs;
+    const state =
+      transitionMs > 0 && timeMs < dynamicItem.startMs + transitionMs
+        ? interpolateCamera(
+            this.previousCameraPolicy(dynamicItem, timeMs, snapshots),
+            target,
+            clamp01((timeMs - dynamicItem.startMs) / transitionMs),
+          )
+        : target;
+    this.map.jumpTo(state);
+  }
+
+  private staticCameraState(timeMs: number): CameraState {
+    let state = this.initialCamera!;
     for (const prepared of this.cameraItems) {
       const { item, start } = prepared;
       if (timeMs < item.startMs) {
         break;
+      }
+      if (!isStaticCameraItem(item)) {
+        continue;
       }
       const endMs = item.startMs + item.durationMs;
       if (item.durationMs > 0 && timeMs < endMs) {
@@ -374,7 +419,23 @@ export class MapRuntime {
       }
       state = cameraTarget(item);
     }
-    this.map.jumpTo(state);
+    return state;
+  }
+
+  private previousCameraPolicy(
+    item: DynamicCameraItem,
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[],
+  ): CameraState {
+    const index = this.cameraItems.findIndex((candidate) => candidate.item === item);
+    const previous = index > 0 ? this.cameraItems[index - 1]?.item : undefined;
+    if (previous && isDynamicCameraItem(previous)) {
+      const state = dynamicCameraTarget(this.map, previous, snapshots);
+      if (state) {
+        return state;
+      }
+    }
+    return this.staticCameraState(timeMs);
   }
 
   private removeLayerAndSource(id: string) {
@@ -420,13 +481,124 @@ function isActive(item: { startMs: number; durationMs: number }, timeMs: number)
   return item.startMs <= timeMs && timeMs < item.startMs + item.durationMs;
 }
 
-function cameraTarget(item: CameraItem): CameraState {
+function isStaticCameraItem(item: CameraItem): item is StaticCameraItem {
+  return !('action' in item.params);
+}
+
+function isDynamicCameraItem(
+  item: CameraItem,
+): item is DynamicCameraItem {
+  return !isStaticCameraItem(item);
+}
+
+function cameraTarget(item: StaticCameraItem): CameraState {
   return {
     center: item.params.center,
     zoom: item.params.zoom,
     pitch: item.params.pitch,
     bearing: item.params.bearing,
   };
+}
+
+function dynamicCameraTarget(
+  map: mapboxgl.Map,
+  item: DynamicCameraItem,
+  snapshots: readonly ModelEntityFrameSnapshot[],
+): CameraState | undefined {
+  switch (item.params.action) {
+    case 'camera.follow_actor':
+      return actorCameraTarget(item.params, snapshots);
+    case 'camera.follow_group':
+      return groupCameraTarget(map, item.params, snapshots);
+  }
+}
+
+function actorCameraTarget(
+  params: ActorCameraItem['params'],
+  snapshots: readonly ModelEntityFrameSnapshot[],
+): CameraState | undefined {
+  const subject = snapshots.find(
+    (snapshot) => snapshot.entityId === params.entityId && snapshot.visible && hasCoordinates(snapshot),
+  );
+  if (!subject || subject.longitude === undefined || subject.latitude === undefined) {
+    return undefined;
+  }
+  const headingRad = degreesToRadians(subject.headingDeg ?? 0);
+  const offsetDeg = params.lookAheadMs / 100_000;
+  return {
+    center: [
+      normalizeLongitude(subject.longitude + Math.sin(headingRad) * offsetDeg),
+      clampLatitude(subject.latitude + Math.cos(headingRad) * offsetDeg),
+    ],
+    zoom: params.zoom,
+    pitch: params.pitch,
+    bearing: params.bearing,
+  };
+}
+
+function groupCameraTarget(
+  map: mapboxgl.Map,
+  params: GroupCameraItem['params'],
+  snapshots: readonly ModelEntityFrameSnapshot[],
+): CameraState | undefined {
+  const snapshotByEntityId = new Map(snapshots.map((snapshot) => [snapshot.entityId, snapshot]));
+  const subjects = params.entityIds
+    .map((entityId) => snapshotByEntityId.get(entityId))
+    .filter((snapshot): snapshot is ModelEntityFrameSnapshot =>
+      snapshot !== undefined && snapshot.visible && hasCoordinates(snapshot),
+    );
+  if (subjects.length === 0) {
+    return undefined;
+  }
+  if (subjects.length === 1) {
+    const subject = subjects[0]!;
+    return {
+      center: [subject.longitude!, subject.latitude!],
+      zoom: params.maxZoom,
+      pitch: params.pitch,
+      bearing: params.bearing,
+    };
+  }
+  const longitudes = subjects.map((subject) => subject.longitude!);
+  const latitudes = subjects.map((subject) => subject.latitude!);
+  const fitted = map.cameraForBounds(
+    [
+      [Math.min(...longitudes), Math.min(...latitudes)],
+      [Math.max(...longitudes), Math.max(...latitudes)],
+    ],
+    { padding: params.paddingPx },
+  );
+  if (!fitted) {
+    return undefined;
+  }
+  const center = cameraCenter(fitted.center);
+  const zoom = fitted.zoom;
+  if (!center || typeof zoom !== 'number' || !Number.isFinite(zoom)) {
+    return undefined;
+  }
+  return {
+    center,
+    zoom: clamp(zoom, params.minZoom, params.maxZoom),
+    pitch: params.pitch,
+    bearing: params.bearing,
+  };
+}
+
+function hasCoordinates(
+  snapshot: ModelEntityFrameSnapshot,
+): snapshot is ModelEntityFrameSnapshot & { longitude: number; latitude: number } {
+  return Number.isFinite(snapshot.longitude) && Number.isFinite(snapshot.latitude);
+}
+
+function cameraCenter(center: mapboxgl.LngLatLike | undefined): [number, number] | undefined {
+  if (!center) {
+    return undefined;
+  }
+  if (Array.isArray(center)) {
+    return Number.isFinite(center[0]) && Number.isFinite(center[1]) ? [center[0], center[1]] : undefined;
+  }
+  const longitude = 'lng' in center ? center.lng : center.lon;
+  return Number.isFinite(longitude) && Number.isFinite(center.lat) ? [longitude, center.lat] : undefined;
 }
 
 function interpolateCamera(start: CameraState, end: CameraState, ratio: number): CameraState {
@@ -461,6 +633,22 @@ function lerp(start: number, end: number, ratio: number) {
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function degreesToRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function normalizeLongitude(value: number) {
+  return ((((value + 180) % 360) + 360) % 360) - 180;
+}
+
+function clampLatitude(value: number) {
+  return clamp(value, -90, 90);
 }
 
 function finiteTime(value: number) {

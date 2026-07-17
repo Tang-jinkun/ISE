@@ -2,6 +2,7 @@ import type { SceneTrack } from '@ise/runtime-contracts';
 import { expect, it, vi } from 'vitest';
 import type { LoadedAsset } from '../ResourceManager';
 import { MapRuntime } from '../MapRuntime';
+import type { ModelEntityFrameSnapshot } from '../ModelRuntime';
 import { FakeMap } from './helpers/fakes';
 
 type MarkerTrack = Extract<SceneTrack, { type: 'marker' }>;
@@ -157,6 +158,27 @@ function markerDependencies(map: FakeMap) {
   };
 }
 
+function snapshot(
+  entityId: string,
+  longitude: number,
+  latitude: number,
+  options: Partial<ModelEntityFrameSnapshot> = {},
+): ModelEntityFrameSnapshot {
+  return {
+    entityId,
+    state: 'normal',
+    visible: true,
+    longitude,
+    latitude,
+    altitudeM: 1_000,
+    headingDeg: 90,
+    pitchDeg: 0,
+    position: [longitude, latitude, 0],
+    quaternion: [0, 0, 0, 1],
+    ...options,
+  };
+}
+
 it('adds active marker and geometry layers with namespaced IDs and removes expired items', async () => {
   const map = new FakeMap();
   const resources = fakeResources({ 'geo:border': featureCollection });
@@ -204,6 +226,168 @@ it('uses jumpTo with the same interpolated camera state after seek and replay', 
   runtime.applyBase(1_500);
   expect(map.lastJump).toEqual(first);
   expect(map.easeTo).not.toHaveBeenCalled();
+});
+
+it('follows the current visible actor snapshot with a deterministic heading look-ahead', async () => {
+  const map = new FakeMap();
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(1_000, 2_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'tracking',
+      zoom: 11,
+      pitch: 35,
+      bearing: 20,
+      lookAheadMs: 1_000,
+      transitionMs: 0,
+    }),
+  ]);
+
+  runtime.applyBase(1_500, [snapshot('fighter-1', 76, 30)]);
+  expect(map.lastJump).toEqual({ center: [76.01, 30], zoom: 11, pitch: 35, bearing: 20 });
+
+  runtime.applyBase(1_600, [snapshot('fighter-1', 77, 31, { headingDeg: 0 })]);
+  expect(map.lastJump).toEqual({ center: [77, 31.01], zoom: 11, pitch: 35, bearing: 20 });
+});
+
+it('fits visible follow-group members with bounds padding and clamps zoom', async () => {
+  const map = new FakeMap();
+  map.cameraForBounds.mockReturnValue({ center: [80, 30], zoom: 18 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(0, 2_000, {
+      action: 'camera.follow_group',
+      entityIds: ['fighter-1', 'fighter-2'],
+      framing: 'formation',
+      paddingPx: 40,
+      minZoom: 5,
+      maxZoom: 12,
+      pitch: 30,
+      bearing: -10,
+      transitionMs: 0,
+    }),
+  ]);
+
+  runtime.applyBase(500, [snapshot('fighter-1', 76, 30), snapshot('fighter-2', 84, 31)]);
+  expect(map.cameraForBounds).toHaveBeenCalledWith([[76, 30], [84, 31]], { padding: 40 });
+  expect(map.lastJump).toEqual({ center: [80, 30], zoom: 12, pitch: 30, bearing: -10 });
+
+  runtime.applyBase(600, [snapshot('fighter-1', 76, 30)]);
+  expect(map.lastJump).toEqual({ center: [76, 30], zoom: 12, pitch: 30, bearing: -10 });
+});
+
+it('uses the deterministic static fallback when an active follow subject is hidden', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(0, 1_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'close',
+      zoom: 12,
+      pitch: 45,
+      bearing: 10,
+      lookAheadMs: 500,
+      transitionMs: 0,
+    }),
+  ]);
+
+  runtime.applyBase(500, [snapshot('fighter-1', 76, 30, { visible: false })]);
+  expect(map.lastJump).toEqual({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+});
+
+it('recreates an actor-follow camera state after seek and replay without map history', async () => {
+  const map = new FakeMap();
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(1_000, 2_000, {
+      action: 'camera.follow_actor',
+      entityId: 'fighter-1',
+      framing: 'tracking',
+      zoom: 10,
+      pitch: 25,
+      bearing: 5,
+      lookAheadMs: 500,
+      transitionMs: 400,
+    }),
+  ]);
+  const frames = [snapshot('fighter-1', 76, 30)];
+
+  runtime.applyBase(1_200, frames);
+  const first = map.lastJump;
+  runtime.applyBase(0, []);
+  runtime.applyBase(1_200, frames);
+  expect(map.lastJump).toEqual(first);
+  expect(map.easeTo).not.toHaveBeenCalled();
+});
+
+it('blends from the preceding dynamic policy using the current snapshots', async () => {
+  const map = new FakeMap();
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  const track: CameraTrack = {
+    trackId: 'camera',
+    type: 'camera',
+    label: 'Camera',
+    visible: true,
+    items: [
+      {
+        id: 'follow-first',
+        eventUnitId: 'event-1',
+        startMs: 0,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          action: 'camera.follow_actor',
+          entityId: 'fighter-1',
+          framing: 'tracking',
+          zoom: 8,
+          pitch: 10,
+          bearing: 20,
+          lookAheadMs: 0,
+          transitionMs: 0,
+        },
+      },
+      {
+        id: 'follow-second',
+        eventUnitId: 'event-2',
+        startMs: 1_000,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          action: 'camera.follow_actor',
+          entityId: 'fighter-2',
+          framing: 'close',
+          zoom: 12,
+          pitch: 30,
+          bearing: 60,
+          lookAheadMs: 0,
+          transitionMs: 500,
+        },
+      },
+    ],
+  };
+  await runtime.load([track]);
+
+  runtime.applyBase(1_250, [snapshot('fighter-1', 74, 25), snapshot('fighter-2', 84, 35)]);
+  expect(map.lastJump).toEqual({ center: [79, 30], zoom: 10, pitch: 20, bearing: 40 });
+});
+
+it('preserves the legacy static camera reducer byte-for-byte', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  await runtime.load([
+    cameraTrack(1_000, 1_000, {
+      center: [80, 30],
+      zoom: 7,
+      pitch: 40,
+      bearing: 90,
+      easing: 'linear',
+    }),
+  ]);
+
+  runtime.applyBase(1_500, []);
+  expect(map.lastJump).toEqual({ center: [75, 25], zoom: 5, pitch: 20, bearing: 45 });
 });
 
 it('rebuilds owned layers after style.load and unregisters listeners on dispose', async () => {

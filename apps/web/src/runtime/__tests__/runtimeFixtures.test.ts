@@ -72,7 +72,12 @@ it('builds the exact synchronized main acceptance scene', () => {
   ]);
 
   const camera = RUNTIME_MAIN_CONFIG.tracks.find((track) => track.type === 'camera')!;
-  expect(camera.items.map((item) => ({
+  const staticCameraItems = camera.items.filter(
+    (item): item is (typeof camera.items)[number] & {
+      params: { center: [number, number]; zoom: number; pitch: number; bearing: number };
+    } => !('action' in item.params),
+  );
+  expect(staticCameraItems.map((item) => ({
     id: item.id,
     startMs: item.startMs,
     endMs: item.startMs + item.durationMs,
