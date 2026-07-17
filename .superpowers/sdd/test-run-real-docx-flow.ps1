@@ -41,7 +41,7 @@ if (-not $e2eText.Contains("getByTestId('runtime-replay').click()")) {
 foreach ($marker in @(
   'function cameraAcceptanceTimes',
   'async function seekPreviewRuntime',
-  'expect(modelTracks).toHaveLength(13)',
+  'expect(modelTracks).toHaveLength(sceneConfig.entities.length)',
   'function followAcceptanceSamples',
   'function assertPersistedSubtitleStyle',
   'function expectRegisteredRuntimeRoutes'
@@ -74,6 +74,7 @@ foreach ($name in @(
   'Write-Utf8File',
   'Get-FlowAccessToken',
   'Select-CorrelatedArtifacts',
+  'Test-RequiredEngagementOutcomes',
   'Assert-FinalDomainInvariants',
   'Export-FinalArtifacts'
 )) {
@@ -83,6 +84,17 @@ foreach ($name in @(
   }, $true)
   if ($null -eq $functionAst) { throw "Missing function under test: $name" }
   Invoke-Expression $functionAst.Extent.Text
+}
+
+$requiredEngagements = @(
+  [pscustomobject]@{ outcome = 'interception' },
+  [pscustomobject]@{ outcome = 'destroyed' }
+)
+if (-not (Test-RequiredEngagementOutcomes $requiredEngagements)) {
+  throw 'Expected interception and destroyed engagements to satisfy the real-flow requirement.'
+}
+if (Test-RequiredEngagementOutcomes @([pscustomobject]@{ outcome = 'destroyed' })) {
+  throw 'Expected a missing interception engagement to fail the real-flow requirement.'
 }
 
 function Invoke-JsonRequest {

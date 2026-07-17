@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { OwnerType } from '@prisma/client';
+import { Transform } from 'class-transformer';
 
 export class UpdateScriptDto {
   @ApiProperty({ description: '脚本标题', required: false })
@@ -11,6 +12,7 @@ export class UpdateScriptDto {
   @ApiProperty({ description: '脚本配置', required: false })
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value && typeof value === 'object' ? JSON.stringify(value) : value)
   config?: string;
 
   @ApiProperty({ description: '脚本类型', required: false })

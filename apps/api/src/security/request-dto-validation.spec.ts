@@ -5,6 +5,7 @@ import { CreateScriptDto } from '../modules/script/dto/create-script.dto';
 import { UpdateScriptDto } from '../modules/script/dto/update-script.dto';
 import { UpdateFileDto } from '../modules/file/dto/update-file.dto';
 import { RegisterParamsDto } from '../modules/auth/dto/params-auth.dto';
+import { deepParseObject } from '../utils/common';
 
 jest.mock('../modules/file/file.service', () => ({ FileService: class FileService {} }));
 jest.mock('../modules/folder/folder.service', () => ({ FolderService: class FolderService {} }));
@@ -113,12 +114,12 @@ describe('strict request DTO compatibility', () => {
   it('preserves script config and conversation when creating a script', async () => {
     const conversation = [{ role: 'user', content: 'Build the scene' }];
     const result = await pipe.transform(
-      {
+      deepParseObject({
         title: 'Scene script',
         config: '{"tracks":[]}',
         type: 'default',
         conversation,
-      },
+      }),
       { type: 'body', metatype: CreateScriptDto },
     );
 
@@ -146,7 +147,7 @@ describe('strict request DTO compatibility', () => {
   it('preserves script config and conversation when updating a script', async () => {
     const conversation = [{ role: 'assistant', content: 'Updated' }];
     const result = await pipe.transform(
-      { config: '{"tracks":[1]}', conversation },
+      deepParseObject({ config: '{"tracks":[1]}', conversation }),
       { type: 'body', metatype: UpdateScriptDto },
     );
 

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { OwnerType } from '@prisma/client';
+import { Transform } from 'class-transformer';
 
 export class CreateScriptDto {
   @ApiProperty({ description: '脚本标题', example: '我的脚本' })
@@ -10,6 +11,7 @@ export class CreateScriptDto {
 
   @ApiPropertyOptional({ description: '脚本配置', default: '{}' })
   @IsOptional()
+  @Transform(({ value }) => value && typeof value === 'object' ? JSON.stringify(value) : value)
   @IsString()
   config?: string;
 

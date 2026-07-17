@@ -532,6 +532,13 @@ function Select-CorrelatedArtifacts {
   }
 }
 
+function Test-RequiredEngagementOutcomes {
+  param($Engagements)
+  $outcomes = @(@($Engagements) | ForEach-Object { Get-PropertyValue $_ 'outcome' })
+  return (Test-OrdinalContains $outcomes 'interception') -and
+    (Test-OrdinalContains $outcomes 'destroyed')
+}
+
 function Assert-FinalDomainInvariants {
   param($Selection, [int]$ExpectedActorCount = 0)
   $blueprint = Get-PropertyValue $Selection.SceneBlueprint 'data'
@@ -612,8 +619,8 @@ function Assert-FinalDomainInvariants {
     }
 
     $weaponEngagements = @(Get-PropertyValue $choreography 'weaponEngagements')
-    if ($weaponEngagements.Count -ne 3) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'ChoreographyPlan requires exactly three weapon engagements.'
+    if (-not (Test-RequiredEngagementOutcomes $weaponEngagements)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'ChoreographyPlan requires interception and destroyed weapon engagements.'
     }
     $relationLinkKinds = @(@(Get-PropertyValue $choreography 'relationSegments') | ForEach-Object {
       Get-PropertyValue $_ 'linkKind'
