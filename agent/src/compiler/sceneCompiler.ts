@@ -375,6 +375,20 @@ function routeBounds(
   return asset.trajectory.bounds
 }
 
+function routePointAtPlaybackTime(
+  assetRegistry: AssetRegistrySnapshot,
+  trajectoryAssetId: string,
+  playbackTimeMs: number,
+  followStartMs: number,
+  followEndMs: number,
+): [number, number] {
+  const [[west, south], [east, north]] = routeBounds(assetRegistry, trajectoryAssetId)
+  const progress = followEndMs <= followStartMs
+    ? 1
+    : Math.max(0, Math.min(1, (playbackTimeMs - followStartMs) / (followEndMs - followStartMs)))
+  return [west + (east - west) * progress, south + (north - south) * progress]
+}
+
 function unionBounds(
   bounds: readonly [[number, number], [number, number]][],
 ): [[number, number], [number, number]] {
@@ -577,6 +591,21 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     capabilities: capabilityManifest,
   })
   const subtitles = new Map(scheduled.subtitles.map(subtitle => [subtitle.subtitleId, subtitle]))
+  const actorPlaybackWindows = new Map(resolvedScenePlan.resolvedActors.map(actor => {
+    const lifecycle = lifecycles.get(actor.actorInstanceId)
+    const firstBeat = lifecycle ? sceneBeats.get(lifecycle.firstSceneBeatRef) : undefined
+    const lastBeat = lifecycle ? sceneBeats.get(lifecycle.lastSceneBeatRef) : undefined
+    const firstSubtitle = firstBeat?.subtitleId ? subtitles.get(firstBeat.subtitleId) : undefined
+    const lastSubtitle = lastBeat?.subtitleId ? subtitles.get(lastBeat.subtitleId) : undefined
+    if (!firstSubtitle || !lastSubtitle) fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
+    const spawnStartMs = firstSubtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    const followStartMs = spawnStartMs + capabilityManifest.minimumDurations['model.spawn']
+    return [actor.actorInstanceId, {
+      spawnStartMs,
+      followStartMs,
+      followEndMs: lastSubtitle.startMs + lastSubtitle.durationMs,
+    }] as const
+  }))
   const dataLinkCommands = choreographyPlan.relationSegments.map(relation => {
     const sceneBeat = sceneBeats.get(relation.sceneBeatRef)
     const subtitle = sceneBeat?.subtitleId ? subtitles.get(sceneBeat.subtitleId) : undefined
@@ -595,6 +624,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   })
   const phaseCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
+  const interceptedTargetHides = new Map<string, CanonicalCommand>()
   const engagementForShot = (shot: ChoreographyPlan['shotPlan'][number]) =>
     choreographyPlan.weaponEngagements.find(engagement =>
       shot.shotId.includes(`:${engagement.weaponRef}:`))
@@ -617,16 +647,24 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
       const engagement = engagementForShot(shot)
       if (!sceneBeat || !unit || !engagement || !shot.phase) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+      const startMs = phaseStartMs + index * phaseDurationMs
       const subjectBounds = shot.subjectRefs.map(actorId => {
         const assignment = assignments.get(actorId)
-        if (!assignment) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
-        return routeBounds(assetRegistry, assignment.trajectoryAssetRef)
+        const playbackWindow = actorPlaybackWindows.get(actorId)
+        if (!assignment || !playbackWindow) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
+        const point = routePointAtPlaybackTime(
+          assetRegistry,
+          assignment.trajectoryAssetRef,
+          startMs,
+          playbackWindow.followStartMs,
+          playbackWindow.followEndMs,
+        )
+        return [point, point] as [[number, number], [number, number]]
       })
       const requirement = narrativePlan.sceneRequirements.find(item => item.eventUnitId === unit.eventUnitId)
       const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
       const camera = cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template))
       const zoomOffset = shot.phase === 'launch' ? 0 : shot.phase === 'midcourse' ? 0.5 : shot.phase === 'terminal' ? 1 : 0.75
-      const startMs = phaseStartMs + index * phaseDurationMs
       phaseCommands.push(runtimeCommandSchema.parse({
         commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
         type: 'camera.transition',
@@ -643,6 +681,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
           },
           startMs, durationMs: capabilityManifest.minimumDurations['video.play'], dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
         }))
+        if (engagement.outcome === 'interception') {
+          interceptedTargetHides.set(engagement.targetRef, runtimeCommandSchema.parse({
+            commandId: `cmd:${shot.shotId}:intercepted-hide`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
+            type: 'model.hide', params: { action: 'model.hide', entityId: engagement.targetRef },
+            startMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
+            dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+          }))
+        }
       }
       if (shot.phase === 'aftermath' && engagement.outcome === 'destroyed') {
         const stateDurationMs = 1_000
@@ -669,30 +715,30 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     return runtimeCommandSchema.parse({ ...command, startMs, durationMs })
   }
   const actorCommands = actorCommandDrafts.flatMap(({ actorInstanceRef, spawn, follow, hide }) => {
-    const lifecycle = lifecycles.get(actorInstanceRef)!
-    const firstBeat = sceneBeats.get(lifecycle.firstSceneBeatRef)!
-    const lastBeat = sceneBeats.get(lifecycle.lastSceneBeatRef)!
-    if (!firstBeat.subtitleId || !lastBeat.subtitleId) fail('ACTOR_SCENE_BEAT_UNBOUND', actorInstanceRef)
-    const firstSubtitle = subtitles.get(firstBeat.subtitleId)
-    const lastSubtitle = subtitles.get(lastBeat.subtitleId)
-    if (!firstSubtitle || !lastSubtitle) fail('ACTOR_SCENE_BEAT_UNBOUND', actorInstanceRef)
-
-    const spawnStartMs = firstSubtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    const playbackWindow = actorPlaybackWindows.get(actorInstanceRef)
+    if (!playbackWindow) fail('ACTOR_SCENE_BEAT_UNBOUND', actorInstanceRef)
+    const { spawnStartMs, followStartMs, followEndMs } = playbackWindow
     const spawnDurationMs = capabilityManifest.minimumDurations['model.spawn']
-    const followStartMs = spawnStartMs + spawnDurationMs
-    const followEndMs = lastSubtitle.startMs + lastSubtitle.durationMs
     const followDurationMs = followEndMs - followStartMs
     if (followDurationMs < capabilityManifest.minimumDurations['model.follow_path']) {
       fail('NARRATION_VISUAL_DURATION_CONFLICT', actorInstanceRef)
     }
     const destroyedHide = destroyedTargetHides.get(actorInstanceRef)
+    const interceptedHide = interceptedTargetHides.get(actorInstanceRef)
     return [
       scheduleActorCommand(spawn, spawnStartMs, spawnDurationMs),
       scheduleActorCommand(follow, followStartMs, followDurationMs),
-      ...(destroyedHide ? [] : [scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide'])]),
+      ...(destroyedHide || interceptedHide ? [] : [scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide'])]),
     ]
   })
-  const finalCommands = [...scheduled.commands, ...dataLinkCommands, ...phaseCommands, ...actorCommands, ...destroyedTargetHides.values()]
+  const finalCommands = [
+    ...scheduled.commands,
+    ...dataLinkCommands,
+    ...phaseCommands,
+    ...actorCommands,
+    ...destroyedTargetHides.values(),
+    ...interceptedTargetHides.values(),
+  ]
   const totalDurationMs = Math.max(
     1,
     ...scheduled.subtitles.map(item => item.startMs + item.durationMs),

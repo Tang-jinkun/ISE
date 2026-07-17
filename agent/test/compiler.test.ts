@@ -707,6 +707,42 @@ test('final compiler emits automatic missile lifecycle, phased cameras, impact, 
   assert.ok(impactVideos.some(command => command.evidenceRefs.includes('ev-counterattack')))
 })
 
+test('successful interception terminates the intercepted target at terminal impact', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const terminalCamera = plan.commands.find(command =>
+    command.type === 'camera.transition'
+    && command.commandId.includes(`:${engagement.weaponRef}:terminal:`))!
+  const targetFollow = plan.commands.find(command =>
+    command.type === 'model.follow_path'
+    && command.targetId === engagement.targetRef)!
+  const targetHide = plan.commands.find(command =>
+    command.type === 'model.hide'
+    && command.targetId === engagement.targetRef)!
+
+  assert.equal(targetHide.startMs, terminalCamera.startMs)
+  assert.ok(targetFollow.startMs < targetHide.startMs)
+  assert.equal(plan.commands.some(command =>
+    command.type === 'model.spawn'
+    && command.targetId === engagement.targetRef
+    && command.startMs > targetHide.startMs), false)
+  assert.deepEqual(targetHide.evidenceRefs, engagement.evidenceRefs)
+})
+
+test('engagement phase cameras follow local actor positions as the phase time advances', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const phaseCameras = plan.commands.filter((command): command is Extract<(typeof plan.commands)[number], { type: 'camera.transition' }> =>
+    command.type === 'camera.transition'
+    && command.commandId.includes(`:${engagement.weaponRef}:`))
+    .sort((left, right) => left.startMs - right.startMs)
+
+  assert.equal(phaseCameras.length, 4)
+  assert.notDeepEqual(phaseCameras[1]!.params.center, phaseCameras[2]!.params.center)
+})
+
 test('choreography grounds every missile data link and only same-side supported AWACS data links', () => {
   const fixture = finalInputForEngagementFixture()
   const awacsGroup: SceneBlueprint['actorGroups'][number] = {
