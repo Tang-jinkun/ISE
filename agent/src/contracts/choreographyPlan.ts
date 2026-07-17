@@ -15,6 +15,7 @@ export const motionSegmentSchema = z.strictObject({
   sceneBeatRef: z.string().min(1),
   behavior: z.string().min(1),
   routeAssignmentRef: z.string().min(1),
+  coverage: z.literal('actor-lifecycle'),
 })
 
 export const formationSegmentSchema = z.strictObject({

@@ -4,6 +4,7 @@ import { narrativePlanSchema, type NarrativePlan, type SceneRequirement, type Te
 import { assetRegistrySnapshotSchema, type AssetRegistryEntry, type AssetRegistrySnapshot } from '../contracts/assetRegistry.ts'
 import {
   canonicalRuntimePlanSchema,
+  runtimeCommandSchema,
   type CanonicalCommand,
   type CanonicalRuntimePlan,
   type CommandDraft,
@@ -27,7 +28,7 @@ import {
   type CameraProfile,
   type InformationCardDraft,
 } from './templates.ts'
-import { scheduleNarrative } from './scheduler.ts'
+import { scheduleNarrative, SUBTITLE_VISUAL_LEAD_MS } from './scheduler.ts'
 
 export interface LegacyCompilerInput {
   eventPlanArtifactId: string
@@ -453,6 +454,12 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   ) fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', choreographyPlan.choreographyPlanId)
 
   const commands: CommandDraft[] = []
+  const actorCommandDrafts: Array<{
+    actorInstanceRef: string
+    spawn: CommandDraft
+    follow: CommandDraft
+    hide: CommandDraft
+  }> = []
   const informationCards: InformationCardDraft[] = []
   for (const actor of resolvedScenePlan.resolvedActors) {
     const entity = entities.find(candidate => candidate.entityId === actor.actorInstanceId)!
@@ -467,30 +474,31 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     }
     const spawnId = `cmd:${actor.actorInstanceId}:spawn`
     const followId = `cmd:${actor.actorInstanceId}:follow-1`
-    commands.push({
+    const spawn: CommandDraft = {
       commandId: spawnId,
       eventUnitId: firstUnit.eventUnitId,
       targetId: actor.actorInstanceId,
       type: 'model.spawn',
       params: { action: 'model.spawn', entityId: actor.actorInstanceId, modelAssetId: entity.modelAssetId! },
       dependsOn: [], onFailure: 'abort', evidenceRefs: [...firstUnit.evidenceRefs], desiredDurationMs: 500,
-    })
-    commands.push({
+    }
+    const follow: CommandDraft = {
       commandId: followId,
       eventUnitId: firstUnit.eventUnitId,
       targetId: actor.actorInstanceId,
       type: 'model.follow_path',
       params: { action: 'model.follow_path', entityId: actor.actorInstanceId, trajectoryAssetId: assignment.trajectoryAssetRef },
-      dependsOn: [spawnId], onFailure: 'abort', evidenceRefs: [...firstUnit.evidenceRefs], desiredDurationMs: 6_000,
-    })
-    commands.push({
+      dependsOn: [spawnId], onFailure: 'abort', evidenceRefs: [...firstUnit.evidenceRefs],
+    }
+    const hide: CommandDraft = {
       commandId: `cmd:${actor.actorInstanceId}:hide`,
       eventUnitId: lastUnit.eventUnitId,
       targetId: actor.actorInstanceId,
       type: 'model.hide',
       params: { action: 'model.hide', entityId: actor.actorInstanceId },
       dependsOn: [followId], onFailure: 'abort', evidenceRefs: [...lastUnit.evidenceRefs], desiredDurationMs: 500,
-    })
+    }
+    actorCommandDrafts.push({ actorInstanceRef: actor.actorInstanceId, spawn, follow, hide })
   }
 
   for (const shot of choreographyPlan.shotPlan) {
@@ -567,6 +575,45 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     informationCardDrafts: informationCards,
     capabilities: capabilityManifest,
   })
+  const subtitles = new Map(scheduled.subtitles.map(subtitle => [subtitle.subtitleId, subtitle]))
+  const scheduleActorCommand = (
+    draft: CommandDraft,
+    startMs: number,
+    durationMs: number,
+  ): CanonicalCommand => {
+    const { desiredDurationMs: _desiredDurationMs, ...command } = draft
+    return runtimeCommandSchema.parse({ ...command, startMs, durationMs })
+  }
+  const actorCommands = actorCommandDrafts.flatMap(({ actorInstanceRef, spawn, follow, hide }) => {
+    const lifecycle = lifecycles.get(actorInstanceRef)!
+    const firstBeat = sceneBeats.get(lifecycle.firstSceneBeatRef)!
+    const lastBeat = sceneBeats.get(lifecycle.lastSceneBeatRef)!
+    if (!firstBeat.subtitleId || !lastBeat.subtitleId) fail('ACTOR_SCENE_BEAT_UNBOUND', actorInstanceRef)
+    const firstSubtitle = subtitles.get(firstBeat.subtitleId)
+    const lastSubtitle = subtitles.get(lastBeat.subtitleId)
+    if (!firstSubtitle || !lastSubtitle) fail('ACTOR_SCENE_BEAT_UNBOUND', actorInstanceRef)
+
+    const spawnStartMs = firstSubtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    const spawnDurationMs = capabilityManifest.minimumDurations['model.spawn']
+    const followStartMs = spawnStartMs + spawnDurationMs
+    const followEndMs = lastSubtitle.startMs + lastSubtitle.durationMs
+    const followDurationMs = followEndMs - followStartMs
+    if (followDurationMs < capabilityManifest.minimumDurations['model.follow_path']) {
+      fail('NARRATION_VISUAL_DURATION_CONFLICT', actorInstanceRef)
+    }
+    return [
+      scheduleActorCommand(spawn, spawnStartMs, spawnDurationMs),
+      scheduleActorCommand(follow, followStartMs, followDurationMs),
+      scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide']),
+    ]
+  })
+  const finalCommands = [...scheduled.commands, ...actorCommands]
+  const totalDurationMs = Math.max(
+    1,
+    ...scheduled.subtitles.map(item => item.startMs + item.durationMs),
+    ...finalCommands.map(item => item.startMs + item.durationMs),
+    ...scheduled.informationCards.map(item => item.startMs + item.durationMs),
+  )
   const sourceArtifactIds = [
     rawInput.eventPlanArtifactId,
     rawInput.narrativePlanArtifactId,
@@ -578,7 +625,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   ]
   const outputIds = [
     ...scheduled.subtitles.map(item => [item.subtitleId, item.evidenceRefs] as const),
-    ...scheduled.commands.map(item => [item.commandId, item.evidenceRefs] as const),
+    ...finalCommands.map(item => [item.commandId, item.evidenceRefs] as const),
     ...scheduled.informationCards.map(item => [item.cardId, item.evidenceRefs] as const),
   ]
   const diagnostics = [...assetRegistry.diagnostics, ...resolvedScenePlan.diagnostics]
@@ -592,10 +639,10 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     narrativePlanId: narrativePlan.narrativePlanId,
     capabilityManifestVersion: capabilityManifest.version,
     assetRegistryVersion: assetRegistry.registryVersion,
-    totalDurationMs: scheduled.totalDurationMs,
+    totalDurationMs,
     entities: [...entities].sort((left, right) => left.entityId.localeCompare(right.entityId)),
     subtitles: [...scheduled.subtitles].sort((left, right) => left.subtitleId.localeCompare(right.subtitleId)),
-    commands: [...scheduled.commands].sort((left, right) => left.commandId.localeCompare(right.commandId)),
+    commands: [...finalCommands].sort((left, right) => left.commandId.localeCompare(right.commandId)),
     informationCards: [...scheduled.informationCards].sort((left, right) => left.cardId.localeCompare(right.cardId)),
     lineage: outputIds.map(([outputId, evidenceRefs]) => ({ outputId, sourceArtifactIds, evidenceRefs }))
       .sort((left, right) => left.outputId.localeCompare(right.outputId)),

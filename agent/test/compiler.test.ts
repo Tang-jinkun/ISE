@@ -395,6 +395,7 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
   assert.deepEqual(plan.entities.map(entity => entity.entityId), fixture.resolvedScenePlan.resolvedActors.map(actor => actor.actorInstanceId))
   assert.equal(plan.entities.length, 15)
   const firstRoutes = new Set<string>()
+  const followTargets = new Set<string>()
   for (const entity of plan.entities) {
     const actor = fixture.resolvedScenePlan.resolvedActors.find(item => item.actorInstanceId === entity.entityId)!
     const group = fixture.sceneBlueprint.actorGroups.find(item => item.groupId === actor.actorGroupRef)!
@@ -403,14 +404,32 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
     assert.equal(entity.modelAssetId, scenario.modelAssetRef)
     assert.equal(entity.kind, group.role.includes('weapon') ? 'missile' : 'aircraft')
     const actorCommands = plan.commands.filter(command => command.targetId === entity.entityId)
-    assert.equal(actorCommands.filter(command => command.type === 'model.spawn').length, 1, entity.entityId)
-    assert.equal(actorCommands.filter(command => command.type === 'model.hide').length, 1, entity.entityId)
-    const firstFollow = actorCommands.find(command => command.type === 'model.follow_path')
-    assert.ok(firstFollow, entity.entityId)
-    assert.equal(firstFollow.params.entityId, entity.entityId)
-    assert.equal(firstFollow.params.trajectoryAssetId, entity.defaultTrajectoryAssetId)
-    firstRoutes.add(firstFollow.params.trajectoryAssetId)
+    const spawns = actorCommands.filter(command => command.type === 'model.spawn')
+    const follows = actorCommands.filter(command => command.type === 'model.follow_path')
+    const hides = actorCommands.filter(command => command.type === 'model.hide')
+    assert.equal(spawns.length, 1, entity.entityId)
+    assert.equal(follows.length, 1, entity.entityId)
+    assert.equal(hides.length, 1, entity.entityId)
+    const spawn = spawns[0]!
+    const follow = follows[0]!
+    const hide = hides[0]!
+    const lifecycle = fixture.choreographyPlan.actorLifecycles.find(item => item.actorInstanceRef === entity.entityId)!
+    const firstBeat = fixture.sceneBlueprint.sceneBeats.find(item => item.sceneBeatId === lifecycle.firstSceneBeatRef)!
+    const lastBeat = fixture.sceneBlueprint.sceneBeats.find(item => item.sceneBeatId === lifecycle.lastSceneBeatRef)!
+    const firstSubtitle = plan.subtitles.find(item => item.subtitleId === firstBeat.subtitleId)!
+    const lastSubtitle = plan.subtitles.find(item => item.subtitleId === lastBeat.subtitleId)!
+    const motion = fixture.choreographyPlan.motionSegments.find(item => item.actorInstanceRef === entity.entityId)!
+    assert.equal(motion.coverage, 'actor-lifecycle')
+    assert.equal(spawn.startMs, firstSubtitle.startMs + 800)
+    assert.equal(follow.startMs, spawn.startMs + spawn.durationMs)
+    assert.equal(follow.startMs + follow.durationMs, lastSubtitle.startMs + lastSubtitle.durationMs)
+    assert.equal(hide.startMs, follow.startMs + follow.durationMs)
+    assert.equal(follow.params.entityId, entity.entityId)
+    assert.equal(follow.params.trajectoryAssetId, entity.defaultTrajectoryAssetId)
+    followTargets.add(follow.targetId)
+    firstRoutes.add(follow.params.trajectoryAssetId)
   }
+  assert.equal(followTargets.size, plan.entities.length)
   assert.equal(firstRoutes.size, plan.entities.length)
   assert.equal(plan.diagnostics.some(item => item.code === 'TRAJECTORY_SYNTHESIZED'), false)
   assert.equal(fixture.resolvedScenePlan.actorRouteAssignments.some(item => item.sourceKind === 'illustrative'), false)
@@ -452,6 +471,18 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
   ])
   assert.ok(plan.lineage.every(item => item.sourceArtifactIds.length === expectedSources.size
     && item.sourceArtifactIds.every(id => expectedSources.has(id))))
+})
+
+test('final compiler reports the stable conflict when an actor lifecycle cannot fit the minimum follow duration', () => {
+  const fixture = multiActorCompilerFixture()
+  fixture.narrationPlan.beats.find(beat => beat.subtitleId === 'subtitle-launch')!.estimatedDurationMs = 5_000
+  fixture.sceneBlueprint.sourceNarrationFingerprint = fingerprint(fixture.narrationPlan)
+  fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+  fixture.choreographyPlan.sourceResolvedScenePlanFingerprint = fingerprint(fixture.resolvedScenePlan)
+
+  assert.throws(() => compileFinalScene(fixture.input), (error: unknown) =>
+    error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'NARRATION_VISUAL_DURATION_CONFLICT'))
 })
 
 test('final compiler honors a blueprint image intent when the narrative template is withdrawal', () => {

@@ -274,7 +274,14 @@ test('ChoreographyPlan carries expanded actors and no exact runtime commands', (
       firstSceneBeatRef: 'scene-beat:1',
       lastSceneBeatRef: 'scene-beat:2',
     }],
-    motionSegments: [],
+    motionSegments: [{
+      segmentId: 'motion:actor:india-rafale:leader:scene-beat:1',
+      actorInstanceRef: actorInstance.actorInstanceId,
+      sceneBeatRef: 'scene-beat:1',
+      behavior: 'formation_departure',
+      routeAssignmentRef: routeAssignment.segmentId,
+      coverage: 'actor-lifecycle' as const,
+    }],
     formationSegments: [],
     weaponEngagements: [],
     relationSegments: [],
@@ -285,7 +292,13 @@ test('ChoreographyPlan carries expanded actors and no exact runtime commands', (
     lineage: [],
   }
 
-  assert.equal(choreographyPlanSchema.parse(choreography).schemaVersion, CHOREOGRAPHY_PLAN_ARTIFACT)
+  const parsed = choreographyPlanSchema.parse(choreography)
+  assert.equal(parsed.schemaVersion, CHOREOGRAPHY_PLAN_ARTIFACT)
+  assert.equal(parsed.motionSegments[0]!.coverage, 'actor-lifecycle')
+  assert.equal(choreographyPlanSchema.safeParse({
+    ...choreography,
+    motionSegments: choreography.motionSegments.map(({ coverage: _coverage, ...motion }) => motion),
+  }).success, false)
   assert.equal(choreographyPlanSchema.safeParse({ ...choreography, commands: [] }).success, false)
   assert.equal(choreographyPlanSchema.safeParse({
     ...choreography,

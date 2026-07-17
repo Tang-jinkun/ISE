@@ -76,6 +76,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       sceneBeatRef: sceneBeat.sceneBeatId,
       behavior: sceneBeat.behaviorIntents[0] ?? 'follow-registered-route',
       routeAssignmentRef: assignment.segmentId,
+      coverage: 'actor-lifecycle' as const,
     }
   })
   const groups = new Map(sceneBlueprint.actorGroups.map(group => [group.groupId, group]))
