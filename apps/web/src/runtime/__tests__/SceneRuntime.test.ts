@@ -616,7 +616,7 @@ it('diagnoses a clock-frame apply error and pauses without running later frame s
 
   harness.emitClockFrame({ timeMs: 500, playing: true, forceMediaSeek: false });
 
-  expect(harness.calls).toEqual(['map.apply:500', 'model.apply:500', 'clock.pause']);
+  expect(harness.calls).toEqual(['model.apply:500', 'clock.pause']);
   expect(harness.clock.isPlaying).toBe(false);
   expect(harness.overlayRoot.dataset.runtimeTimeMs).toBe('0');
   expect(diagnostics).toContainEqual(

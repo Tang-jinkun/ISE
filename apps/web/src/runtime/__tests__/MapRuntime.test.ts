@@ -245,10 +245,14 @@ it('follows the current visible actor snapshot with a deterministic heading look
   ]);
 
   runtime.applyBase(1_500, [snapshot('fighter-1', 76, 30)]);
-  expect(map.lastJump).toEqual({ center: [76.01, 30], zoom: 11, pitch: 35, bearing: 20 });
+  expect(map.lastJump).toMatchObject({ zoom: 11, pitch: 35, bearing: 20 });
+  expect((map.lastJump?.center as [number, number])[0]).toBeCloseTo(76.01);
+  expect((map.lastJump?.center as [number, number])[1]).toBe(30);
 
   runtime.applyBase(1_600, [snapshot('fighter-1', 77, 31, { headingDeg: 0 })]);
-  expect(map.lastJump).toEqual({ center: [77, 31.01], zoom: 11, pitch: 35, bearing: 20 });
+  expect(map.lastJump).toMatchObject({ zoom: 11, pitch: 35, bearing: 20 });
+  expect((map.lastJump?.center as [number, number])[0]).toBe(77);
+  expect((map.lastJump?.center as [number, number])[1]).toBeCloseTo(31.01);
 });
 
 it('fits visible follow-group members with bounds padding and clamps zoom', async () => {

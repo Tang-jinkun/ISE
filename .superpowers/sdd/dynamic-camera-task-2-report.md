@@ -41,3 +41,19 @@ Completed successfully with exit code 0.
 
 - Focused Vitest execution is blocked before test discovery by the workspace Node/dependency compatibility issue above. No dependency, Docker, compiler, or Agent files were changed to work around it.
 - The approved fixture dependency only narrows its legacy static-camera assertion; it does not change fixture data or runtime behavior.
+
+## Node 24 Follow-up Verification
+
+The Node 24 runtime at `C:\Users\t\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin` resolved the local worker compatibility issue. Two test expectations were corrected without production changes: heading look-ahead uses close-to assertions for floating-point coordinates, and the model-apply failure path now reflects model-before-map ordering.
+
+```text
+npm run test -w @ise/web -- --run src/runtime/__tests__/MapRuntime.test.ts src/runtime/__tests__/SceneRuntime.test.ts src/runtime/__tests__/runtimeFixtures.test.ts
+```
+
+Completed successfully under Node `v24.14.0`: 3 files and 44 tests passed.
+
+```text
+npm run typecheck -w @ise/web
+```
+
+Completed successfully under Node `v24.14.0` with exit code 0.
