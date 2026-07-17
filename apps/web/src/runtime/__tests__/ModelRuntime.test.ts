@@ -1,16 +1,18 @@
 import type { ResolvedAssetAccess, SceneEntity, SceneTrack } from '@ise/runtime-contracts';
 import * as THREE from 'three';
 import { expect, it, vi } from 'vitest';
-import { ModelRuntime, applyModelTransform, reduceModelFrame } from '../ModelRuntime';
+import {
+  applyModelTransform,
+  createModelTransformHierarchy,
+  ModelRuntime,
+  reduceModelFrame,
+} from '../ModelRuntime';
 import { prepareTrajectory, sampleTrajectory } from '../trajectory';
 import { FakeMap } from './helpers/fakes';
 
 type ModelTrack = Extract<SceneTrack, { type: 'model' }>;
 type ModelItem = ModelTrack['items'][number];
-type ModelMetadata = Extract<
-  ResolvedAssetAccess,
-  { mediaType: 'model/gltf-binary' }
->['model'];
+type ModelMetadata = Extract<ResolvedAssetAccess, { mediaType: 'model/gltf-binary' }>['model'];
 type TrajectoryMetadata = Extract<
   ResolvedAssetAccess,
   { mediaType: 'application/vnd.ise.trajectory+json' }
@@ -183,29 +185,16 @@ function modelHarness(
       x: 0.25,
       y: 0.5,
       z: altitudeM / 1_000_000,
-      meterInMercatorCoordinateUnits: () =>
-        options.meterInMercatorCoordinateUnits ?? 0.001,
+      meterInMercatorCoordinateUnits: () => options.meterInMercatorCoordinateUnits ?? 0.001,
     }),
   });
   return { map, renderers, createRenderer, resources, runtime, readGltf, readJson, clones };
 }
 
-function transformSnapshot(object: THREE.Object3D) {
-  return {
-    position: object.position.toArray(),
-    quaternion: object.quaternion.toArray(),
-    scale: object.scale.toArray(),
-    visible: object.visible,
-  };
-}
-
 it('loads one GLB template and clones an instance per entity', async () => {
   const { map, readGltf, resources, runtime, clones } = modelHarness();
 
-  await runtime.load(
-    [rafale('one'), rafale('two')],
-    [modelTrackFor('one'), modelTrackFor('two')],
-  );
+  await runtime.load([rafale('one'), rafale('two')], [modelTrackFor('one'), modelTrackFor('two')]);
 
   expect(resources.acquire).toHaveBeenCalledTimes(2);
   expect(readGltf).toHaveBeenCalledTimes(1);
@@ -281,11 +270,11 @@ it('keeps the trail valid at the exact spawn position', () => {
 });
 
 it('applies Mercator scale, rotation calibration, altitude calibration, heading, and pitch', () => {
-  const object = new THREE.Group();
+  const hierarchy = createModelTransformHierarchy(new THREE.Group());
   const sample = sampleTrajectory(eastboundTrajectory, 1_000);
 
   const transform = applyModelTransform(
-    object,
+    hierarchy,
     sample,
     {
       scale: 2,
@@ -302,13 +291,14 @@ it('applies Mercator scale, rotation calibration, altitude calibration, heading,
   );
 
   expect(transform).toEqual({ altitudeM: 1_100, scaleFactor: 0.002 });
-  expect(object.position.toArray()).toEqual([0.25, 0.5, 0.0011]);
-  expect(object.scale.toArray()).toEqual([0.002, -0.002, 0.002]);
-  expect(object.quaternion.equals(new THREE.Quaternion())).toBe(false);
+  expect(hierarchy.mercatorRoot.position.toArray()).toEqual([0.25, 0.5, 0.0011]);
+  expect(hierarchy.mercatorRoot.scale.toArray()).toEqual([0.002, -0.002, 0.002]);
+  expect(hierarchy.motionRoot.quaternion.equals(new THREE.Quaternion())).toBe(false);
+  expect(hierarchy.calibrationRoot.quaternion.equals(new THREE.Quaternion())).toBe(false);
 });
 
 it('uses eastbound trajectory heading in the model quaternion', () => {
-  const object = new THREE.Group();
+  const hierarchy = createModelTransformHierarchy(new THREE.Group());
   const sample = sampleTrajectory(eastboundTrajectory, 500);
   const metadata: ModelMetadata = {
     scale: 1,
@@ -316,16 +306,7 @@ it('uses eastbound trajectory heading in the model quaternion', () => {
     altitudeOffsetM: 0,
     entityTypes: ['aircraft'],
   };
-  const expected = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(
-      THREE.MathUtils.degToRad(sample.pitchDeg),
-      0,
-      THREE.MathUtils.degToRad(-sample.headingDeg),
-      'XYZ',
-    ),
-  );
-
-  applyModelTransform(object, sample, metadata, (_longitude, _latitude, altitudeM) => ({
+  applyModelTransform(hierarchy, sample, metadata, (_longitude, _latitude, altitudeM) => ({
     x: 0,
     y: 0,
     z: altitudeM,
@@ -333,20 +314,137 @@ it('uses eastbound trajectory heading in the model quaternion', () => {
   }));
 
   expect(sample.headingDeg).toBeGreaterThan(80);
-  expect(object.quaternion.angleTo(expected)).toBeCloseTo(0);
-  expect(object.quaternion.equals(new THREE.Quaternion())).toBe(false);
+  hierarchy.mercatorRoot.updateMatrixWorld(true);
+  const forward = new THREE.Vector3(0, 1, 0).transformDirection(hierarchy.motionRoot.matrixWorld);
+  const headingRad = THREE.MathUtils.degToRad(sample.headingDeg);
+  const pitchRad = THREE.MathUtils.degToRad(sample.pitchDeg);
+  expect(forward.x).toBeCloseTo(Math.sin(headingRad) * Math.cos(pitchRad), 5);
+  expect(forward.y).toBeCloseTo(-Math.cos(headingRad) * Math.cos(pitchRad), 5);
+  expect(forward.z).toBeCloseTo(Math.sin(pitchRad), 5);
+});
+
+it.each([
+  { headingDeg: 0, expected: [0, -1, 0] },
+  { headingDeg: 90, expected: [1, 0, 0] },
+  { headingDeg: 180, expected: [0, 1, 0] },
+  { headingDeg: 270, expected: [-1, 0, 0] },
+] as const)('points canonical model forward along heading $headingDeg', ({
+  headingDeg,
+  expected,
+}) => {
+  const hierarchy = createModelTransformHierarchy(new THREE.Group());
+  applyModelTransform(
+    hierarchy,
+    {
+      timeMs: 0,
+      longitude: 0,
+      latitude: 0,
+      altitudeM: 0,
+      headingDeg,
+      pitchDeg: 0,
+      tailEndIndex: 0,
+    },
+    {
+      scale: 1,
+      rotationOffsetDeg: [0, 0, 0],
+      altitudeOffsetM: 0,
+      entityTypes: ['aircraft'],
+    },
+    () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      meterInMercatorCoordinateUnits: () => 1,
+    }),
+  );
+
+  hierarchy.mercatorRoot.updateMatrixWorld(true);
+  const forward = new THREE.Vector3(0, 1, 0).transformDirection(hierarchy.motionRoot.matrixWorld);
+  for (const [index, value] of expected.entries()) {
+    expect(forward.getComponent(index)).toBeCloseTo(value, 5);
+  }
+});
+
+it('calibrates the source GLB nose axis before applying heading and pitch', () => {
+  const hierarchy = createModelTransformHierarchy(new THREE.Group());
+  applyModelTransform(
+    hierarchy,
+    {
+      timeMs: 0,
+      longitude: 0,
+      latitude: 0,
+      altitudeM: 0,
+      headingDeg: 90,
+      pitchDeg: 20,
+      tailEndIndex: 0,
+    },
+    {
+      scale: 1,
+      rotationOffsetDeg: [90, 0, 0],
+      altitudeOffsetM: 0,
+      entityTypes: ['aircraft'],
+    },
+    () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      meterInMercatorCoordinateUnits: () => 1,
+    }),
+  );
+
+  hierarchy.mercatorRoot.updateMatrixWorld(true);
+  const forward = new THREE.Vector3(0, 0, -1).transformDirection(
+    hierarchy.calibrationRoot.matrixWorld,
+  );
+  expect(forward.x).toBeCloseTo(Math.cos(THREE.MathUtils.degToRad(20)), 5);
+  expect(forward.y).toBeCloseTo(0, 5);
+  expect(forward.z).toBeCloseTo(Math.sin(THREE.MathUtils.degToRad(20)), 5);
+});
+
+it('keeps climb pitch on the trajectory vertical plane after turning east', () => {
+  const hierarchy = createModelTransformHierarchy(new THREE.Group());
+  applyModelTransform(
+    hierarchy,
+    {
+      timeMs: 0,
+      longitude: 0,
+      latitude: 0,
+      altitudeM: 0,
+      headingDeg: 90,
+      pitchDeg: 20,
+      tailEndIndex: 0,
+    },
+    {
+      scale: 1,
+      rotationOffsetDeg: [0, 0, 0],
+      altitudeOffsetM: 0,
+      entityTypes: ['aircraft'],
+    },
+    () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      meterInMercatorCoordinateUnits: () => 1,
+    }),
+  );
+
+  hierarchy.mercatorRoot.updateMatrixWorld(true);
+  const forward = new THREE.Vector3(0, 1, 0).transformDirection(hierarchy.motionRoot.matrixWorld);
+  expect(forward.x).toBeCloseTo(Math.cos(THREE.MathUtils.degToRad(20)), 5);
+  expect(forward.y).toBeCloseTo(0, 5);
+  expect(forward.z).toBeCloseTo(Math.sin(THREE.MathUtils.degToRad(20)), 5);
 });
 
 it('produces the identical entity transform when applying the same seek time again', async () => {
-  const { runtime, clones } = modelHarness();
+  const { runtime } = modelHarness();
   await runtime.load([rafale('one')], [modelTrackFor('one')]);
 
   runtime.apply(1_750);
-  const first = transformSnapshot(clones[0]!);
+  const first = runtime.getFrameSnapshot()[0];
   runtime.apply(0);
   runtime.apply(1_750);
 
-  expect(transformSnapshot(clones[0]!)).toEqual(first);
+  expect(runtime.getFrameSnapshot()[0]).toEqual(first);
 });
 
 it('exposes the applied GLB transform and trajectory orientation as a readonly frame snapshot', async () => {
@@ -402,12 +500,11 @@ it('exposes the entity default route and the active route for spawn and follow s
   );
 });
 
-it('keeps a physically tiny GLB at least 24 pixels wide at zoom 7', async () => {
+it('keeps a physically tiny GLB at least 36 pixels wide at zoom 7', async () => {
   const nativeExtent = 100;
   const zoom = 7;
   const physicalProjectedSizePx = 0.03;
-  const meterInMercatorCoordinateUnits =
-    physicalProjectedSizePx / (nativeExtent * 512 * 2 ** zoom);
+  const meterInMercatorCoordinateUnits = physicalProjectedSizePx / (nativeExtent * 512 * 2 ** zoom);
   const template = new THREE.Group();
   template.add(new THREE.Mesh(new THREE.BoxGeometry(nativeExtent, 20, 10)));
   const { map, runtime } = modelHarness({
@@ -424,8 +521,8 @@ it('keeps a physically tiny GLB at least 24 pixels wide at zoom 7', async () => 
   );
   expect(runtime.getFrameSnapshot()[0]).toEqual(
     expect.objectContaining({
-      projectedSizePx: 24,
-      appliedScale: 24 / (nativeExtent * 512 * 2 ** zoom),
+      projectedSizePx: 36,
+      appliedScale: 36 / (nativeExtent * 512 * 2 ** zoom),
     }),
   );
 
@@ -491,6 +588,26 @@ it('clones mesh materials per entity so state changes stay isolated', async () =
   expect(secondMaterial.opacity).toBe(templateMaterial.opacity);
 });
 
+it('makes untextured fully metallic GLBs visible without changing the source material', async () => {
+  const sourceMaterial = new THREE.MeshStandardMaterial({
+    color: 0x939393,
+    metalness: 1,
+    roughness: 0.2,
+  });
+  const template = new THREE.Group();
+  template.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), sourceMaterial));
+  const { runtime, clones } = modelHarness({ template });
+
+  await runtime.load([rafale('one')], [modelTrackFor('one')]);
+
+  const cloneMaterial = (clones[0]!.children[0] as THREE.Mesh)
+    .material as THREE.MeshStandardMaterial;
+  expect(sourceMaterial.metalness).toBe(1);
+  expect(sourceMaterial.roughness).toBe(0.2);
+  expect(cloneMaterial.metalness).toBe(0.2);
+  expect(cloneMaterial.roughness).toBe(0.55);
+});
+
 it('rejects missing calibration metadata', async () => {
   const { runtime } = modelHarness({ modelMetadata: undefined });
 
@@ -550,20 +667,19 @@ it('renders with the MapLibre projection payload', async () => {
   };
   const renderer = renderers[0]!;
 
-  layer.render({}, {
-    defaultProjectionData: {
-      mainMatrix: new Float32Array(
-        new THREE.Matrix4().identity().toArray(),
-      ),
+  layer.render(
+    {},
+    {
+      defaultProjectionData: {
+        mainMatrix: new Float32Array(new THREE.Matrix4().identity().toArray()),
+      },
     },
-  });
+  );
 
   expect(renderer.resetState).toHaveBeenCalledTimes(1);
   expect(renderer.render).toHaveBeenCalledTimes(1);
   const renderedCamera = renderer.render.mock.calls[0]![1] as THREE.Camera;
-  expect(renderedCamera.projectionMatrix.elements).toEqual(
-    new THREE.Matrix4().identity().elements,
-  );
+  expect(renderedCamera.projectionMatrix.elements).toEqual(new THREE.Matrix4().identity().elements);
 });
 
 it('re-adds the custom layer after style reload and repaints after apply', async () => {
@@ -600,10 +716,7 @@ it('disposes owned materials, renderer, listeners, and acquired assets exactly o
   expect(renderers[0]!.dispose).toHaveBeenCalledTimes(1);
   expect(renderers[0]!.forceContextLoss).not.toHaveBeenCalled();
   expect(map.listenerCount('style.load')).toBe(0);
-  expect(resources.release.mock.calls).toEqual([
-    ['model:rafale'],
-    ['trajectory:ambala-rafale-1'],
-  ]);
+  expect(resources.release.mock.calls).toEqual([['model:rafale'], ['trajectory:ambala-rafale-1']]);
   expect(clonedMaterialDispose).toHaveBeenCalledTimes(1);
   expect(templateMaterialDispose).not.toHaveBeenCalled();
   expect(templateGeometryDispose).not.toHaveBeenCalled();

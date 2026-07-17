@@ -1,23 +1,20 @@
 import type { ResolvedAssetAccess, SceneEntity, SceneTrack } from '@ise/runtime-contracts';
-import { runtimeMapEngine } from '@/lib/mapEngine';
 import type mapboxgl from 'mapbox-gl';
 import * as THREE from 'three';
+import { runtimeMapEngine } from '@/lib/mapEngine';
 import { SceneRuntimeError } from './errors';
 import type { RuntimeTrail } from './MapRuntime';
 import type { LoadedAsset, ResourceManager } from './ResourceManager';
 import {
+  type PreparedTrajectory,
   prepareTrajectory,
   sampleTrajectory,
-  type PreparedTrajectory,
   type TrajectorySample,
 } from './trajectory';
 
 type ModelTrack = Extract<SceneTrack, { type: 'model' }>;
 type ModelItem = ModelTrack['items'][number];
-type ModelMetadata = Extract<
-  ResolvedAssetAccess,
-  { mediaType: 'model/gltf-binary' }
->['model'];
+type ModelMetadata = Extract<ResolvedAssetAccess, { mediaType: 'model/gltf-binary' }>['model'];
 
 interface MercatorProjection {
   x: number;
@@ -68,13 +65,20 @@ interface MaterialState {
 interface ModelInstance {
   entity: SceneEntity;
   items: ModelItem[];
-  object: THREE.Object3D;
+  transform: ModelTransformHierarchy;
   nativeExtent: number;
   metadata: ModelMetadata;
   materials: MaterialState[];
   projectedSizePx?: number;
   appliedScale?: number;
   frame?: ModelFrameState;
+}
+
+export interface ModelTransformHierarchy {
+  mercatorRoot: THREE.Group;
+  motionRoot: THREE.Group;
+  calibrationRoot: THREE.Group;
+  content: THREE.Object3D;
 }
 
 interface ResolvedModel {
@@ -84,16 +88,13 @@ interface ResolvedModel {
 
 const layerId = 'ise-model-runtime';
 const mapboxTileSizePx = 512;
-const minimumProjectedSizePx = 24;
+const minimumProjectedSizePx = 36;
 
 const browserModelDependencies: ModelRuntimeDependencies = {
   createRenderer: (options) => new THREE.WebGLRenderer(options),
   cloneScene: (root) => root.clone(true),
   project: (longitude, latitude, altitudeM) =>
-    runtimeMapEngine.MercatorCoordinate.fromLngLat(
-      [longitude, latitude],
-      altitudeM,
-    ),
+    runtimeMapEngine.MercatorCoordinate.fromLngLat([longitude, latitude], altitudeM),
 };
 
 export function reduceModelFrame(
@@ -105,9 +106,7 @@ export function reduceModelFrame(
   const items = inputItems
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => item.params.entityId === entity.entityId)
-    .sort(
-      (left, right) => left.item.startMs - right.item.startMs || left.index - right.index,
-    );
+    .sort((left, right) => left.item.startMs - right.item.startMs || left.index - right.index);
   const seekTimeMs = finiteTime(timeMs);
   let spawned = false;
   let state = entity.initialState;
@@ -183,8 +182,18 @@ export function reduceModelFrame(
   };
 }
 
+export function createModelTransformHierarchy(content: THREE.Object3D): ModelTransformHierarchy {
+  const mercatorRoot = new THREE.Group();
+  const motionRoot = new THREE.Group();
+  const calibrationRoot = new THREE.Group();
+  calibrationRoot.add(content);
+  motionRoot.add(calibrationRoot);
+  mercatorRoot.add(motionRoot);
+  return { mercatorRoot, motionRoot, calibrationRoot, content };
+}
+
 export function applyModelTransform(
-  object: THREE.Object3D,
+  transform: ModelTransformHierarchy,
   sample: TrajectorySample,
   metadata: ModelMetadata,
   project: ModelRuntimeDependencies['project'],
@@ -192,16 +201,16 @@ export function applyModelTransform(
   const altitudeM = sample.altitudeM + metadata.altitudeOffsetM;
   const mercator = project(sample.longitude, sample.latitude, altitudeM);
   const scaleFactor = mercator.meterInMercatorCoordinateUnits() * metadata.scale;
-  object.position.set(mercator.x, mercator.y, mercator.z);
-  object.scale.set(scaleFactor, -scaleFactor, scaleFactor);
+  transform.mercatorRoot.position.set(mercator.x, mercator.y, mercator.z);
+  transform.mercatorRoot.scale.set(scaleFactor, -scaleFactor, scaleFactor);
 
-  const motion = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(
-      THREE.MathUtils.degToRad(sample.pitchDeg),
-      0,
-      THREE.MathUtils.degToRad(-sample.headingDeg),
-      'XYZ',
-    ),
+  const yaw = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 0, 1),
+    THREE.MathUtils.degToRad(-sample.headingDeg),
+  );
+  const pitch = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(1, 0, 0),
+    THREE.MathUtils.degToRad(sample.pitchDeg),
   );
   const [offsetX, offsetY, offsetZ] = metadata.rotationOffsetDeg;
   const correction = new THREE.Quaternion().setFromEuler(
@@ -212,7 +221,8 @@ export function applyModelTransform(
       'XYZ',
     ),
   );
-  object.quaternion.copy(motion).multiply(correction);
+  transform.motionRoot.quaternion.copy(yaw).multiply(pitch);
+  transform.calibrationRoot.quaternion.copy(correction);
 
   return { altitudeM, scaleFactor };
 }
@@ -294,15 +304,16 @@ export class ModelRuntime {
           );
         }
 
-        const object = this.dependencies.cloneScene(model.template);
-        const nativeExtent = modelNativeExtent(object);
-        const materials = cloneEntityMaterials(object);
-        object.visible = false;
-        this.scene.add(object);
+        const content = this.dependencies.cloneScene(model.template);
+        const transform = createModelTransformHierarchy(content);
+        const nativeExtent = modelNativeExtent(content);
+        const materials = cloneEntityMaterials(content);
+        transform.mercatorRoot.visible = false;
+        this.scene.add(transform.mercatorRoot);
         this.instances.push({
           entity,
           items: items.filter((item) => item.params.entityId === entityId),
-          object,
+          transform,
           nativeExtent,
           metadata: model.metadata,
           materials,
@@ -334,17 +345,21 @@ export class ModelRuntime {
       applyMaterialState(instance.materials, frame.state);
       if (frame.sample) {
         const { scaleFactor } = applyModelTransform(
-          instance.object,
+          instance.transform,
           frame.sample,
           instance.metadata,
           this.dependencies.project,
         );
         const size = modelDisplaySize(scaleFactor, instance.nativeExtent, this.map.getZoom());
-        instance.object.scale.set(size.appliedScale, -size.appliedScale, size.appliedScale);
+        instance.transform.mercatorRoot.scale.set(
+          size.appliedScale,
+          -size.appliedScale,
+          size.appliedScale,
+        );
         instance.appliedScale = size.appliedScale;
         instance.projectedSizePx = size.projectedSizePx;
       }
-      instance.object.visible = frame.visible;
+      instance.transform.mercatorRoot.visible = frame.visible;
       instance.frame = frame;
       if (frame.visible && frame.trail.coordinates.length > 0) {
         trails.push(frame.trail);
@@ -355,14 +370,14 @@ export class ModelRuntime {
   }
 
   getFrameSnapshot(): ModelEntityFrameSnapshot[] {
-    return this.instances.map(({ entity, object, frame, appliedScale, projectedSizePx }) => ({
+    return this.instances.map(({ entity, transform, frame, appliedScale, projectedSizePx }) => ({
       entityId: entity.entityId,
       ...(entity.modelAssetId ? { modelAssetId: entity.modelAssetId } : {}),
       ...(entity.defaultTrajectoryAssetId
         ? { defaultTrajectoryAssetId: entity.defaultTrajectoryAssetId }
         : {}),
       ...(frame?.trajectoryAssetId ? { trajectoryAssetId: frame.trajectoryAssetId } : {}),
-      visible: object.visible,
+      visible: transform.mercatorRoot.visible,
       ...(appliedScale !== undefined ? { appliedScale } : {}),
       ...(projectedSizePx !== undefined ? { projectedSizePx } : {}),
       ...(frame?.sample
@@ -374,8 +389,11 @@ export class ModelRuntime {
             pitchDeg: frame.sample.pitchDeg,
           }
         : {}),
-      position: object.position.toArray() as [number, number, number],
-      quaternion: object.quaternion.toArray() as [number, number, number, number],
+      position: transform.mercatorRoot.position.toArray() as [number, number, number],
+      quaternion: transform.motionRoot.quaternion
+        .clone()
+        .multiply(transform.calibrationRoot.quaternion)
+        .toArray() as [number, number, number, number],
     }));
   }
 
@@ -443,10 +461,7 @@ export class ModelRuntime {
       try {
         const document = await asset.readJson();
         this.assertLoadActive(signal);
-        this.trajectories.set(
-          assetId,
-          prepareTrajectory(document, asset.access.trajectory),
-        );
+        this.trajectories.set(assetId, prepareTrajectory(document, asset.access.trajectory));
       } catch (error) {
         this.assertLoadActive(signal);
         if (error instanceof SceneRuntimeError) {
@@ -462,11 +477,7 @@ export class ModelRuntime {
     }
   }
 
-  private async acquire(
-    assetId: string,
-    role: 'model' | 'trajectory',
-    signal?: AbortSignal,
-  ) {
+  private async acquire(assetId: string, role: 'model' | 'trajectory', signal?: AbortSignal) {
     const asset = await this.resources.acquire(assetId, role, signal);
     try {
       this.assertLoadActive(signal);
@@ -507,15 +518,16 @@ export class ModelRuntime {
         this.renderer.autoClear = false;
       },
       render: (_gl, matrix) => {
-        const projectionMatrix = Array.isArray(matrix) || ArrayBuffer.isView(matrix)
-          ? matrix
-          : (
-              matrix as unknown as {
-                defaultProjectionData: {
-                  mainMatrix: ArrayLike<number>;
-                };
-              }
-            ).defaultProjectionData.mainMatrix;
+        const projectionMatrix =
+          Array.isArray(matrix) || ArrayBuffer.isView(matrix)
+            ? matrix
+            : (
+                matrix as unknown as {
+                  defaultProjectionData: {
+                    mainMatrix: ArrayLike<number>;
+                  };
+                }
+              ).defaultProjectionData.mainMatrix;
         this.camera.projectionMatrix.fromArray(projectionMatrix);
         this.renderer?.resetState();
         this.renderer?.render(this.scene, this.camera);
@@ -542,7 +554,7 @@ export class ModelRuntime {
     }
 
     for (const instance of this.instances) {
-      this.scene.remove(instance.object);
+      this.scene.remove(instance.transform.mercatorRoot);
       for (const state of instance.materials) {
         state.material.dispose();
       }
@@ -579,9 +591,7 @@ function validateCommandOrder(entityId: string, inputItems: ModelItem[]) {
   const items = inputItems
     .map((item, index) => ({ item, index }))
     .filter(({ item }) => item.params.entityId === entityId)
-    .sort(
-      (left, right) => left.item.startMs - right.item.startMs || left.index - right.index,
-    );
+    .sort((left, right) => left.item.startMs - right.item.startMs || left.index - right.index);
   let spawned = false;
   for (const { item } of items) {
     switch (item.params.action) {
@@ -657,15 +667,21 @@ function modelDisplaySize(scaleFactor: number, nativeExtent: number, zoom: numbe
   };
 }
 
-function cloneMaterial(
-  material: THREE.Material,
-  clones: Map<THREE.Material, THREE.Material>,
-) {
+function cloneMaterial(material: THREE.Material, clones: Map<THREE.Material, THREE.Material>) {
   const existing = clones.get(material);
   if (existing) {
     return existing;
   }
   const clone = material.clone();
+  if (
+    clone instanceof THREE.MeshStandardMaterial &&
+    !clone.map &&
+    !clone.envMap &&
+    clone.metalness >= 0.9
+  ) {
+    clone.metalness = 0.2;
+    clone.roughness = 0.55;
+  }
   clones.set(material, clone);
   return clone;
 }
@@ -680,10 +696,7 @@ function snapshotMaterial(material: THREE.Material): MaterialState {
   };
 }
 
-function applyMaterialState(
-  materials: MaterialState[],
-  state: SceneEntity['initialState'],
-) {
+function applyMaterialState(materials: MaterialState[], state: SceneEntity['initialState']) {
   for (const snapshot of materials) {
     const { material } = snapshot;
     const color = materialColor(material, 'color');

@@ -1,9 +1,13 @@
-import { mapboxToken } from '@/config/public-env';
 import mapboxgl from 'mapbox-gl';
 import type { MutableRefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mapboxToken } from '@/config/public-env';
+import {
+  createModelTransformHierarchy,
+  type ModelTransformHierarchy,
+} from '@/runtime/ModelRuntime';
 import type { RuntimeCatalogCalibrationViewportProps } from './RuntimeCatalogCalibration';
 
 const center: [number, number] = [0, 0];
@@ -30,7 +34,10 @@ const referenceLines: GeoJSON.FeatureCollection<GeoJSON.LineString> = {
       properties: { kind: 'axis-x' },
       geometry: {
         type: 'LineString',
-        coordinates: [[-degrees(20), 0], [degrees(20), 0]],
+        coordinates: [
+          [-degrees(20), 0],
+          [degrees(20), 0],
+        ],
       },
     },
     {
@@ -38,7 +45,10 @@ const referenceLines: GeoJSON.FeatureCollection<GeoJSON.LineString> = {
       properties: { kind: 'axis-y' },
       geometry: {
         type: 'LineString',
-        coordinates: [[0, -degrees(20)], [0, degrees(20)]],
+        coordinates: [
+          [0, -degrees(20)],
+          [0, degrees(20)],
+        ],
       },
     },
     {
@@ -46,7 +56,10 @@ const referenceLines: GeoJSON.FeatureCollection<GeoJSON.LineString> = {
       properties: { kind: 'heading' },
       geometry: {
         type: 'LineString',
-        coordinates: [[0, 0], [0, degrees(100)]],
+        coordinates: [
+          [0, 0],
+          [0, degrees(100)],
+        ],
       },
     },
     {
@@ -85,7 +98,7 @@ export function RuntimeCatalogCalibrationViewport({
   const sceneRef = useRef(new THREE.Scene());
   const cameraRef = useRef(new THREE.Camera());
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const modelRef = useRef<THREE.Group | null>(null);
+  const modelRef = useRef<ModelTransformHierarchy | null>(null);
   const nativeModelRef = useRef<THREE.Object3D | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [geometry, setGeometry] = useState<GeometryEvidence | null>(null);
@@ -155,16 +168,12 @@ export function RuntimeCatalogCalibrationViewport({
           rendererRef.current = renderer;
         },
         render: (_gl, matrix) => {
-          cameraRef.current.projectionMatrix.fromArray(
-            matrix as unknown as number[],
-          );
+          cameraRef.current.projectionMatrix.fromArray(matrix as unknown as number[]);
           rendererRef.current?.resetState();
           rendererRef.current?.render(sceneRef.current, cameraRef.current);
           if (modelRef.current && !calibrationRootRef.current?.dataset.canvasContrast) {
             if (calibrationRootRef.current) {
-              calibrationRootRef.current.dataset.canvasContrast = String(
-                measureGlContrast(_gl),
-              );
+              calibrationRootRef.current.dataset.canvasContrast = String(measureGlContrast(_gl));
             }
           }
         },
@@ -198,9 +207,7 @@ export function RuntimeCatalogCalibrationViewport({
     removeCurrentModel(sceneRef.current, modelRef, nativeModelRef);
     if (!modelFile) return;
 
-    const objectUrl = URL.createObjectURL(
-      new Blob([modelFile], { type: 'model/gltf-binary' }),
-    );
+    const objectUrl = URL.createObjectURL(new Blob([modelFile], { type: 'model/gltf-binary' }));
     void new GLTFLoader()
       .loadAsync(objectUrl)
       .then((gltf) => {
@@ -208,14 +215,13 @@ export function RuntimeCatalogCalibrationViewport({
           disposeObject(gltf.scene);
           return;
         }
-        const group = new THREE.Group();
         applyCalibrationVisibilityAid(assetId, gltf.scene);
-        group.add(gltf.scene);
+        const transform = createModelTransformHierarchy(gltf.scene);
         nativeModelRef.current = gltf.scene;
-        modelRef.current = group;
-        sceneRef.current.add(group);
+        modelRef.current = transform;
+        sceneRef.current.add(transform.mercatorRoot);
         setGeometry(measureGeometry(gltf.scene, scale, rotationOffsetDeg));
-        applyCalibrationTransform(group, scale, rotationOffsetDeg, altitudeOffsetM);
+        applyCalibrationTransform(transform, scale, rotationOffsetDeg, altitudeOffsetM);
         mapRef.current?.triggerRepaint();
         onModelLoaded();
       })
@@ -265,8 +271,7 @@ export function RuntimeCatalogCalibrationViewport({
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     const aspect = width / height;
-    const halfHeight =
-      Math.max(size.y / 2, size.x / (2 * aspect), Number.EPSILON) * 1.25;
+    const halfHeight = Math.max(size.y / 2, size.x / (2 * aspect), Number.EPSILON) * 1.25;
     const detailCamera = new THREE.OrthographicCamera(
       -halfHeight * aspect,
       halfHeight * aspect,
@@ -292,10 +297,7 @@ export function RuntimeCatalogCalibrationViewport({
     return () => detailRenderer.dispose();
   }, [assetId, geometry, rotationOffsetDeg, scale]);
 
-  useEffect(
-    () => () => removeCurrentModel(sceneRef.current, modelRef, nativeModelRef),
-    [],
-  );
+  useEffect(() => () => removeCurrentModel(sceneRef.current, modelRef, nativeModelRef), []);
 
   return (
     <div
@@ -333,7 +335,10 @@ export function RuntimeCatalogCalibrationViewport({
         </output>
       ) : null}
       {loadError ? (
-        <div role="alert" className="absolute bottom-3 left-3 z-50 bg-red-950 px-3 py-2 text-sm text-red-100">
+        <div
+          role="alert"
+          className="absolute bottom-3 left-3 z-50 bg-red-950 px-3 py-2 text-sm text-red-100"
+        >
           {loadError}
         </div>
       ) : null}
@@ -348,9 +353,7 @@ function applyCalibrationVisibilityAid(
   if (assetId !== 'model:pl15e') return;
   object.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
-    const sourceMaterials = Array.isArray(child.material)
-      ? child.material
-      : [child.material];
+    const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material];
     const visibilityMaterials = sourceMaterials.map(
       () =>
         new THREE.MeshBasicMaterial({
@@ -359,30 +362,28 @@ function applyCalibrationVisibilityAid(
           toneMapped: false,
         }),
     );
-    child.material = Array.isArray(child.material)
-      ? visibilityMaterials
-      : visibilityMaterials[0]!;
+    child.material = Array.isArray(child.material) ? visibilityMaterials : visibilityMaterials[0]!;
     for (const material of sourceMaterials) material.dispose();
   });
 }
 
 function applyCalibrationTransform(
-  group: THREE.Group,
+  transform: ModelTransformHierarchy,
   scale: number,
   rotationOffsetDeg: [number, number, number],
   altitudeOffsetM: number,
 ) {
   const mercator = mapboxgl.MercatorCoordinate.fromLngLat(center, altitudeOffsetM);
   const scaleFactor = mercator.meterInMercatorCoordinateUnits() * scale;
-  group.position.set(mercator.x, mercator.y, mercator.z);
-  group.scale.set(scaleFactor, -scaleFactor, scaleFactor);
-  group.rotation.set(
+  transform.mercatorRoot.position.set(mercator.x, mercator.y, mercator.z);
+  transform.mercatorRoot.scale.set(scaleFactor, -scaleFactor, scaleFactor);
+  transform.calibrationRoot.rotation.set(
     THREE.MathUtils.degToRad(rotationOffsetDeg[0]),
     THREE.MathUtils.degToRad(rotationOffsetDeg[1]),
     THREE.MathUtils.degToRad(rotationOffsetDeg[2]),
     'XYZ',
   );
-  group.updateMatrixWorld(true);
+  transform.mercatorRoot.updateMatrixWorld(true);
 }
 
 function measureGeometry(
@@ -413,11 +414,7 @@ function measureGeometry(
 }
 
 function vectorTuple(vector: THREE.Vector3): [number, number, number] {
-  return [
-    roundEvidence(vector.x),
-    roundEvidence(vector.y),
-    roundEvidence(vector.z),
-  ];
+  return [roundEvidence(vector.x), roundEvidence(vector.y), roundEvidence(vector.z)];
 }
 
 function roundEvidence(value: number) {
@@ -441,30 +438,20 @@ function measureGlContrast(gl: WebGLRenderingContext | WebGL2RenderingContext) {
   let minimum = 255;
   let maximum = 0;
   for (let index = 0; index < pixels.length; index += 4) {
-    minimum = Math.min(
-      minimum,
-      pixels[index]!,
-      pixels[index + 1]!,
-      pixels[index + 2]!,
-    );
-    maximum = Math.max(
-      maximum,
-      pixels[index]!,
-      pixels[index + 1]!,
-      pixels[index + 2]!,
-    );
+    minimum = Math.min(minimum, pixels[index]!, pixels[index + 1]!, pixels[index + 2]!);
+    maximum = Math.max(maximum, pixels[index]!, pixels[index + 1]!, pixels[index + 2]!);
   }
   return maximum - minimum;
 }
 
 function removeCurrentModel(
   scene: THREE.Scene,
-  modelRef: MutableRefObject<THREE.Group | null>,
+  modelRef: MutableRefObject<ModelTransformHierarchy | null>,
   nativeModelRef: MutableRefObject<THREE.Object3D | null>,
 ) {
   if (modelRef.current) {
-    scene.remove(modelRef.current);
-    disposeObject(modelRef.current);
+    scene.remove(modelRef.current.mercatorRoot);
+    disposeObject(modelRef.current.mercatorRoot);
   }
   modelRef.current = null;
   nativeModelRef.current = null;
