@@ -24,11 +24,24 @@ const templateBeatRoles: Partial<Record<TemplateName, NarrationBeat['beatRole']>
   status_explanation: 'setup',
 }
 
-function estimatedDurationMs(text: string, importance: NarrationBeat['importance']): number {
+export function estimatedNarrationDurationMs(text: string, importance: NarrationBeat['importance']): number {
   const hanCharacters = [...text].filter(character => /\p{Script=Han}/u.test(character)).length
   const spokenMs = Math.ceil(hanCharacters / 4) * 1_000
   const observationMs = importance === 'high' ? 2_000 : importance === 'medium' ? 1_000 : 0
   return Math.max(4_000, spokenMs) + observationMs
+}
+
+export function minimumNarrativeDurationMs(
+  eventPlan: EventPlan,
+  narrativePlan: NarrativePlan,
+  requiredPostRollMs: number,
+): number {
+  const narrationDurationMs = narrativePlan.subtitles.reduce(
+    (total, subtitle) => total + estimatedNarrationDurationMs(subtitle.text, subtitle.importance),
+    0,
+  )
+  const transitionDurationMs = Math.max(0, eventPlan.eventUnits.length - 1) * 1_000
+  return narrationDurationMs + transitionDurationMs + requiredPostRollMs
 }
 
 function assertSourceBinding(eventPlan: EventPlan, narrativePlan: NarrativePlan): void {
@@ -65,7 +78,7 @@ export function buildNarrationPlan(input: BuildNarrationPlanInput): NarrationPla
         : fallbackRole,
       attentionTarget: requirement?.focusEntities[0] ?? eventUnit.participants[0] ?? eventUnit.title,
       importance: subtitle.importance,
-      estimatedDurationMs: estimatedDurationMs(subtitle.text, subtitle.importance),
+      estimatedDurationMs: estimatedNarrationDurationMs(subtitle.text, subtitle.importance),
     } satisfies NarrationBeat]
   })
 

@@ -7,6 +7,11 @@ import {
   type NarrativePlan,
 } from '../contracts/narrativePlan.ts'
 import { fingerprint } from '../services/fingerprint.ts'
+import { capabilityManifest } from '../compiler/capabilityManifest.ts'
+import { minimumNarrativeDurationMs } from '../planning/narrationPlanner.ts'
+import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
+
+const MAX_NARRATIVE_DURATION_MS = 600_000
 
 function requireAcceptedEventPlan(context: AgentContext, artifactId: string): Artifact<EventPlan> {
   const artifact = context.artifacts.get(artifactId)
@@ -53,14 +58,32 @@ export function createScenePlanTools(): AgentTool[] {
           throw new Error(`Unknown EventUnit in scene requirement: ${requirement.eventUnitId}`)
         }
       }
+      const minimumDurationMs = minimumNarrativeDurationMs(
+        accepted.data,
+        plan,
+        capabilityManifest.minimumDurations['model.hide'],
+      )
+      if (minimumDurationMs > MAX_NARRATIVE_DURATION_MS) {
+        throw new CompilationError([diagnostic(
+          'NARRATIVE_DURATION_UNSUPPORTED',
+          `${minimumDurationMs} exceeds ${MAX_NARRATIVE_DURATION_MS}`,
+        )])
+      }
+      const normalizedPlan = narrativePlanSchema.parse({
+        ...plan,
+        targetDurationMs: Math.max(plan.targetDurationMs, minimumDurationMs),
+      })
       return {
-        content: JSON.stringify({ narrativePlanId: plan.narrativePlanId }),
+        content: JSON.stringify({
+          narrativePlanId: normalizedPlan.narrativePlanId,
+          targetDurationMs: normalizedPlan.targetDurationMs,
+        }),
         artifacts: [{
           type: NARRATIVE_PLAN_ARTIFACT,
           createdBy: 'agent',
           logicalKey: `narrative-plan:${accepted.id}`,
-          data: plan,
-          metadata: { sourceEventPlan: plan.sourceEventPlan },
+          data: normalizedPlan,
+          metadata: { sourceEventPlan: normalizedPlan.sourceEventPlan },
         }],
       }
     },

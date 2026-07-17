@@ -10,8 +10,9 @@ import {
 import { eventPlanSchema } from '../src/contracts/eventPlan.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
 import { createScenePlanTools } from '../src/tools/scenePlanTools.ts'
+import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
 
-function context(): { context: AgentContext; acceptedId: string; acceptedFingerprint: string } {
+function context(includeSecondUnit = false): { context: AgentContext; acceptedId: string; acceptedFingerprint: string } {
   const artifacts = new ArtifactStore()
   const plan = eventPlanSchema.parse({
     schemaVersion: 'event-plan/v1', planId: 'plan-1', documentId: 'doc-1', version: 2,
@@ -19,7 +20,11 @@ function context(): { context: AgentContext; acceptedId: string; acceptedFingerp
       eventUnitId: 'unit-1', title: 'Deployment', worldStateChange: 'Aircraft deployed',
       participants: ['JF-17'], locationRefs: ['border'], evidenceRefs: ['ev-1', 'ev-2'], inferenceRefs: [],
       uncertainties: [], narrativePurpose: 'Opening', importance: 'high',
-    }],
+    }, ...(includeSecondUnit ? [{
+      eventUnitId: 'unit-2', title: 'Interception', worldStateChange: 'Aircraft intercepted',
+      participants: ['Rafale'], locationRefs: ['border'], evidenceRefs: ['ev-3'], inferenceRefs: [],
+      uncertainties: [], narrativePurpose: 'Action', importance: 'medium' as const,
+    }] : [])],
     omittedEvidence: [], warnings: [],
   })
   const acceptedFingerprint = fingerprint(plan)
@@ -104,4 +109,51 @@ test('propose_scene_plan creates one grounded semantic artifact', async () => {
   assert.equal(result.artifacts?.[0]?.type, 'ise.narrative-plan/v1')
   assert.equal(JSON.stringify(result).includes('startMs'), false)
   assert.equal(JSON.stringify(result).includes('assetId'), false)
+})
+
+test('propose_scene_plan raises target duration to the deterministic narration floor', async () => {
+  const fixture = context(true)
+  const input = validNarrativePlan()
+  input.sourceEventPlan = {
+    artifactId: fixture.acceptedId, planId: 'plan-1', version: 2, fingerprint: fixture.acceptedFingerprint,
+  }
+  input.subtitles = [
+    { subtitleId: 'subtitle-1', eventUnitId: 'unit-1', text: '\u4e2d'.repeat(400), evidenceRefs: ['ev-1'], importance: 'high' },
+    { subtitleId: 'subtitle-2', eventUnitId: 'unit-2', text: '\u6587'.repeat(400), evidenceRefs: ['ev-3'], importance: 'medium' },
+  ]
+  input.sceneRequirements.push({
+    ...input.sceneRequirements[0]!, requirementId: 'requirement-2', eventUnitId: 'unit-2',
+  })
+
+  const result = await createScenePlanTools()[0]!.execute(input, fixture.context)
+  const artifactPlan = result.artifacts?.[0]?.data as NarrativePlan
+  const content = JSON.parse(result.content)
+
+  // 102s high beat + 101s medium beat + 1s unit transition + 0.5s model hide.
+  assert.equal(artifactPlan.targetDurationMs, 204_500)
+  assert.equal(content.targetDurationMs, 204_500)
+})
+
+test('propose_scene_plan never lowers an already sufficient target duration', async () => {
+  const fixture = context()
+  const input = validNarrativePlan()
+  input.targetDurationMs = 300_000
+
+  const result = await createScenePlanTools()[0]!.execute(input, fixture.context)
+  const artifactPlan = result.artifacts?.[0]?.data as NarrativePlan
+
+  assert.equal(artifactPlan.targetDurationMs, 300_000)
+  assert.equal(JSON.parse(result.content).targetDurationMs, 300_000)
+})
+
+test('propose_scene_plan rejects narration floors above the schema duration limit', async () => {
+  const fixture = context()
+  const input = validNarrativePlan()
+  input.subtitles[0]!.text = '\u4e2d'.repeat(2_400)
+
+  await assert.rejects(
+    createScenePlanTools()[0]!.execute(input, fixture.context),
+    (error: unknown) => error instanceof CompilationError
+      && error.diagnostics.some(item => item.code === 'NARRATIVE_DURATION_UNSUPPORTED'),
+  )
 })
