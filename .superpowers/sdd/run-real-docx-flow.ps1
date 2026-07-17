@@ -773,13 +773,13 @@ function New-DryRunFixtures {
   $assignmentA = [ordered]@{
     actorInstanceRef = 'actor:dry-a'; formationBundleRef = 'dry-bundle-a'; trajectoryAssetRef = 'trajectory:dry-a'
     segmentId = 'dry-route-a'; resamplePolicy = 'preserve-source-samples'
-    timeMapping = [ordered]@{ mode = 'fit-window'; startMs = 800; durationMs = 2000 }
+    timeMapping = [ordered]@{ mode = 'fit-window'; startMs = 900; durationMs = 1900 }
     spatialPathMode = 'preserve'; sourceKind = 'catalog'; matchReason = 'Dry catalog route'; lineage = @('dry-catalog')
   }
   $assignmentB = [ordered]@{
     actorInstanceRef = 'actor:dry-b'; formationBundleRef = 'dry-bundle-b'; trajectoryAssetRef = 'trajectory:dry-b'
     segmentId = 'dry-route-b'; resamplePolicy = 'preserve-source-samples'
-    timeMapping = [ordered]@{ mode = 'fit-window'; startMs = 800; durationMs = 2000 }
+    timeMapping = [ordered]@{ mode = 'fit-window'; startMs = 900; durationMs = 1900 }
     spatialPathMode = 'preserve'; sourceKind = 'catalog'; matchReason = 'Dry catalog route'; lineage = @('dry-catalog')
   }
   $resolvedScenePlan = [ordered]@{
@@ -837,8 +837,12 @@ function New-DryRunFixtures {
       importance = 'high'; startMs = 0; durationMs = 3000; position = 'bottom'; maxWidthPct = 70
     })
     commands = @(
-      [ordered]@{ commandId = 'dry-follow-a'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-a'; type = 'model.follow_path'; startMs = 800; durationMs = $commandBase.durationMs; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-a'; trajectoryAssetId = 'trajectory:dry-a' } },
-      [ordered]@{ commandId = 'dry-follow-b'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-b'; type = 'model.follow_path'; startMs = 800; durationMs = $commandBase.durationMs; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-b'; trajectoryAssetId = 'trajectory:dry-b' } },
+      [ordered]@{ commandId = 'dry-spawn-a'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-a'; type = 'model.spawn'; startMs = 800; durationMs = 100; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.spawn'; entityId = 'actor:dry-a' } },
+      [ordered]@{ commandId = 'dry-follow-a'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-a'; type = 'model.follow_path'; startMs = 900; durationMs = 1900; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-a'; trajectoryAssetId = 'trajectory:dry-a' } },
+      [ordered]@{ commandId = 'dry-hide-a'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-a'; type = 'model.hide'; startMs = 2800; durationMs = 0; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.hide'; entityId = 'actor:dry-a' } },
+      [ordered]@{ commandId = 'dry-spawn-b'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-b'; type = 'model.spawn'; startMs = 800; durationMs = 100; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.spawn'; entityId = 'actor:dry-b' } },
+      [ordered]@{ commandId = 'dry-follow-b'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-b'; type = 'model.follow_path'; startMs = 900; durationMs = 1900; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-b'; trajectoryAssetId = 'trajectory:dry-b' } },
+      [ordered]@{ commandId = 'dry-hide-b'; eventUnitId = $commandBase.eventUnitId; targetId = 'actor:dry-b'; type = 'model.hide'; startMs = 2800; durationMs = 0; dependsOn = @(); onFailure = $commandBase.onFailure; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.hide'; entityId = 'actor:dry-b' } },
       [ordered]@{ commandId = 'dry-image'; eventUnitId = $commandBase.eventUnitId; targetId = 'overlay:image'; type = 'image.show'; startMs = 900; durationMs = $commandBase.durationMs; dependsOn = @(); onFailure = 'warn'; evidenceRefs = $evidenceRefs; params = [ordered]@{ assetId = 'image:dry'; layout = $layout; enter = 'fade'; exit = 'fade' } },
       [ordered]@{ commandId = 'dry-video'; eventUnitId = $commandBase.eventUnitId; targetId = 'overlay:video'; type = 'video.play'; startMs = 1000; durationMs = $commandBase.durationMs; dependsOn = @(); onFailure = 'warn'; evidenceRefs = $evidenceRefs; params = [ordered]@{ assetId = 'video:dry'; layout = $layout; volume = 0.5; playbackRate = 1; loop = $false } }
     )
@@ -851,10 +855,19 @@ function New-DryRunFixtures {
     runtimePlanArtifactId = 'dry-compiled'; totalDurationMs = 4000; entities = $runtimePlan.entities
     tracks = @(
       [ordered]@{
-        trackId = 'dry-model-track'; type = 'model'; label = 'Dry models'; visible = $true
+        trackId = 'dry-model-track-a'; type = 'model'; label = 'Dry model A'; visible = $true
         items = @(
-          [ordered]@{ id = 'dry-scene-follow-a'; eventUnitId = 'dry-unit-1'; startMs = 800; durationMs = 1000; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-a'; trajectoryAssetId = 'trajectory:dry-a' } },
-          [ordered]@{ id = 'dry-scene-follow-b'; eventUnitId = 'dry-unit-1'; startMs = 800; durationMs = 1000; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-b'; trajectoryAssetId = 'trajectory:dry-b' } }
+          [ordered]@{ id = 'dry-scene-spawn-a'; eventUnitId = 'dry-unit-1'; startMs = 800; durationMs = 100; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.spawn'; entityId = 'actor:dry-a' } },
+          [ordered]@{ id = 'dry-scene-follow-a'; eventUnitId = 'dry-unit-1'; startMs = 900; durationMs = 1900; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-a'; trajectoryAssetId = 'trajectory:dry-a' } },
+          [ordered]@{ id = 'dry-scene-hide-a'; eventUnitId = 'dry-unit-1'; startMs = 2800; durationMs = 0; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.hide'; entityId = 'actor:dry-a' } }
+        )
+      },
+      [ordered]@{
+        trackId = 'dry-model-track-b'; type = 'model'; label = 'Dry model B'; visible = $true
+        items = @(
+          [ordered]@{ id = 'dry-scene-spawn-b'; eventUnitId = 'dry-unit-1'; startMs = 800; durationMs = 100; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.spawn'; entityId = 'actor:dry-b' } },
+          [ordered]@{ id = 'dry-scene-follow-b'; eventUnitId = 'dry-unit-1'; startMs = 900; durationMs = 1900; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.follow_path'; entityId = 'actor:dry-b'; trajectoryAssetId = 'trajectory:dry-b' } },
+          [ordered]@{ id = 'dry-scene-hide-b'; eventUnitId = 'dry-unit-1'; startMs = 2800; durationMs = 0; evidenceRefs = $evidenceRefs; params = [ordered]@{ action = 'model.hide'; entityId = 'actor:dry-b' } }
         )
       },
       [ordered]@{ trackId = 'dry-image-track'; type = 'image'; label = 'Dry image'; visible = $true; items = @([ordered]@{ id = 'dry-scene-image'; eventUnitId = 'dry-unit-1'; startMs = 900; durationMs = 1000; evidenceRefs = $evidenceRefs; assetId = 'image:dry'; params = [ordered]@{ layout = $layout; enter = 'fade'; exit = 'fade' } }) },

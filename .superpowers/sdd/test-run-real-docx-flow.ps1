@@ -430,6 +430,16 @@ try {
   if (Test-Path -LiteralPath $exportDir) { Remove-Item -LiteralPath $exportDir -Recurse -Force }
 }
 
+$dryRunOutput = (& powershell -NoProfile -ExecutionPolicy Bypass -File $flowPath -DryRun 2>&1 | Out-String)
+$dryRunExitCode = $LASTEXITCODE
+if ($dryRunExitCode -ne 0) {
+  throw "Expected the complete dry-run entry point to pass without services: $dryRunOutput"
+}
+if ($dryRunOutput -notmatch '^DRY_RUN_OK:' -or
+    @($dryRunOutput -split "`r?`n" | Where-Object { $_ -match '^DRY_RUN_OK:' }).Count -ne 1) {
+  throw 'Expected exactly one DRY_RUN_OK marker from the complete dry-run entry point.'
+}
+
 [Console]::Out.WriteLine('EMPTY_ARTIFACT_LEDGER=ok')
 [Console]::Out.WriteLine('TRANSIENT_BRIDGE_RETRY=ok')
 [Console]::Out.WriteLine('ACCESS_TOKEN_SELECTION=ok')
@@ -438,3 +448,4 @@ try {
 [Console]::Out.WriteLine('CORRELATED_ARTIFACT_SELECTION=ok')
 [Console]::Out.WriteLine('FINAL_DOMAIN_INVARIANTS=ok')
 [Console]::Out.WriteLine('FINAL_ARTIFACT_EXPORT=ok')
+[Console]::Out.WriteLine('COMPLETE_DRY_RUN_ENTRY_POINT=ok')

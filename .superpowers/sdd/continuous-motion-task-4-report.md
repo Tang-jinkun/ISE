@@ -113,3 +113,31 @@ Persisted desktop acceptance again inspects visible runtime model snapshots at e
 - `git diff --check`: exit `0`; no whitespace errors, only repository line-ending warnings.
 
 No Scene was generated and no external model was invoked during this follow-up. The existing persisted-browser environment concern remains unchanged.
+
+## Dry-Run Fixture Regression Follow-Up
+
+### Root Cause
+
+The script invokes `Assert-FinalDomainInvariants (New-DryRunFixtures).Selection` before branching on `-DryRun` or making any HTTP request. The fixture still had one shared model track containing only two follow items, so the Task 4 gate correctly rejected its own stale fixture and blocked both dry-run and real-flow startup.
+
+### RED
+
+The contract now launches the complete script in a separate PowerShell process with `-DryRun`, requires exit code `0`, and requires exactly one `DRY_RUN_OK` marker. Before the fixture fix, the contract exited `1` at that invocation with:
+
+```text
+REAL_DEMO_FINAL_DOMAIN_INVALID: Each model track must contain commands for exactly one RuntimePlan entity.
+```
+
+The failure occurred before service or model access.
+
+### GREEN
+
+`New-DryRunFixtures` now gives each entity its own model track and a schema-valid spawn/follow/hide lifecycle. Both entities use spawn `800..900`, follow `900..2800`, and hide at `2800`; the resolved time mappings and RuntimePlan commands use the same follow window. Existing image, video, lineage, correlation, diagnostic, and schema fixture data remains present.
+
+Verification:
+
+- `powershell -ExecutionPolicy Bypass -File .\.superpowers\sdd\test-run-real-docx-flow.ps1`: exit `0`; all prior status lines plus `COMPLETE_DRY_RUN_ENTRY_POINT=ok`.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\.superpowers\sdd\run-real-docx-flow.ps1 -DryRun`: exit `0`; one `DRY_RUN_OK` marker confirming no service connection or HTTP request was attempted.
+- `git diff --check`: exit `0`; no whitespace errors, only repository line-ending warnings.
+
+No real model, real-flow HTTP request, Scene generation, or E2E run was performed.
