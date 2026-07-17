@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { Readable } from 'stream';
 import { publicAssetCatalogEntrySchema, type AssetManifestEntry } from '@ise/runtime-contracts';
 import { AssetCatalogService } from './asset-catalog.service';
 
@@ -116,6 +117,7 @@ function entriesForEveryKind(): AssetManifestEntry[] {
 function createService(entries: AssetManifestEntry[] = [modelEntry()]) {
   const minio = {
     presignRead: jest.fn().mockResolvedValue('https://minio.test/signed'),
+    openRead: jest.fn().mockResolvedValue(Readable.from(['asset-bytes'])),
   };
   return { service: new AssetCatalogService(minio as any, entries), minio };
 }
@@ -183,6 +185,17 @@ describe('AssetCatalogService', () => {
       expiresAt: '2026-07-15T00:05:00.000Z',
     });
     expect(minio.presignRead).toHaveBeenCalledWith('demo/models/JF-17.glb', 300);
+  });
+
+  it('opens available asset content through the API internal MinIO client', async () => {
+    const entry = entriesForEveryKind()[1]!;
+    const { service, minio } = createService([entry]);
+
+    const content = await service.openContent('trajectory:route');
+
+    expect(content.entry).toEqual(entry);
+    expect(content.stream).toBeInstanceOf(Readable);
+    expect(minio.openRead).toHaveBeenCalledWith('demo/trajectories/route.json');
   });
 
   it.each([

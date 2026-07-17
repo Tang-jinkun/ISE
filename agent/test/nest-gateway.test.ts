@@ -97,6 +97,42 @@ test('asset catalog returns only the nested Nest data payload', async () => {
   assert.deepEqual(await gateway.listAssetMetadata('Bearer token'), assets)
 })
 
+test('trajectory asset access returns fingerprint-verified normalized geometry', async () => {
+  const trajectory = {
+    schemaVersion: 'ise-trajectory/v1' as const,
+    points: [
+      { timeMs: 0, longitude: 75.9, latitude: 29.4, altitudeM: 8_300 },
+      { timeMs: 1_000, longitude: 74.5, latitude: 30.9, altitudeM: 8_800 },
+    ],
+  }
+  const bytes = Buffer.from(JSON.stringify(trajectory))
+  const fingerprint = sha256(bytes)
+  const requestedUrls: string[] = []
+  const gateway = new FetchNestGateway({
+    baseUrl: 'http://nest.test',
+    fetch: (async input => {
+      requestedUrls.push(String(input))
+      return new Response(bytes, { headers: {
+        'content-type': 'application/vnd.ise.trajectory+json',
+        'content-length': String(bytes.length),
+        'x-asset-id': 'trajectory:india-missile-1',
+        'x-content-sha256': fingerprint,
+        'x-trajectory-start-ms': '0',
+        'x-trajectory-end-ms': '1000',
+      } })
+    }) as typeof fetch,
+  })
+  const readTrajectoryAsset = (gateway as unknown as {
+    readTrajectoryAsset?: (assetId: string, authorization: string) => Promise<unknown>
+  }).readTrajectoryAsset
+
+  assert.equal(typeof readTrajectoryAsset, 'function')
+  assert.deepEqual(await readTrajectoryAsset!.call(gateway, 'trajectory:india-missile-1', 'Bearer token'), {
+    assetId: 'trajectory:india-missile-1', fingerprint, trajectory,
+  })
+  assert.deepEqual(requestedUrls, ['http://nest.test/asset-catalog/trajectory%3Aindia-missile-1/content'])
+})
+
 test('malformed auth JSON and failed catalog envelopes map to one bridge error', async () => {
   const gateway = new FetchNestGateway({
     baseUrl: 'http://nest.test',

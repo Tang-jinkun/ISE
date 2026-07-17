@@ -28,6 +28,7 @@ const nest: NestGateway = {
   verifyBearer: async authorization => ({ subject: authorization.slice('Bearer '.length) }),
   readOwnedFile: async () => { throw new Error('unused') },
   listAssetMetadata: async () => [],
+  readTrajectoryAsset: async () => { throw new Error('unused') },
 }
 
 async function fixture() {

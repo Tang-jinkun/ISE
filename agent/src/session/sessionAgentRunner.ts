@@ -24,7 +24,7 @@ import { PersistentArtifactStore } from '../persistence/persistentArtifactStore.
 import { PersistentDomainStateStore } from '../persistence/persistentDomainStateStore.ts'
 import { IseAgentHost } from '../runtime/IseAgentHost.ts'
 import { createSessionToolRegistry } from '../runtime/toolAssembly.ts'
-import { createAssetRegistrySnapshot } from '../services/assetRegistry.ts'
+import { createHydratedAssetRegistrySnapshot } from '../services/assetRegistry.ts'
 import {
   CompiledArtifactInvalidError,
   type CompiledRuntimeArtifactCandidate,
@@ -54,6 +54,13 @@ export interface SessionAgentRunnerOptions {
   workspace: string
   events?: EventBroker
   compilerToolsFactory?: typeof createCompilerTools
+}
+
+async function loadAssetRegistry(nest: NestGateway, authorization: string) {
+  return createHydratedAssetRegistrySnapshot(
+    await nest.listAssetMetadata(authorization),
+    assetId => nest.readTrajectoryAsset(assetId, authorization),
+  )
 }
 
 export class SessionAgentRunner {
@@ -189,9 +196,7 @@ export class SessionAgentRunner {
             this.options.repositories.attachments,
             this.options.nest,
           ),
-          loadAssetSnapshot: async () => createAssetRegistrySnapshot(
-            await this.options.nest.listAssetMetadata(authorization),
-          ),
+          loadAssetSnapshot: async () => loadAssetRegistry(this.options.nest, authorization),
           onCompileProgress: payload => this.events.append(run.sessionId, run.id, 'compile.progress', {
             runId: run.id,
             stage: payload.stage,
@@ -378,7 +383,7 @@ export class SessionAgentRunner {
       || narrativePlan.sourceEventPlan.version !== run.expectedAccepted.version
       || narrativePlan.sourceEventPlan.fingerprint !== run.expectedAccepted.fingerprint
     ) throw new CompilationError([diagnostic('NARRATIVE_PROVENANCE_MISMATCH', narrativeArtifact.id)])
-    const snapshot = createAssetRegistrySnapshot(await this.options.nest.listAssetMetadata(authorization))
+    const snapshot = await loadAssetRegistry(this.options.nest, authorization)
     const logicalKey = `asset-registry:${snapshot.registryVersion}`
     let registryArtifact = artifacts.list(ASSET_REGISTRY_ARTIFACT).find(item => item.logicalKey === logicalKey)
     if (!registryArtifact) {

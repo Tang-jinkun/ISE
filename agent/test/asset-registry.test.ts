@@ -12,6 +12,7 @@ import {
   AssetRegistry,
   createAssetRegistrySnapshot,
 } from '../src/services/assetRegistry.ts'
+import * as assetRegistryService from '../src/services/assetRegistry.ts'
 import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
 import { createAssetTools } from '../src/tools/assetTools.ts'
 
@@ -87,6 +88,40 @@ test('shared manifest projection strips paths and computes a stable version', ()
   assert.equal(first.registryVersion, second.registryVersion)
   assert.equal(JSON.stringify(first).includes('sourceRelativePath'), false)
   assert.equal(JSON.stringify(first).includes('objectName'), false)
+})
+
+test('hydrated registry snapshots persist verified trajectory geometry in their versioned artifact', async () => {
+  const source = trajectoryEntry({
+    fingerprint: hash,
+    size: 123,
+    trajectory: {
+      format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+      startTimeMs: 0, endTimeMs: 1_000, monotonic: true,
+      bounds: [[74.5, 29.4], [75.9, 30.9]],
+    },
+  })
+  const trajectory = {
+    schemaVersion: 'ise-trajectory/v1' as const,
+    points: [
+      { timeMs: 0, longitude: 75.9, latitude: 29.4, altitudeM: 8_300 },
+      { timeMs: 1_000, longitude: 74.5, latitude: 30.9, altitudeM: 8_800 },
+    ],
+  }
+  const hydrate = (assetRegistryService as unknown as {
+    createHydratedAssetRegistrySnapshot?: (
+      input: unknown,
+      loader: (assetId: string) => Promise<{ assetId: string; fingerprint: string; trajectory: typeof trajectory }>,
+    ) => Promise<AssetRegistrySnapshot>
+  }).createHydratedAssetRegistrySnapshot
+
+  assert.equal(typeof hydrate, 'function')
+  const hydrated = await hydrate!([source], async assetId => ({ assetId, fingerprint: hash, trajectory }))
+  const metadataOnly = createAssetRegistrySnapshot([source])
+  const entry = hydrated.assets[0]
+  assert.equal(entry?.kind, 'trajectory')
+  if (entry?.kind !== 'trajectory') assert.fail('Expected trajectory entry')
+  assert.deepEqual(entry.trajectory.points, trajectory.points)
+  assert.notEqual(hydrated.registryVersion, metadataOnly.registryVersion)
 })
 
 test('storage-less public catalog entries cross the Nest boundary without leaking access fields', async () => {

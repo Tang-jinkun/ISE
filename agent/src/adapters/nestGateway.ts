@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto'
-import { publicAssetCatalogEntrySchema } from '@ise/runtime-contracts'
+import {
+  publicAssetCatalogEntrySchema,
+  trajectorySchema,
+  type NormalizedTrajectory,
+} from '@ise/runtime-contracts'
 import { z } from 'zod'
 import { agentError } from '../api/errors.ts'
 
@@ -28,10 +32,17 @@ export interface AuthorizedFile {
   bytes: Buffer
 }
 
+export interface AuthorizedTrajectoryAsset {
+  assetId: string
+  fingerprint: `sha256:${string}`
+  trajectory: NormalizedTrajectory
+}
+
 export interface NestGateway {
   verifyBearer(authorization: string): Promise<{ subject: string }>
   readOwnedFile(fileId: string, authorization: string): Promise<AuthorizedFile>
   listAssetMetadata(authorization: string): Promise<unknown>
+  readTrajectoryAsset(assetId: string, authorization: string): Promise<AuthorizedTrajectoryAsset>
 }
 
 function ensureAuthorization(value: string): void {
@@ -102,6 +113,11 @@ function computedFingerprint(bytes: Buffer): `sha256:${string}` {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }
 
+function parseTrajectoryHeaderTime(value: string | null): number {
+  if (value === null || !/^(0|[1-9][0-9]*)$/.test(value)) throw bridgeError()
+  return Number(value)
+}
+
 function validateDocxIdentity(input: {
   fileId: string
   name: string
@@ -164,6 +180,41 @@ export class FetchNestGateway implements NestGateway {
   async listAssetMetadata(authorization: string): Promise<unknown> {
     const response = await this.request('/asset-catalog', authorization)
     return (await parseSuccessEnvelope(response, nestCatalogResponseSchema)).data
+  }
+
+  async readTrajectoryAsset(assetId: string, authorization: string): Promise<AuthorizedTrajectoryAsset> {
+    assertOpaqueId(assetId)
+    const response = await this.request(`/asset-catalog/${encodeURIComponent(assetId)}/content`, authorization)
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]
+    const headerAssetId = response.headers.get('x-asset-id')
+    const headerFingerprint = response.headers.get('x-content-sha256')
+    const declaredSize = response.headers.get('content-length')
+    if (
+      headerAssetId !== assetId
+      || contentType !== 'application/vnd.ise.trajectory+json'
+      || !headerFingerprint
+      || !fingerprintPattern.test(headerFingerprint)
+      || declaredSize === null
+      || !/^(0|[1-9][0-9]*)$/.test(declaredSize)
+    ) throw bridgeError()
+    let bytes: Buffer
+    try {
+      bytes = Buffer.from(await response.arrayBuffer())
+    } catch {
+      throw bridgeError()
+    }
+    if (bytes.length !== Number(declaredSize) || computedFingerprint(bytes) !== headerFingerprint) throw bridgeError()
+    let trajectory: NormalizedTrajectory
+    try {
+      trajectory = trajectorySchema.parse(JSON.parse(bytes.toString('utf8')))
+    } catch {
+      throw bridgeError()
+    }
+    if (
+      trajectory.points[0]!.timeMs !== parseTrajectoryHeaderTime(response.headers.get('x-trajectory-start-ms'))
+      || trajectory.points.at(-1)!.timeMs !== parseTrajectoryHeaderTime(response.headers.get('x-trajectory-end-ms'))
+    ) throw bridgeError()
+    return { assetId, fingerprint: headerFingerprint as `sha256:${string}`, trajectory }
   }
 
   private async request(path: string, authorization: string): Promise<Response> {

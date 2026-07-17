@@ -337,17 +337,32 @@ function multiActorCompilerFixture() {
     diagnostics: [],
   }
   const routeIds = [...new Set(indoPakTrajectoryScenario.bundles.flatMap(bundle => bundle.routeAssetRefs))]
-  const routeEntries: AssetRegistryEntry[] = routeIds.map((assetId, index) => ({
-    assetId, kind: 'trajectory', displayName: assetId, aliases: [],
-    fingerprint: `sha256:${(index + 1).toString(16).padStart(64, '0')}`, size: 10,
-    availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
-    mediaType: 'application/vnd.ise.trajectory+json',
-    trajectory: {
-      format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
-      startTimeMs: 0, endTimeMs: 180_000, monotonic: true,
-      bounds: [[70 + index * 0.1, 28 + index * 0.05], [70.5 + index * 0.1, 28.4 + index * 0.05]],
-    },
-  }))
+  const routeEntries: AssetRegistryEntry[] = routeIds.map((assetId, index) => {
+    const bounds: [[number, number], [number, number]] = [
+      [70 + index * 0.1, 28 + index * 0.05],
+      [70.5 + index * 0.1, 28.4 + index * 0.05],
+    ]
+    const points = assetId === 'trajectory:india-missile-1'
+      ? [
+          { timeMs: 0, longitude: 75.90581401335153, latitude: 29.482080957203344, altitudeM: 8_300.150568202918 },
+          { timeMs: 90_000, longitude: 75.49608000877947, latitude: 29.923278174202373, altitudeM: 8_449.990285766895 },
+          { timeMs: 180_000, longitude: 74.54003399811131, latitude: 30.952738347200103, altitudeM: 8_799.616293416171 },
+        ]
+      : [
+          { timeMs: 0, longitude: bounds[0][0], latitude: bounds[0][1], altitudeM: 8_000 },
+          { timeMs: 180_000, longitude: bounds[1][0], latitude: bounds[1][1], altitudeM: 8_000 },
+        ]
+    return {
+      assetId, kind: 'trajectory', displayName: assetId, aliases: [],
+      fingerprint: `sha256:${(index + 1).toString(16).padStart(64, '0')}`, size: 10,
+      availability: 'available', criticality: 'required', fallbackAssetIds: [], allowFallback: false,
+      mediaType: 'application/vnd.ise.trajectory+json',
+      trajectory: {
+        format: 'ise-trajectory/v1', timeUnit: 'ms', coordinateOrder: 'lng-lat-alt',
+        startTimeMs: 0, endTimeMs: 180_000, monotonic: true, bounds, points,
+      },
+    }
+  })
   const modelEntries: AssetRegistryEntry[] = [
     ['model:su30mki', 'Su-30MKI'], ['model:rafale', 'Rafale'], ['model:jf17', 'JF-17'], ['model:pl15e', 'PL-15E missile'],
   ].map(([assetId, displayName]) => ({
@@ -741,6 +756,82 @@ test('engagement phase cameras follow local actor positions as the phase time ad
 
   assert.equal(phaseCameras.length, 4)
   assert.notDeepEqual(phaseCameras[1]!.params.center, phaseCameras[2]!.params.center)
+})
+
+test('interception phase cameras follow the real westbound Indian missile geometry', () => {
+  const fixture = finalInputForEngagementFixture()
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    assets: fixture.input.assetRegistry.assets.map(asset => asset.kind === 'trajectory'
+      ? {
+          ...asset,
+          trajectory: {
+            ...asset.trajectory,
+            bounds: asset.assetId === 'trajectory:india-missile-1'
+              ? [[74.54003399811131, 29.482080957203344], [75.90581401335153, 30.952738347200103]]
+              : [[73, 31], [73, 31]],
+            points: asset.assetId === 'trajectory:india-missile-1'
+              ? [
+                  { timeMs: 0, longitude: 75.90581401335153, latitude: 29.482080957203344, altitudeM: 8_300.150568202918 },
+                  { timeMs: 90_000, longitude: 75.49608000877947, latitude: 29.923278174202373, altitudeM: 8_449.990285766895 },
+                  { timeMs: 180_000, longitude: 74.54003399811131, latitude: 30.952738347200103, altitudeM: 8_799.616293416171 },
+                ]
+              : [
+                  { timeMs: 0, longitude: 73, latitude: 31, altitudeM: 8_000 },
+                  { timeMs: 180_000, longitude: 73, latitude: 31, altitudeM: 8_000 },
+                ],
+          },
+        }
+      : asset),
+  }
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const cameras = plan.commands.filter((command): command is Extract<(typeof plan.commands)[number], { type: 'camera.transition' }> =>
+    command.type === 'camera.transition'
+    && command.commandId.includes(`:${engagement.weaponRef}:`))
+    .sort((left, right) => left.startMs - right.startMs)
+  const terminal = cameras.find(command => command.commandId.includes(':terminal:'))!
+  const targetFollow = plan.commands.find(command => (
+    command.type === 'model.follow_path' && command.targetId === engagement.targetRef
+  ))!
+  const progress = (terminal.startMs - targetFollow.startMs) / targetFollow.durationMs
+  const trajectoryTimeMs = Math.max(0, Math.min(180_000, progress * 180_000))
+  const start = trajectoryTimeMs <= 90_000
+    ? { timeMs: 0, longitude: 75.90581401335153, latitude: 29.482080957203344 }
+    : { timeMs: 90_000, longitude: 75.49608000877947, latitude: 29.923278174202373 }
+  const end = trajectoryTimeMs <= 90_000
+    ? { timeMs: 90_000, longitude: 75.49608000877947, latitude: 29.923278174202373 }
+    : { timeMs: 180_000, longitude: 74.54003399811131, latitude: 30.952738347200103 }
+  const ratio = (trajectoryTimeMs - start.timeMs) / (end.timeMs - start.timeMs)
+  const expected = [
+    start.longitude + (end.longitude - start.longitude) * ratio,
+    start.latitude + (end.latitude - start.latitude) * ratio,
+  ]
+
+  assert.ok(Math.abs(terminal.params.center[0] - expected[0]!) < 1e-9)
+  assert.ok(Math.abs(terminal.params.center[1] - expected[1]!) < 1e-9)
+})
+
+test('multiple successful interceptions retain the earliest terminal hide for their shared target', () => {
+  const fixture = finalInputForEngagementFixture()
+  const original = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const later = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  fixture.input.choreographyPlan = {
+    ...fixture.input.choreographyPlan,
+    weaponEngagements: fixture.input.choreographyPlan.weaponEngagements.map(item => item.engagementId === later.engagementId
+      ? { ...item, targetRef: original.targetRef, outcome: 'interception' as const }
+      : item),
+  }
+  const plan = compileFinalScene(fixture.input)
+  const successful = fixture.input.choreographyPlan.weaponEngagements.filter(item =>
+    item.outcome === 'interception' && item.targetRef === original.targetRef)
+  const terminalTimes = successful.map(engagement => plan.commands.find(command =>
+    command.type === 'camera.transition'
+    && command.commandId.includes(`:${engagement.weaponRef}:terminal:`))!.startMs)
+  const hide = plan.commands.find(command => command.type === 'model.hide' && command.targetId === original.targetRef)!
+
+  assert.equal(hide.startMs, Math.min(...terminalTimes))
+  assert.deepEqual(hide.evidenceRefs, original.evidenceRefs)
 })
 
 test('choreography grounds every missile data link and only same-side supported AWACS data links', () => {

@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { trajectoryCurationSchema, trajectoryRepairMetadataSchema } from '@ise/runtime-contracts'
+import {
+  trajectoryCurationSchema,
+  trajectoryPointSchema,
+  trajectoryRepairMetadataSchema,
+} from '@ise/runtime-contracts'
 import { compilationDiagnosticSchema } from '../services/runtimeDiagnostics.ts'
 
 const common = {
@@ -40,12 +44,23 @@ export const assetRegistryEntrySchema = z.discriminatedUnion('kind', [
       monotonic: z.literal(true),
       curation: trajectoryCurationSchema.optional(),
       repair: trajectoryRepairMetadataSchema.optional(),
+      points: z.array(trajectoryPointSchema).min(2).optional(),
       bounds: z.tuple([
         z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),
         z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),
       ]).refine(([[west, south], [east, north]]) => west <= east && south <= north, {
         message: 'bounds must be ordered southwest to northeast',
       }).optional(),
+    }).superRefine((value, context) => {
+      if (!value.points) return
+      for (let index = 1; index < value.points.length; index++) {
+        if (value.points[index]!.timeMs <= value.points[index - 1]!.timeMs) {
+          context.addIssue({ code: 'custom', path: ['points', index, 'timeMs'], message: 'Trajectory time must be strictly increasing' })
+        }
+      }
+      if (value.points[0]!.timeMs !== value.startTimeMs || value.points.at(-1)!.timeMs !== value.endTimeMs) {
+        context.addIssue({ code: 'custom', path: ['points'], message: 'Trajectory points must match metadata time range' })
+      }
     }).refine(value => value.startTimeMs <= value.endTimeMs, { path: ['endTimeMs'], message: 'Invalid trajectory time range' }),
   }),
   z.strictObject({

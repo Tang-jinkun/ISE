@@ -66,4 +66,12 @@ export class AssetCatalogService {
       expiresAt: new Date(Date.now() + expiresSeconds * 1000).toISOString(),
     });
   }
+
+  async openContent(assetId: string) {
+    const entry = this.#entries.get(assetId);
+    if (!entry || entry.availability !== 'available') {
+      throw new NotFoundException('Asset does not exist or is unavailable');
+    }
+    return { entry, stream: await this.minio.openRead(entry.objectName) };
+  }
 }

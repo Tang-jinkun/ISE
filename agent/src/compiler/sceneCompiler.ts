@@ -382,11 +382,32 @@ function routePointAtPlaybackTime(
   followStartMs: number,
   followEndMs: number,
 ): [number, number] {
-  const [[west, south], [east, north]] = routeBounds(assetRegistry, trajectoryAssetId)
+  const asset = exactAvailableAsset(assetRegistry, trajectoryAssetId, 'trajectory')
+  if (asset.kind !== 'trajectory' || !asset.trajectory.points) {
+    fail('REQUIRED_ASSET_MISSING', `trajectory geometry: ${trajectoryAssetId}`)
+  }
   const progress = followEndMs <= followStartMs
     ? 1
     : Math.max(0, Math.min(1, (playbackTimeMs - followStartMs) / (followEndMs - followStartMs)))
-  return [west + (east - west) * progress, south + (north - south) * progress]
+  const points = asset.trajectory.points
+  const firstTimeMs = points[0]!.timeMs
+  const timeMs = firstTimeMs + progress * (points.at(-1)!.timeMs - firstTimeMs)
+  let low = 0
+  let high = points.length - 1
+  while (low + 1 < high) {
+    const middle = (low + high) >>> 1
+    if (points[middle]!.timeMs <= timeMs) low = middle
+    else high = middle
+  }
+  const start = points[low]!
+  const end = points[Math.min(low + 1, points.length - 1)]!
+  const ratio = end.timeMs === start.timeMs ? 0 : (timeMs - start.timeMs) / (end.timeMs - start.timeMs)
+  const longitudeDelta = ((((end.longitude - start.longitude) % 360) + 540) % 360) - 180
+  const longitude = start.longitude + longitudeDelta * ratio
+  return [
+    ((((longitude + 180) % 360) + 360) % 360) - 180,
+    start.latitude + (end.latitude - start.latitude) * ratio,
+  ]
 }
 
 function unionBounds(
@@ -648,7 +669,12 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       const engagement = engagementForShot(shot)
       if (!sceneBeat || !unit || !engagement || !shot.phase) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
       const startMs = phaseStartMs + index * phaseDurationMs
-      const subjectBounds = shot.subjectRefs.map(actorId => {
+      const phaseSubjectRefs = shot.phase === 'launch'
+        ? [engagement.launcherRef, engagement.weaponRef]
+        : shot.phase === 'midcourse'
+          ? [engagement.weaponRef, engagement.targetRef]
+          : [engagement.targetRef]
+      const subjectBounds = phaseSubjectRefs.map(actorId => {
         const assignment = assignments.get(actorId)
         const playbackWindow = actorPlaybackWindows.get(actorId)
         if (!assignment || !playbackWindow) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
@@ -682,12 +708,16 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
           startMs, durationMs: capabilityManifest.minimumDurations['video.play'], dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
         }))
         if (engagement.outcome === 'interception') {
-          interceptedTargetHides.set(engagement.targetRef, runtimeCommandSchema.parse({
+          const interceptedHide = runtimeCommandSchema.parse({
             commandId: `cmd:${shot.shotId}:intercepted-hide`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
             type: 'model.hide', params: { action: 'model.hide', entityId: engagement.targetRef },
             startMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
             dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
-          }))
+          })
+          const existingHide = interceptedTargetHides.get(engagement.targetRef)
+          if (!existingHide || interceptedHide.startMs < existingHide.startMs) {
+            interceptedTargetHides.set(engagement.targetRef, interceptedHide)
+          }
         }
       }
       if (shot.phase === 'aftermath' && engagement.outcome === 'destroyed') {

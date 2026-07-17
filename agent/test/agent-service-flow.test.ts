@@ -152,6 +152,26 @@ class FlowNest implements NestGateway {
       })),
     ]
   }
+  async readTrajectoryAsset(assetId: string) {
+    const assets = await this.listAssetMetadata() as Array<{
+      assetId: string; fingerprint: `sha256:${string}`
+      trajectory?: { startTimeMs: number; endTimeMs: number; bounds: [[number, number], [number, number]] }
+    }>
+    const entry = assets.find(asset => asset.assetId === assetId && asset.trajectory)
+    if (!entry?.trajectory) throw new Error('ASSET_NOT_FOUND')
+    const [[west, south], [east, north]] = entry.trajectory.bounds
+    return {
+      assetId,
+      fingerprint: entry.fingerprint,
+      trajectory: {
+        schemaVersion: 'ise-trajectory/v1' as const,
+        points: [
+          { timeMs: entry.trajectory.startTimeMs, longitude: west, latitude: south, altitudeM: 8_000 },
+          { timeMs: entry.trajectory.endTimeMs, longitude: east, latitude: north, altitudeM: 8_000 },
+        ],
+      },
+    }
+  }
 }
 
 async function service(modelAvailability: 'available' | 'missing' = 'available') {

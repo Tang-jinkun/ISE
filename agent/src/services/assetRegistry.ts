@@ -1,4 +1,5 @@
 import { publicAssetCatalogEntrySchema } from '@ise/runtime-contracts'
+import type { NormalizedTrajectory } from '@ise/runtime-contracts'
 import {
   assetRegistrySnapshotSchema,
   type AssetRegistryEntry,
@@ -60,6 +61,35 @@ export function createAssetRegistrySnapshot(input: unknown): AssetRegistrySnapsh
     registryVersion: fingerprint(assets),
     assets,
     diagnostics: aliasDiagnostics(assets),
+  })
+}
+
+export interface HydratedTrajectoryAsset {
+  assetId: string
+  fingerprint: string
+  trajectory: NormalizedTrajectory
+}
+
+export async function createHydratedAssetRegistrySnapshot(
+  input: unknown,
+  loadTrajectory: (assetId: string) => Promise<HydratedTrajectoryAsset>,
+): Promise<AssetRegistrySnapshot> {
+  const metadata = createAssetRegistrySnapshot(input)
+  const assets = await Promise.all(metadata.assets.map(async entry => {
+    if (entry.kind !== 'trajectory' || entry.availability !== 'available') return entry
+    const loaded = await loadTrajectory(entry.assetId)
+    if (loaded.assetId !== entry.assetId || loaded.fingerprint !== entry.fingerprint) {
+      throw new CompilationError([diagnostic('ASSET_IDENTITY_MISMATCH', entry.assetId, 'error', { assetId: entry.assetId })])
+    }
+    return {
+      ...entry,
+      trajectory: { ...entry.trajectory, points: loaded.trajectory.points },
+    }
+  }))
+  return assetRegistrySnapshotSchema.parse({
+    ...metadata,
+    registryVersion: fingerprint(assets),
+    assets,
   })
 }
 

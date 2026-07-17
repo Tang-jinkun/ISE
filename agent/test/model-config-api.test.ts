@@ -25,6 +25,10 @@ class IdentityNest implements NestGateway {
   async listAssetMetadata(): Promise<unknown> {
     return [];
   }
+
+  async readTrajectoryAsset(): Promise<never> {
+    throw new Error('not used');
+  }
 }
 
 const model: ModelAdapter = {
