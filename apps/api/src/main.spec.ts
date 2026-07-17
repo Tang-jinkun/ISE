@@ -3,6 +3,7 @@ type BootstrapApp = {
   get: jest.Mock;
   listen: jest.Mock;
   use: jest.Mock;
+  useBodyParser: jest.Mock;
   useGlobalFilters: jest.Mock;
   useGlobalPipes: jest.Mock;
   useLogger: jest.Mock;
@@ -11,6 +12,7 @@ type BootstrapApp = {
 
 type BootstrapHarness = {
   app: BootstrapApp;
+  create: jest.Mock;
   createDocument: jest.Mock;
   document: object;
   expectedListenTarget: string | number;
@@ -33,6 +35,7 @@ async function runBootstrap(disableSwagger: string | undefined): Promise<Bootstr
     get: jest.fn((token: unknown) => ({ token })),
     listen: jest.fn().mockResolvedValue(undefined),
     use: jest.fn(),
+    useBodyParser: jest.fn(),
     useGlobalFilters: jest.fn(),
     useGlobalPipes: jest.fn(),
     useLogger: jest.fn(),
@@ -70,6 +73,7 @@ async function runBootstrap(disableSwagger: string | undefined): Promise<Bootstr
 
   return {
     app,
+    create,
     createDocument,
     document,
     expectedListenTarget,
@@ -91,6 +95,21 @@ describe('API bootstrap', () => {
     expect(createDocument).toHaveBeenCalledWith(app, expect.any(Object));
     expect(setup).toHaveBeenCalledTimes(1);
     expect(setup).toHaveBeenCalledWith('docs', app, document);
+  });
+
+  it('registers 2mb request body parsers before request processing', async () => {
+    const { app, create } = await runBootstrap('true');
+
+    expect(create).toHaveBeenCalledWith(expect.any(Function), { bodyParser: false });
+    expect(app.useBodyParser).toHaveBeenNthCalledWith(1, 'json', { limit: '2mb' });
+    expect(app.useBodyParser).toHaveBeenNthCalledWith(2, 'urlencoded', {
+      extended: true,
+      limit: '2mb',
+    });
+
+    const parserCallOrder = app.useBodyParser.mock.invocationCallOrder;
+    expect(parserCallOrder[1]).toBeLessThan(app.use.mock.invocationCallOrder[0]);
+    expect(parserCallOrder[1]).toBeLessThan(app.useGlobalPipes.mock.invocationCallOrder[0]);
   });
 
   it.each(['TRUE', 'false'])(

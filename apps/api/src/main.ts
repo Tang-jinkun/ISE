@@ -12,7 +12,12 @@ import { HttpExceptionsFilter } from './filter/http-exception.filter';
 import { requestMiddleware } from '@/utils/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+
+  app.useBodyParser('json', { limit: '2mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
 
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
