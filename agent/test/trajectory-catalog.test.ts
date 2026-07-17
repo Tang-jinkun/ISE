@@ -286,9 +286,9 @@ test('defines scenario-local route semantics and keeps AMBALA Su-30 routes as re
       ['reserve:india-su30-ambala', 2],
       ['support:india-netra-awacs', 1],
       ['support:pakistan-awacs-proxy', 1],
-      ['weapon:india-first-strike', 1],
-      ['weapon:pakistan-intercept', 1],
-      ['weapon:pakistan-counterattack', 1],
+      ['weapon:india-first-strike', 3],
+      ['weapon:pakistan-intercept', 3],
+      ['weapon:pakistan-counterattack', 3],
     ],
   )
   const minhas = indoPakTrajectoryScenario.bundles.find(bundle => bundle.bundleId.endsWith('jf17-minhas'))
@@ -333,7 +333,7 @@ test('binds exact AWACS aliases and behavior profiles to their models and statio
   ])
 })
 
-test('binds weapon behavior profiles to their exact catalog routes without base location matching', () => {
+test('binds weapon behavior profiles to preferred and compatible real catalog routes', () => {
   const catalog = buildTrajectoryCatalog(snapshot())
   const groups = [
     weaponGroup('group:weapon-first-strike', 'india', 'weapon-launch/india-first-strike/v1', '边境附近空域'),
@@ -344,11 +344,23 @@ test('binds weapon behavior profiles to their exact catalog routes without base 
   const bundles = resolveFormationBundles(groups, catalog, indoPakTrajectoryScenario)
 
   assert.deepEqual(bundles.map(bundle => [bundle.actorGroupRef, bundle.routeAssetRefs]), [
-    ['group:weapon-counterattack', ['trajectory:pakistan-strike-missile-2']],
-    ['group:weapon-first-strike', ['trajectory:india-missile-1']],
-    ['group:weapon-intercept', ['trajectory:pakistan-missile-1']],
+    ['group:weapon-counterattack', [
+      'trajectory:pakistan-strike-missile-2',
+      'trajectory:india-missile-1',
+      'trajectory:pakistan-missile-1',
+    ]],
+    ['group:weapon-first-strike', [
+      'trajectory:india-missile-1',
+      'trajectory:pakistan-missile-1',
+      'trajectory:pakistan-strike-missile-2',
+    ]],
+    ['group:weapon-intercept', [
+      'trajectory:pakistan-missile-1',
+      'trajectory:india-missile-1',
+      'trajectory:pakistan-strike-missile-2',
+    ]],
   ])
-  assert.equal(bundles.every(bundle => bundle.recommendedActorCount === 1), true)
+  assert.equal(bundles.every(bundle => bundle.recommendedActorCount === 3), true)
 })
 
 test('rejects ambiguous weapon behavior profiles instead of selecting a route by bundle order', () => {
@@ -437,6 +449,55 @@ test('assigns stable unique catalog routes and never creates illustrative fallba
   assert.equal(first.some(item => item.sourceKind === 'illustrative'), false)
   assert.equal(first.every(item => item.spatialPathMode === 'preserve'), true)
   assert.equal(first.every(item => item.resamplePolicy === 'preserve-source-samples'), true)
+})
+
+test('uses compatible real missile routes when evidence specifies repeated launches', () => {
+  const catalog = buildTrajectoryCatalog(snapshot())
+  const counterattack = {
+    ...weaponGroup(
+      'group:weapon-counterattack',
+      'pakistan',
+      'weapon-launch/pakistan-counterattack/v1',
+    ),
+    quantityDecision: {
+      value: 2,
+      constraint: 'exact' as const,
+      source: 'evidence' as const,
+      evidenceRefs: ['evidence:explicit-two-missiles'],
+      reason: 'The report explicitly launches two missiles',
+    },
+  }
+  const firstStrike = weaponGroup(
+    'group:weapon-first-strike',
+    'india',
+    'weapon-launch/india-first-strike/v1',
+  )
+  const bundles = resolveFormationBundles(
+    [counterattack, firstStrike],
+    catalog,
+    indoPakTrajectoryScenario,
+  )
+
+  const assignments = assignActorRoutes([
+    ...instances(counterattack.groupId, counterattack.quantityDecision.value),
+    ...instances(firstStrike.groupId, firstStrike.quantityDecision.value),
+  ], bundles)
+  const byActor = new Map(assignments.map(assignment => [assignment.actorInstanceRef, assignment]))
+
+  assert.equal(assignments.length, 3)
+  assert.equal(new Set(assignments.map(item => item.trajectoryAssetRef)).size, 3)
+  assert.equal(
+    byActor.get('actor:weapon-counterattack:1')?.trajectoryAssetRef,
+    'trajectory:pakistan-strike-missile-2',
+  )
+  assert.equal(
+    byActor.get('actor:weapon-first-strike:1')?.trajectoryAssetRef,
+    'trajectory:india-missile-1',
+  )
+  assert.deepEqual(
+    new Set(assignments.map(item => item.trajectoryAssetRef)),
+    new Set(missileRoutes),
+  )
 })
 
 test('reports unresolved actor groups and route capacity exhaustion explicitly', () => {

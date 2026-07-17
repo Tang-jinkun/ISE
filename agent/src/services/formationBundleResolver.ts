@@ -51,10 +51,10 @@ export function resolveFormationBundles(
           : `multiple exact alias and location matches in ${mapping.scenarioId}`)
       }
       const mapped = candidates[0]!
-      const mappedRouteIds = new Set(mapped.routeAssetRefs)
-      const routeAssetRefs = catalog.entries
-        .filter(entry => mappedRouteIds.has(entry.trajectoryAssetId) && entry.validationStatus !== 'invalid')
-        .map(entry => entry.trajectoryAssetId)
+      const routeAssetRefs = mapped.routeAssetRefs.filter(routeId => {
+        const entry = catalogEntries.get(routeId)
+        return entry !== undefined && entry.validationStatus !== 'invalid'
+      })
       const unavailable = mapped.routeAssetRefs.filter(routeId => {
         const entry = catalogEntries.get(routeId)
         return entry === undefined || entry.validationStatus === 'invalid'

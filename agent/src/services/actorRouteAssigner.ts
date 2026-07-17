@@ -32,7 +32,8 @@ export function assignActorRoutes(
   }
 
   const sortedInstances = [...instances]
-    .sort((left, right) => compareText(left.actorInstanceId, right.actorInstanceId))
+    .sort((left, right) => left.ordinal - right.ordinal
+      || compareText(left.actorInstanceId, right.actorInstanceId))
   const actorIds = new Set<string>()
   const usedRoutes = new Set<`trajectory:${string}`>()
 
@@ -71,7 +72,9 @@ export function assignActorRoutes(
       },
       spatialPathMode: 'preserve',
       sourceKind: 'catalog',
-      matchReason: 'Exact normalized scenario alias and location match',
+      matchReason: routeAssetRef === bundle.routeAssetRefs[0]
+        ? 'Exact normalized scenario alias and location match'
+        : 'Compatible real scenario route used for additional actor capacity',
       lineage: [`catalog:${bundle.scenarioBindings[0] ?? 'unbound'}`, bundle.bundleId],
     })
   })

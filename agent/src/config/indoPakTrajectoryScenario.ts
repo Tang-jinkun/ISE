@@ -9,8 +9,19 @@ const ambalaSu30Ids = routeIds('ambala-su30mki', 2)
 const minhasIds = routeIds('minhas-j10ce', 4)
 const rafikiIds = routeIds('rafiki-j10ce', 4)
 const missileAliases = ['missile', 'PL-15E', 'PL-15E\u5bfc\u5f39', '\u5bfc\u5f39']
+const missileRoutePool = [
+  'trajectory:india-missile-1',
+  'trajectory:pakistan-missile-1',
+  'trajectory:pakistan-strike-missile-2',
+] as const
 function routeIds(stem: string, count: number): `trajectory:${string}`[] {
   return Array.from({ length: count }, (_, index) => `trajectory:${stem}-${index + 1}` as const)
+}
+
+function preferredMissileRoutes(
+  preferred: typeof missileRoutePool[number],
+): `trajectory:${string}`[] {
+  return [preferred, ...missileRoutePool.filter(route => route !== preferred)]
 }
 
 function bundle(
@@ -101,7 +112,7 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
     bundle(
       'weapon:india-first-strike',
       'model:pl15e',
-      ['trajectory:india-missile-1'],
+      preferredMissileRoutes('trajectory:india-missile-1'),
       ['missile', 'PL-15E', 'PL-15E导弹', '导弹'],
       ['weapon-launch/india-first-strike/v1'],
       [
@@ -114,7 +125,7 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
     bundle(
       'weapon:pakistan-intercept',
       'model:pl15e',
-      ['trajectory:pakistan-missile-1'],
+      preferredMissileRoutes('trajectory:pakistan-missile-1'),
       missileAliases,
       ['weapon-launch/pakistan-intercept/v1'],
       [],
@@ -122,7 +133,7 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
     bundle(
       'weapon:pakistan-counterattack',
       'model:pl15e',
-      ['trajectory:pakistan-strike-missile-2'],
+      preferredMissileRoutes('trajectory:pakistan-strike-missile-2'),
       missileAliases,
       ['weapon-launch/pakistan-counterattack/v1'],
       [],
