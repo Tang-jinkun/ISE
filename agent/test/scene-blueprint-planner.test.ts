@@ -1259,6 +1259,12 @@ test('compileChoreography keeps an actorless subtitle beat by using the nearest 
   assert.ok(status)
   assert.deepEqual(status.subjectRefs, previous.subjectRefs)
   assert.deepEqual(status.sceneBeatRefs, [sceneBeats[2]!.sceneBeatId])
+  for (const actorInstanceRef of status.subjectRefs) {
+    assert.equal(
+      choreography.actorLifecycles.find(item => item.actorInstanceRef === actorInstanceRef)?.lastSceneBeatRef,
+      sceneBeats[2]!.sceneBeatId,
+    )
+  }
 })
 
 test('compileChoreography rejects synthesized trajectory diagnostics instead of hiding them', () => {

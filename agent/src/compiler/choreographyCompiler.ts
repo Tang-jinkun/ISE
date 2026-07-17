@@ -189,10 +189,11 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     const referencedBeats = sceneBlueprint.sceneBeats.filter(beat => {
       if (!beat.subtitleId) return false
       if (beat.actorRefs.includes(actor.actorGroupRef)) return true
-      return (engagementsBySceneBeat.get(beat.sceneBeatId) ?? []).some(engagement =>
+      if ((engagementsBySceneBeat.get(beat.sceneBeatId) ?? []).some(engagement =>
         engagement.launcherRef === actor.actorInstanceId
         || engagement.weaponRef === actor.actorInstanceId
-        || engagement.targetRef === actor.actorInstanceId)
+        || engagement.targetRef === actor.actorInstanceId)) return true
+      return nearestSubjectRefs(sceneBlueprint.sceneBeats.indexOf(beat)).includes(actor.actorInstanceId)
     })
     if (referencedBeats.length === 0) fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
     return {
