@@ -35,7 +35,38 @@ type TimelineTrack = {
   visible: boolean;
   clips: TimelineClip[];
   type: SceneTrack['type'];
+  source: SceneTrack;
 };
+
+function isCompatibleClipTarget(
+  sourceTrack: SceneTrack,
+  sourceItem: SceneTrackItem,
+  targetTrack: SceneTrack,
+): boolean {
+  if (sourceTrack.type !== targetTrack.type) return false;
+  if (sourceTrack.trackId === targetTrack.trackId || sourceTrack.type !== 'model') return true;
+  if (targetTrack.type !== 'model' || !('entityId' in sourceItem.params)) return false;
+
+  const targetEntityIds = new Set(targetTrack.items.map((item) => item.params.entityId));
+  return targetEntityIds.size === 0
+    || (targetEntityIds.size === 1 && targetEntityIds.has(sourceItem.params.entityId));
+}
+
+export function resolveClipDragChange(
+  sourceTrack: SceneTrack,
+  sourceItem: SceneTrackItem,
+  collidedTrack: SceneTrack | undefined,
+  startMs: number,
+  durationMs: number,
+) {
+  return {
+    startMs,
+    durationMs,
+    targetTrackId: collidedTrack && isCompatibleClipTarget(sourceTrack, sourceItem, collidedTrack)
+      ? collidedTrack.trackId
+      : sourceTrack.trackId,
+  };
+}
 
 export interface TimelineProps {
   tracks: SceneTrack[];
@@ -85,6 +116,7 @@ function displayTracks(tracks: SceneTrack[]): TimelineTrack[] {
     label: track.label,
     visible: track.visible,
     type: track.type,
+    source: track,
     clips: track.items.map((item) => ({
       id: item.id,
       label: item.id,
@@ -284,14 +316,15 @@ export function Timeline({
               </div>
               <div className="relative flex-1" style={{ width: rulerSeconds * pixelsPerSecond }}>
                 {track.visible && track.clips.map((clip) => {
-                  const trackTargets: Rect[] = timelineTracks.map((candidate, index) => ({
-                    id: candidate.id,
-                    x: 0,
-                    y: (index - trackIndex) * 36,
-                    width: rulerSeconds * pixelsPerSecond,
-                    height: 36,
-                    type: candidate.type,
-                  } as Rect));
+                  const trackTargets: Rect[] = timelineTracks.flatMap((candidate, index) =>
+                    isCompatibleClipTarget(track.source, clip.item, candidate.source) ? [{
+                      id: candidate.id,
+                      x: 0,
+                      y: (index - trackIndex) * 36,
+                      width: rulerSeconds * pixelsPerSecond,
+                      height: 36,
+                    }] : [],
+                  );
                   const snapTargets: Rect[] = timelineTracks.flatMap((candidate, index) =>
                     candidate.clips
                       .filter((candidateClip) => candidateClip.id !== clip.id)
@@ -334,14 +367,23 @@ export function Timeline({
                         setContextMenu({ x: event.clientX, y: event.clientY, itemId: clip.id, trackId: track.id });
                       }}
                       onDragEnd={(result) => {
-                        const collided = result.collisions[0] as (Rect & { type?: SceneTrack['type'] }) | undefined;
-                        const targetTrackId = collided?.type === track.type ? collided.id : track.id;
+                        const collided = result.collisions[0];
+                        const collidedTrack = collided
+                          ? timelineTracks.find(candidate => candidate.id === collided.id)?.source
+                          : undefined;
+                        const change = resolveClipDragChange(
+                          track.source,
+                          clip.item,
+                          collidedTrack,
+                          Math.max(0, Math.round((result.x / pixelsPerSecond) * 1000)),
+                          clip.item.durationMs,
+                        );
                         onClipChange?.(
                           track.id,
                           clip.id,
-                          Math.max(0, Math.round((result.x / pixelsPerSecond) * 1000)),
-                          clip.item.durationMs,
-                          targetTrackId,
+                          change.startMs,
+                          change.durationMs,
+                          change.targetTrackId,
                         );
                       }}
                       onResizeEnd={(result) => {

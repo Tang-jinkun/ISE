@@ -2,6 +2,7 @@ import { sceneProjectConfigSchema, type SceneProjectConfig } from '@ise/runtime-
 import type { CanonicalCommand, CanonicalRuntimePlan } from '../contracts/runtimePlan.ts'
 
 type TrackType = SceneProjectConfig['tracks'][number]['type']
+type ModelCommand = Extract<CanonicalCommand, { type: `model.${string}` }>
 
 function assertNever(value: never): never {
   throw new Error(`Unsupported runtime command: ${JSON.stringify(value)}`)
@@ -22,7 +23,11 @@ function commandTrackType(command: CanonicalCommand): TrackType {
   }
 }
 
-function toModelAction(command: Extract<CanonicalCommand, { type: `model.${string}` }>) {
+function isModelCommand(command: CanonicalCommand): command is ModelCommand {
+  return commandTrackType(command) === 'model'
+}
+
+function toModelAction(command: ModelCommand) {
   switch (command.type) {
     case 'model.spawn': return { action: 'model.spawn' as const, entityId: command.params.entityId }
     case 'model.follow_path': return {
@@ -127,10 +132,20 @@ export class BaseRuntimeAdapter {
           params: { text: card.text, position: 'top', maxWidthPct: 70 },
         })),
       ]],
-      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []], ['model', []],
+      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []],
     ])
-    for (const command of plan.commands) items.get(commandTrackType(command))!.push(toTrackItem(command))
-    const tracks = [...items.entries()]
+    const modelItems = new Map(plan.entities.map(entity => [entity.entityId, [] as unknown[]]))
+    for (const command of plan.commands) {
+      if (isModelCommand(command)) {
+        const entityItems = modelItems.get(command.params.entityId)
+        if (!entityItems) throw new Error(`MODEL_COMMAND_ENTITY_NOT_FOUND:${command.params.entityId}`)
+        entityItems.push(toTrackItem(command))
+      } else {
+        items.get(commandTrackType(command))!.push(toTrackItem(command))
+      }
+    }
+    const tracks = [
+      ...[...items.entries()]
       .filter(([, trackItems]) => trackItems.length > 0)
       .map(([type, trackItems]) => ({
         trackId: `track:${type}`,
@@ -138,7 +153,18 @@ export class BaseRuntimeAdapter {
         label: `${type[0]!.toUpperCase()}${type.slice(1)}`,
         visible: true,
         items: trackItems,
-      }))
+      })),
+      ...plan.entities.flatMap(entity => {
+        const trackItems = modelItems.get(entity.entityId)!
+        return trackItems.length === 0 ? [] : [{
+          trackId: `track:model:${entity.entityId}`,
+          type: 'model' as const,
+          label: entity.displayName,
+          visible: true,
+          items: trackItems,
+        }]
+      }),
+    ]
     return sceneProjectConfigSchema.parse({
       schemaVersion: 'ise-scene/v1',
       sourceDocumentId: plan.sourceDocumentId,

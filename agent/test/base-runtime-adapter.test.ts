@@ -59,6 +59,28 @@ function runtimePlanWithEveryTrack(): CanonicalRuntimePlan {
   })
 }
 
+function runtimePlanWithTwoModelTracks(): CanonicalRuntimePlan {
+  const plan = runtimePlanWithEveryTrack()
+  return canonicalRuntimePlanSchema.parse({
+    ...plan,
+    entities: [
+      ...plan.entities,
+      {
+        entityId: 'entity:f16-1', displayName: 'F-16 1', kind: 'aircraft',
+        modelAssetId: 'model:f16', defaultTrajectoryAssetId: 'trajectory:f16-1', initialState: 'normal',
+      },
+    ],
+    commands: [
+      ...plan.commands,
+      {
+        commandId: 'spawn-2', eventUnitId: 'unit-1', targetId: 'entity:f16-1',
+        type: 'model.spawn', startMs: 0, durationMs: 1_000, dependsOn: [], onFailure: 'abort',
+        evidenceRefs: ['ev-1'], params: { action: 'model.spawn', entityId: 'entity:f16-1', modelAssetId: 'model:f16' },
+      },
+    ],
+  })
+}
+
 function compilerContext(options: { movement?: boolean; missingTrajectory?: boolean; lastValid?: boolean } = {}): AgentContext {
   const artifacts = new ArtifactStore()
   const eventPlan = {
@@ -148,6 +170,55 @@ test('adapter groups all seven discriminated tracks and passes shared schema', (
   const config = new BaseRuntimeAdapter().adapt(runtimePlanWithEveryTrack(), 'runtime-artifact-1')
   assert.deepEqual(config.tracks.map(track => track.type).sort(), ['camera', 'geojson', 'image', 'marker', 'model', 'subtitle', 'video'])
   assert.deepEqual(sceneProjectConfigSchema.parse(config), config)
+})
+
+test('adapter persists one model track per runtime entity in entity order', () => {
+  const config = new BaseRuntimeAdapter().adapt(runtimePlanWithTwoModelTracks(), 'runtime-artifact-1')
+  const modelTracks = config.tracks.filter(track => track.type === 'model')
+
+  assert.deepEqual(
+    modelTracks.map(track => ({ trackId: track.trackId, label: track.label })),
+    [
+      { trackId: 'track:model:entity:jf17-1', label: 'JF-17 1' },
+      { trackId: 'track:model:entity:f16-1', label: 'F-16 1' },
+    ],
+  )
+  assert.deepEqual(
+    modelTracks.map(track => [...new Set(track.items.map(item => item.params.entityId))]),
+    [['entity:jf17-1'], ['entity:f16-1']],
+  )
+})
+
+test('adapter rejects model commands that reference an absent runtime entity', () => {
+  const plan = runtimePlanWithEveryTrack()
+  const invalidPlan = {
+    ...plan,
+    commands: plan.commands.map(command => command.type === 'model.spawn'
+      ? { ...command, targetId: 'entity:missing', params: { ...command.params, entityId: 'entity:missing' } }
+      : command),
+  }
+
+  assert.throws(
+    () => new BaseRuntimeAdapter().adapt(invalidPlan, 'runtime-artifact-1'),
+    /MODEL_COMMAND_ENTITY_NOT_FOUND:entity:missing/,
+  )
+})
+
+test('adapter preserves generic ids and labels for non-model tracks', () => {
+  const config = new BaseRuntimeAdapter().adapt(runtimePlanWithTwoModelTracks(), 'runtime-artifact-1')
+  assert.deepEqual(
+    config.tracks
+      .filter(track => track.type !== 'model')
+      .map(track => ({ trackId: track.trackId, label: track.label })),
+    [
+      { trackId: 'track:subtitle', label: 'Subtitle' },
+      { trackId: 'track:image', label: 'Image' },
+      { trackId: 'track:video', label: 'Video' },
+      { trackId: 'track:marker', label: 'Marker' },
+      { trackId: 'track:geojson', label: 'Geojson' },
+      { trackId: 'track:camera', label: 'Camera' },
+    ],
+  )
 })
 
 test('compiled artifact contains its self-referencing validated config and exact progress', async () => {
