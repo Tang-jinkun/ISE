@@ -752,6 +752,25 @@ test('derives the weapon side from the launcher rather than an earlier opposing 
   assert.equal(blueprint.actorGroups.find(group => group.role === 'weapon-launch')?.side, 'pakistan')
 })
 
+test('derives the weapon side when launcher actions continue across a comma', () => {
+  const fixture = planningFixtureWithParticipants({
+    'event:launch': ['巴方预警机', '巴方JF-17', '巴方拦截导弹', '印方来袭导弹'],
+  })
+  const launch = fixture.eventPlan.eventUnits.find(unit => unit.eventUnitId === 'event:launch')!
+  const claim = '巴方预警力量发现来袭导弹后向前线JF-17编队发布威胁信息；JF-17编队调整航向和队形，发射一枚拦截导弹。'
+  launch.worldStateChange = claim
+  fixture.evidence.records = fixture.evidence.records.map(record => record.evidenceId === 'ev-launch'
+    ? { ...record, claim, entities: ['巴方JF-17', '巴方拦截导弹', '印方来袭导弹'] }
+    : record)
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+  const weapon = blueprint.actorGroups.find(group => group.role === 'weapon-launch')
+
+  assert.equal(weapon?.side, 'pakistan')
+  assert.equal(weapon?.behaviorProfile, 'weapon-launch/pakistan-intercept/v1')
+})
+
 test('keeps weapon side unknown when no launcher can be identified', () => {
   const fixture = planningFixtureWithParticipants({
     'event:launch': ['印方阵风编队', '巴方JF-17编队'],

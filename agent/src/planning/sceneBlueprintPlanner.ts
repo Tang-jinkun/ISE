@@ -236,7 +236,7 @@ function weaponSide(unit: EventUnit, records: EvidenceRecord[]): 'india' | 'paki
       { alias: 'India', side: 'india' as const },
     ]
       .map(candidate => ({ ...candidate, index: text.toLocaleLowerCase('en-US').lastIndexOf(candidate.alias.toLocaleLowerCase('en-US'), launchIndex) }))
-      .filter(candidate => candidate.index >= 0 && !/[.;,，；]/u.test(text.slice(candidate.index + candidate.alias.length, launchIndex)))
+      .filter(candidate => candidate.index >= 0 && !/[.;；]/u.test(text.slice(candidate.index + candidate.alias.length, launchIndex)))
       .filter(candidate => !/\b(?:and|before|after|while|then|engage(?:d|s|ment)?)\b|\b(?:a|the)\s+missile\b/iu.test(
         text.slice(candidate.index + candidate.alias.length, launchIndex)))
       .sort((left, right) => right.index - left.index)
