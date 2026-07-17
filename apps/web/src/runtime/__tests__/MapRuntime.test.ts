@@ -377,6 +377,164 @@ it('blends from the preceding dynamic policy using the current snapshots', async
   expect(map.lastJump).toEqual({ center: [79, 30], zoom: 10, pitch: 20, bearing: 40 });
 });
 
+it('blends a static camera from the preceding dynamic policy without a boundary cut', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  const track: CameraTrack = {
+    trackId: 'camera',
+    type: 'camera',
+    label: 'Camera',
+    visible: true,
+    items: [
+      {
+        id: 'follow-first',
+        eventUnitId: 'event-1',
+        startMs: 0,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          action: 'camera.follow_actor',
+          entityId: 'fighter-1',
+          framing: 'tracking',
+          zoom: 8,
+          pitch: 10,
+          bearing: 20,
+          lookAheadMs: 0,
+          transitionMs: 0,
+        },
+      },
+      {
+        id: 'static-second',
+        eventUnitId: 'event-2',
+        startMs: 1_000,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          center: [100, 50],
+          zoom: 12,
+          pitch: 30,
+          bearing: 60,
+          easing: 'linear',
+        },
+      },
+    ],
+  };
+  await runtime.load([track]);
+  const frames = [snapshot('fighter-1', 80, 30)];
+
+  runtime.applyBase(1_000, frames);
+  expect(map.lastJump).toEqual({ center: [80, 30], zoom: 8, pitch: 10, bearing: 20 });
+  runtime.applyBase(1_500, frames);
+  expect(map.lastJump).toEqual({ center: [90, 40], zoom: 10, pitch: 20, bearing: 40 });
+});
+
+it('persists the latest dynamic policy through a camera timeline gap', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  const track: CameraTrack = {
+    trackId: 'camera',
+    type: 'camera',
+    label: 'Camera',
+    visible: true,
+    items: [
+      {
+        id: 'follow-before-gap',
+        eventUnitId: 'event-1',
+        startMs: 0,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          action: 'camera.follow_actor',
+          entityId: 'fighter-1',
+          framing: 'tracking',
+          zoom: 8,
+          pitch: 10,
+          bearing: 20,
+          lookAheadMs: 0,
+          transitionMs: 0,
+        },
+      },
+      {
+        id: 'static-after-gap',
+        eventUnitId: 'event-2',
+        startMs: 2_000,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          center: [100, 50],
+          zoom: 12,
+          pitch: 30,
+          bearing: 60,
+          easing: 'linear',
+        },
+      },
+    ],
+  };
+  await runtime.load([track]);
+
+  runtime.applyBase(1_500, [snapshot('fighter-1', 82, 32)]);
+  expect(map.lastJump).toEqual({ center: [82, 32], zoom: 8, pitch: 10, bearing: 20 });
+});
+
+it('recreates a dynamic-to-static blend after seek without camera history', async () => {
+  const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
+  const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));
+  const track: CameraTrack = {
+    trackId: 'camera',
+    type: 'camera',
+    label: 'Camera',
+    visible: true,
+    items: [
+      {
+        id: 'follow-first',
+        eventUnitId: 'event-1',
+        startMs: 0,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          action: 'camera.follow_actor',
+          entityId: 'fighter-1',
+          framing: 'tracking',
+          zoom: 8,
+          pitch: 10,
+          bearing: 20,
+          lookAheadMs: 0,
+          transitionMs: 0,
+        },
+      },
+      {
+        id: 'static-second',
+        eventUnitId: 'event-2',
+        startMs: 1_000,
+        durationMs: 1_000,
+        evidenceRefs,
+        params: {
+          center: [100, 50],
+          zoom: 12,
+          pitch: 30,
+          bearing: 60,
+          easing: 'easeInOut',
+        },
+      },
+    ],
+  };
+  await runtime.load([track]);
+  const frames = [snapshot('fighter-1', 80, 30)];
+
+  runtime.applyBase(1_250, frames);
+  const first = map.lastJump;
+  expect(first).toEqual({
+    center: [83.125, 33.125],
+    zoom: 8.625,
+    pitch: 13.125,
+    bearing: 26.25,
+  });
+  runtime.applyBase(0, frames);
+  runtime.applyBase(1_250, frames);
+  expect(map.lastJump).toEqual(first);
+  expect(map.easeTo).not.toHaveBeenCalled();
+});
+
 it('preserves the legacy static camera reducer byte-for-byte', async () => {
   const map = new FakeMap({ center: [70, 20], zoom: 3, pitch: 0, bearing: 0 });
   const runtime = new MapRuntime(map as never, fakeResources({}) as never, markerDependencies(map));

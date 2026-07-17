@@ -34,11 +34,6 @@ interface PreparedGeojson {
   data: unknown;
 }
 
-interface PreparedCamera {
-  item: CameraItem;
-  start: CameraState;
-}
-
 export interface MarkerPort {
   setLngLat(coordinates: [number, number]): MarkerPort;
   addTo(map: mapboxgl.Map): MarkerPort;
@@ -64,7 +59,7 @@ const trailId = (entityId: string) => `ise:trail:${entityId}`;
 export class MapRuntime {
   private markerItems: MarkerItem[] = [];
   private geojsonItems: PreparedGeojson[] = [];
-  private cameraItems: PreparedCamera[] = [];
+  private cameraItems: CameraItem[] = [];
   private initialCamera: CameraState | undefined;
   private readonly renderedMarkers = new Map<string, MarkerPort>();
   private readonly renderedGeojson = new Set<string>();
@@ -132,16 +127,12 @@ export class MapRuntime {
       )
       .map(({ item }) => item);
 
-    let cameraStart = this.initialCamera;
     let previous: CameraItem | undefined;
     for (const item of sortedCameraItems) {
       if (previous && item.startMs < previous.startMs + previous.durationMs) {
         throw new Error(`Camera intervals overlap: ${previous.id} and ${item.id}`);
       }
-      this.cameraItems.push({ item, start: cameraStart });
-      if (isStaticCameraItem(item)) {
-        cameraStart = cameraTarget(item);
-      }
+      this.cameraItems.push(item);
       previous = item;
     }
 
@@ -372,70 +363,86 @@ export class MapRuntime {
     if (!this.initialCamera) {
       return;
     }
-    const staticState = this.staticCameraState(timeMs);
-    const dynamicItem = this.cameraItems
-      .map(({ item }) => item)
-      .find((item) => isDynamicCameraItem(item) && isActive(item, timeMs));
-    if (!dynamicItem || !isDynamicCameraItem(dynamicItem)) {
-      this.map.jumpTo(staticState);
-      return;
-    }
-    const target = dynamicCameraTarget(this.map, dynamicItem, snapshots);
-    if (!target) {
-      this.map.jumpTo(staticState);
-      return;
-    }
-    const transitionMs = dynamicItem.params.transitionMs;
-    const state =
-      transitionMs > 0 && timeMs < dynamicItem.startMs + transitionMs
-        ? interpolateCamera(
-            this.previousCameraPolicy(dynamicItem, timeMs, snapshots),
-            target,
-            clamp01((timeMs - dynamicItem.startMs) / transitionMs),
-          )
-        : target;
-    this.map.jumpTo(state);
+    this.map.jumpTo(this.cameraState(timeMs, snapshots));
   }
 
-  private staticCameraState(timeMs: number): CameraState {
-    let state = this.initialCamera!;
-    for (const prepared of this.cameraItems) {
-      const { item, start } = prepared;
-      if (timeMs < item.startMs) {
-        break;
-      }
-      if (!isStaticCameraItem(item)) {
-        continue;
-      }
-      const endMs = item.startMs + item.durationMs;
-      if (item.durationMs > 0 && timeMs < endMs) {
-        const progress = clamp01((timeMs - item.startMs) / item.durationMs);
-        const eased =
-          item.params.easing === 'easeInOut'
-            ? progress * progress * (3 - 2 * progress)
-            : progress;
-        state = interpolateCamera(start, cameraTarget(item), eased);
-        break;
-      }
-      state = cameraTarget(item);
-    }
-    return state;
-  }
-
-  private previousCameraPolicy(
-    item: DynamicCameraItem,
+  private cameraState(
     timeMs: number,
     snapshots: readonly ModelEntityFrameSnapshot[],
   ): CameraState {
-    const index = this.cameraItems.findIndex((candidate) => candidate.item === item);
-    const previous = index > 0 ? this.cameraItems[index - 1]?.item : undefined;
-    if (previous && isDynamicCameraItem(previous)) {
-      const state = dynamicCameraTarget(this.map, previous, snapshots);
-      if (state) {
-        return state;
+    let latestIndex = -1;
+    for (let index = 0; index < this.cameraItems.length; index += 1) {
+      const item = this.cameraItems[index]!;
+      if (timeMs < item.startMs) {
+        break;
       }
+      latestIndex = index;
     }
-    return this.staticCameraState(timeMs);
+    if (latestIndex < 0) {
+      return this.initialCamera!;
+    }
+
+    const latest = this.cameraItems[latestIndex]!;
+    return isActive(latest, timeMs)
+      ? this.activeCameraPolicy(latestIndex, timeMs, snapshots)
+      : this.terminalCameraPolicy(latestIndex, timeMs, snapshots);
+  }
+
+  private activeCameraPolicy(
+    index: number,
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[],
+  ): CameraState {
+    const item = this.cameraItems[index]!;
+    const previous = this.previousCameraPolicy(index, timeMs, snapshots);
+    if (isStaticCameraItem(item)) {
+      const progress = clamp01((timeMs - item.startMs) / item.durationMs);
+      const eased =
+        item.params.easing === 'easeInOut'
+          ? progress * progress * (3 - 2 * progress)
+          : progress;
+      return interpolateCamera(previous, cameraTarget(item), eased);
+    }
+    if (!isDynamicCameraItem(item)) {
+      return previous;
+    }
+
+    const target = dynamicCameraTarget(this.map, item, snapshots);
+    if (!target) {
+      return previous;
+    }
+    const progress = clamp01((timeMs - item.startMs) / item.params.transitionMs);
+    return item.params.transitionMs > 0 && progress < 1
+      ? interpolateCamera(previous, target, progress)
+      : target;
+  }
+
+  private terminalCameraPolicy(
+    index: number,
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[],
+  ): CameraState {
+    const item = this.cameraItems[index]!;
+    if (isStaticCameraItem(item)) {
+      return cameraTarget(item);
+    }
+    if (!isDynamicCameraItem(item)) {
+      return this.previousCameraPolicy(index, timeMs, snapshots);
+    }
+    return (
+      dynamicCameraTarget(this.map, item, snapshots) ??
+      this.previousCameraPolicy(index, timeMs, snapshots)
+    );
+  }
+
+  private previousCameraPolicy(
+    index: number,
+    timeMs: number,
+    snapshots: readonly ModelEntityFrameSnapshot[],
+  ): CameraState {
+    return index > 0
+      ? this.terminalCameraPolicy(index - 1, timeMs, snapshots)
+      : this.initialCamera!;
   }
 
   private removeLayerAndSource(id: string) {
