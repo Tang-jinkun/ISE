@@ -12,7 +12,7 @@ import {
   type RevisionRequest
 } from '@/api/agent';
 import { uploadFile } from '@/api/file';
-import { updateScript } from '@/api/script';
+import { getScript, updateScript } from '@/api/script';
 import { EditorProvider } from '@/components/resource-editors';
 import { message } from '@/components/ui/message';
 import { useAgentSession } from '@/hooks/useAgentSession';
@@ -90,6 +90,22 @@ const buildGenerationObjective = (
 
 const errorText = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback;
+
+function restoredAgentSessionId(config: unknown): string | undefined {
+  let parsed = config;
+  if (typeof config === 'string') {
+    try {
+      parsed = JSON.parse(config) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const sessionId = (parsed as Record<string, unknown>).agentSessionId;
+  return typeof sessionId === 'string' && sessionId.trim() ? sessionId : undefined;
+}
 
 const reviewBody = ({
   artifactId,
@@ -568,6 +584,32 @@ export default function Script() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!projectId) return;
+    let active = true;
+
+    void getScript(projectId)
+      .then((response) => {
+        if (!active) return;
+        const script = response.data;
+        setEditableTitle(script.title ?? script.name ?? '');
+        const restoredSessionId = restoredAgentSessionId(script.config);
+        if (!restoredSessionId) return;
+        useAgentSessionStore.getState().open(restoredSessionId);
+        setAgentSessionId(restoredSessionId);
+        setHasSentInitialMessage(true);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error(error);
+        message.error('加载脚本项目失败，请稍后重试');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
   const pendingMessages = useMemo(
     () => messages.filter((item) => !item.runId || !turns.some((turn) => turn.id === item.runId)),
     [messages, turns]
@@ -620,6 +662,14 @@ export default function Script() {
       if (needsSession) {
         useAgentSessionStore.getState().open(sessionId);
         setAgentSessionId(sessionId);
+        if (projectId) {
+          await updateScript(projectId, {
+            config: JSON.stringify({
+              agentSessionId: sessionId,
+              artifactIds: []
+            })
+          });
+        }
       }
       const queued = await sendAgentMessage(sessionId, {
         content: hasSentInitialMessage

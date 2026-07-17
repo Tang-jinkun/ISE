@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   clearModelConfig: vi.fn(),
   createAgentSession: vi.fn(),
   createScene: vi.fn(),
+  getScript: vi.fn(),
   getModelConfig: vi.fn(),
   navigate: vi.fn(),
   rejectAgentReview: vi.fn(),
@@ -54,7 +55,10 @@ vi.mock('@/api/agent', async (importOriginal) => {
 
 vi.mock('@/api/file', () => ({ uploadFile: mocks.uploadFile }));
 vi.mock('@/api/scene', () => ({ createScene: mocks.createScene }));
-vi.mock('@/api/script', () => ({ updateScript: mocks.updateScript }));
+vi.mock('@/api/script', () => ({
+  getScript: mocks.getScript,
+  updateScript: mocks.updateScript
+}));
 vi.mock('@/hooks/useAgentSession', () => ({
   useAgentSession: mocks.useAgentSession
 }));
@@ -367,6 +371,14 @@ describe('NewScript real Agent flow', () => {
       status: 'idle'
     });
     mocks.getModelConfig.mockResolvedValue(configuredModel);
+    mocks.getScript.mockResolvedValue({
+      data: {
+        id: 'script-1',
+        title: '已保存脚本',
+        config: '{}',
+        conversation: []
+      }
+    });
     mocks.saveModelConfig.mockResolvedValue(configuredModel);
     mocks.clearModelConfig.mockResolvedValue(emptyModel);
     mocks.attachAgentFile.mockResolvedValue({
@@ -413,6 +425,46 @@ describe('NewScript real Agent flow', () => {
     renderNewScript();
 
     expect(mocks.useAgentSession).not.toHaveBeenCalled();
+  });
+
+  it('reopens the Agent session persisted with the script project', async () => {
+    mocks.getScript.mockResolvedValueOnce({
+      data: {
+        id: 'script-1',
+        title: '印巴空战复盘',
+        config: JSON.stringify({
+          agentSessionId: 'session-restored',
+          artifactIds: ['event-plan-1', 'compiled-1']
+        }),
+        conversation: [
+          { role: 'user', content: '生成印巴空战复盘' },
+          { role: 'assistant', content: '场景已经生成。' }
+        ]
+      }
+    });
+
+    renderNewScript();
+
+    await waitFor(() => {
+      expect(mocks.getScript).toHaveBeenCalledWith('script-1');
+      expect(mocks.useAgentSession).toHaveBeenCalledWith('session-restored');
+    });
+    expect(screen.getByDisplayValue('印巴空战复盘')).toBeInTheDocument();
+  });
+
+  it('persists a newly created Agent session before the user leaves the project', async () => {
+    renderNewScript();
+
+    await uploadReport();
+
+    await waitFor(() => {
+      expect(mocks.updateScript).toHaveBeenCalledWith('script-1', {
+        config: JSON.stringify({
+          agentSessionId: 'session-1',
+          artifactIds: []
+        })
+      });
+    });
   });
 
   it('keeps the project id when returning to the legacy workspace', () => {
@@ -1004,8 +1056,8 @@ describe('NewScript real Agent flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
-    await waitFor(() => expect(mocks.updateScript).toHaveBeenCalledTimes(1));
-    const [, payload] = mocks.updateScript.mock.calls[0];
+    await waitFor(() => expect(mocks.updateScript).toHaveBeenCalledTimes(2));
+    const [, payload] = mocks.updateScript.mock.calls.at(-1)!;
     expect(payload.conversation).toEqual([
       { role: 'user', content: '梳理可见战场态势' },
       { role: 'assistant', content: '已梳理关键事件' }

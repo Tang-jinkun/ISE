@@ -147,6 +147,12 @@ describe('useAgentSession', () => {
     expect(listArtifactsMock).toHaveBeenNthCalledWith(1, 'session-1');
     expect(useAgentSessionStore.getState().compiledConfig).toEqual(compiledConfig);
     expect(useAgentSessionStore.getState().artifacts).toHaveProperty('draft-1');
+    expect(useAgentSessionStore.getState().activeReview).toEqual({
+      reviewId: 'review-1',
+      artifactId: 'draft-1',
+      version: 1,
+      fingerprint: `sha256:${'a'.repeat(64)}`,
+    });
   });
 
   it('hydrates durable turns and refreshes them at run boundaries', async () => {
@@ -156,7 +162,16 @@ describe('useAgentSession', () => {
         id: 'user-1', role: 'user' as const, content: '生成场景',
         createdAt: '2026-07-16T00:00:00.000Z'
       },
-      activities: [],
+      activities: [
+        {
+          id: 'thinking-1', type: 'thinking' as const,
+          status: 'completed' as const, text: '正在解析报告'
+        },
+        {
+          id: 'tool-1', type: 'tool' as const,
+          status: 'completed' as const, name: 'extract-events'
+        },
+      ],
       createdAt: '2026-07-16T00:00:00.000Z'
     };
     const completedTurn = {
