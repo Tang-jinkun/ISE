@@ -705,6 +705,10 @@ test('final compiler emits automatic missile lifecycle, phased cameras, impact, 
     assert.equal(cameras.length, 4)
     assert.equal(cameras[0]?.startMs, subtitle.startMs + 800)
     assert.ok(cameras[2]!.params.zoom > cameras[0]!.params.zoom)
+    assert.equal(cameras[2]!.params.pitch, 0)
+    assert.equal(cameras[3]!.params.pitch, 0)
+    assert.ok(cameras[2]!.params.zoom <= 11.5)
+    assert.ok(cameras[3]!.params.zoom <= 11.5)
     assert.ok(cameras.every(command => command.startMs + command.durationMs <= subtitle.startMs + subtitle.durationMs))
   }
   const destroyed = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
@@ -794,7 +798,9 @@ test('interception phase cameras follow the real westbound Indian missile geomet
   const targetFollow = plan.commands.find(command => (
     command.type === 'model.follow_path' && command.targetId === engagement.targetRef
   ))!
-  const progress = (terminal.startMs - targetFollow.startMs) / targetFollow.durationMs
+  const progress = (
+    terminal.startMs + terminal.durationMs - targetFollow.startMs
+  ) / targetFollow.durationMs
   const trajectoryTimeMs = Math.max(0, Math.min(180_000, progress * 180_000))
   const start = trajectoryTimeMs <= 90_000
     ? { timeMs: 0, longitude: 75.90581401335153, latitude: 29.482080957203344 }

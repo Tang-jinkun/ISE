@@ -585,6 +585,7 @@ it('exposes the applied GLB transform and trajectory orientation as a readonly f
     expect.objectContaining({
       entityId: 'one',
       modelAssetId: 'model:rafale',
+      state: 'normal',
       visible: true,
       longitude: 76.375,
       latitude: 30,

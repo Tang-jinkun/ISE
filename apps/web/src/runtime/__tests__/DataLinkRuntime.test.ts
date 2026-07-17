@@ -50,6 +50,7 @@ function snapshot(
 ): ModelEntityFrameSnapshot {
   return {
     entityId,
+    state: 'normal',
     visible,
     longitude,
     latitude,

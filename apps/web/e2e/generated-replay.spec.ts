@@ -7,6 +7,10 @@ import { RUNTIME_MAIN_CONFIG } from '../src/runtime/testing/runtimeFixtures';
 const accessToken = process.env.ISE_E2E_ACCESS_TOKEN;
 const persistedSceneId = process.env.ISE_E2E_SCENE_ID;
 const mapCanvasSelector = 'canvas.maplibregl-canvas, canvas.mapboxgl-canvas';
+const stationaryTrajectoryAssetIds = new Set([
+  'trajectory:india-awacs-1',
+  'trajectory:pakistan-awacs-1',
+]);
 
 function mapCanvas(page: Page) {
   return page.locator(mapCanvasSelector);
@@ -109,6 +113,7 @@ async function seekRuntimeHarness(page: Page, timeMs: number) {
 
 interface RuntimeModelSnapshot {
   entityId: string;
+  state: 'normal' | 'warning' | 'disabled' | 'destroyed' | 'hidden';
   modelAssetId?: string;
   trajectoryAssetId?: string;
   defaultTrajectoryAssetId?: string;
@@ -218,17 +223,23 @@ function cameraAcceptanceTimes(config: SceneProjectConfig): [number, number] {
   const cameraItems = config.tracks
     .filter((track): track is CameraTrack => track.type === 'camera' && track.visible)
     .flatMap((track) => track.items);
+  const engagementCameraItems = cameraItems.filter((item) => (
+    /:(launch|midcourse|terminal|aftermath):camera$/.test(item.id)
+  ));
+  const acceptanceItems = engagementCameraItems.length >= 2
+    ? engagementCameraItems
+    : cameraItems;
   const upperBoundMs = Math.max(0, config.totalDurationMs - 1);
   const sampleTime = (item: CameraTrack['items'][number]) =>
     Math.min(
       upperBoundMs,
-      Math.max(0, Math.round(item.startMs + item.durationMs * 0.8)),
+      Math.max(0, item.startMs + Math.max(1, item.durationMs - 10)),
     );
   let best: { times: [number, number]; separationMs: number } | undefined;
-  for (let left = 0; left < cameraItems.length; left += 1) {
-    for (let right = left + 1; right < cameraItems.length; right += 1) {
-      const first = cameraItems[left]!;
-      const second = cameraItems[right]!;
+  for (let left = 0; left < acceptanceItems.length; left += 1) {
+    for (let right = left + 1; right < acceptanceItems.length; right += 1) {
+      const first = acceptanceItems[left]!;
+      const second = acceptanceItems[right]!;
       if (JSON.stringify(first.params) === JSON.stringify(second.params)) continue;
       const firstTimeMs = sampleTime(first);
       const secondTimeMs = sampleTime(second);
@@ -246,13 +257,20 @@ function cameraAcceptanceTimes(config: SceneProjectConfig): [number, number] {
 
 function persistedAcceptanceSamples(config: SceneProjectConfig) {
   const imageItem = config.tracks.find((track) => track.type === 'image')?.items[0];
-  const videoItem = config.tracks.find((track) => track.type === 'video')?.items[0];
+  const videoItems = config.tracks
+    .filter((track) => track.type === 'video')
+    .flatMap((track) => track.items);
+  const videoItem = [...videoItems].sort((left, right) => right.durationMs - left.durationMs)[0];
   const subtitleItem = config.tracks.find((track) => track.type === 'subtitle')?.items[0];
   if (!imageItem || !videoItem || !subtitleItem) {
     throw new Error('Persisted scene requires active image, video, and subtitle intervals.');
   }
   const image = sampleInside(imageItem.startMs, imageItem.durationMs, 500);
-  const video = sampleInside(videoItem.startMs, videoItem.durationMs, 1_000);
+  const videos = videoItems.map((item) => ({
+    item,
+    ...sampleInside(item.startMs, item.durationMs, Math.min(1_000, Math.floor(item.durationMs / 4))),
+  }));
+  const video = videos.find((sample) => sample.item.id === videoItem.id)!;
   const subtitle = sampleInside(subtitleItem.startMs, subtitleItem.durationMs, 500);
 
   const aircraftIds = new Set(
@@ -261,10 +279,21 @@ function persistedAcceptanceSamples(config: SceneProjectConfig) {
   const follows = config.tracks
     .filter((track): track is ModelTrack => track.type === 'model')
     .flatMap((track) => track.items.filter(isFollowPathItem));
-  const aircraftFollows = follows.filter((item) => aircraftIds.has(item.params.entityId));
+  const destroyedEntityIds = new Set(
+    config.tracks
+      .filter((track): track is ModelTrack => track.type === 'model')
+      .flatMap((track) => track.items.filter(isDestroyedStateItem))
+      .map((item) => item.params.entityId),
+  );
+  const aircraftFollows = follows.filter((item) => (
+    aircraftIds.has(item.params.entityId)
+    && !destroyedEntityIds.has(item.params.entityId)
+    && !stationaryTrajectoryAssetIds.has(item.params.trajectoryAssetId)
+  ));
   return {
     image,
     video,
+    videos,
     subtitle,
     cameraTimes: cameraAcceptanceTimes(config),
     follows,
@@ -451,11 +480,8 @@ function maximumBearingSpread(cameras: MapCameraSnapshot[]) {
   return maximum;
 }
 
-async function isolatePreviewModelPixels(
-  page: Page,
-  projected: ProjectedRuntimeModel,
-) {
-  return page.evaluate(async ({ point, projectedSizePx }) => {
+async function isolatePreviewModelPixels(page: Page, focusEntityId?: string) {
+  return page.evaluate(async (requestedEntityId) => {
     const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
     if (!map) throw new Error('The preview Mapbox map is not available.');
     const layerId = 'ise-model-runtime';
@@ -465,31 +491,16 @@ async function isolatePreviewModelPixels(
       await new Promise<void>((resolve) => map.once('idle', () => resolve()));
     }
     const canvas = map.getCanvas();
-    const scaleX = canvas.width / canvas.clientWidth;
-    const scaleY = canvas.height / canvas.clientHeight;
-    const radiusCssPx = Math.max(16, projectedSizePx / 2 + 4);
-    const left = Math.max(0, Math.floor((point.x - radiusCssPx) * scaleX));
-    const top = Math.max(0, Math.floor((point.y - radiusCssPx) * scaleY));
-    const right = Math.min(canvas.width, Math.ceil((point.x + radiusCssPx) * scaleX));
-    const bottom = Math.min(canvas.height, Math.ceil((point.y + radiusCssPx) * scaleY));
 
+    const probeWidth = 256;
+    const probeHeight = 144;
     const capture = () => {
       const probe = document.createElement('canvas');
-      probe.width = Math.max(1, right - left);
-      probe.height = Math.max(1, bottom - top);
+      probe.width = probeWidth;
+      probe.height = probeHeight;
       const context = probe.getContext('2d', { willReadFrequently: true });
       if (!context) throw new Error('Unable to create the model pixel probe.');
-      context.drawImage(
-        canvas,
-        left,
-        top,
-        probe.width,
-        probe.height,
-        0,
-        0,
-        probe.width,
-        probe.height,
-      );
+      context.drawImage(canvas, 0, 0, probe.width, probe.height);
       return Array.from(context.getImageData(0, 0, probe.width, probe.height).data);
     };
     const renderTwice = async () => {
@@ -523,9 +534,35 @@ async function isolatePreviewModelPixels(
       await renderTwice();
     }
 
+    const overlay = document.querySelector('[data-testid="scene-runtime-overlay"]');
+    const models = JSON.parse(overlay?.getAttribute('data-runtime-models') ?? '[]') as RuntimeModelSnapshot[];
+    const focus = requestedEntityId
+      ? models.find((model) => model.entityId === requestedEntityId && model.visible)
+      : undefined;
+    if (requestedEntityId && !focus) {
+      throw new Error(`Visible focus model ${requestedEntityId} is unavailable for pixel isolation.`);
+    }
+    const focusPoint = focus?.longitude !== undefined && focus.latitude !== undefined
+      ? map.project([focus.longitude, focus.latitude])
+      : undefined;
+    const scaleX = probeWidth / canvas.clientWidth;
+    const scaleY = probeHeight / canvas.clientHeight;
+    const radiusX = Math.max(3, ((focus?.projectedSizePx ?? 0) / 2 + 4) * scaleX);
+    const radiusY = Math.max(3, ((focus?.projectedSizePx ?? 0) / 2 + 4) * scaleY);
+    const minimumX = focusPoint ? Math.max(0, Math.floor(focusPoint.x * scaleX - radiusX)) : 0;
+    const maximumX = focusPoint ? Math.min(probeWidth - 1, Math.ceil(focusPoint.x * scaleX + radiusX)) : probeWidth - 1;
+    const minimumY = focusPoint ? Math.max(0, Math.floor(focusPoint.y * scaleY - radiusY)) : 0;
+    const maximumY = focusPoint ? Math.min(probeHeight - 1, Math.ceil(focusPoint.y * scaleY + radiusY)) : probeHeight - 1;
+
     let changedPixels = 0;
     let maximumChannelDelta = 0;
+    let pixelCount = 0;
     for (let index = 0; index < hidden.length; index += 4) {
+      const pixelIndex = index / 4;
+      const x = pixelIndex % probeWidth;
+      const y = Math.floor(pixelIndex / probeWidth);
+      if (x < minimumX || x > maximumX || y < minimumY || y > maximumY) continue;
+      pixelCount += 1;
       const delta = Math.max(
         Math.abs(hidden[index]! - shown[index]!),
         Math.abs(hidden[index + 1]! - shown[index + 1]!),
@@ -534,17 +571,13 @@ async function isolatePreviewModelPixels(
       maximumChannelDelta = Math.max(maximumChannelDelta, delta);
       if (delta > 6) changedPixels += 1;
     }
-    const pixelCount = hidden.length / 4;
     return {
       changedPixels,
       changedPixelRatio: pixelCount > 0 ? changedPixels / pixelCount : 0,
       maximumChannelDelta,
       pixelCount,
     };
-  }, {
-    point: projected.point,
-    projectedSizePx: projected.model.projectedSizePx!,
-  });
+  }, focusEntityId);
 }
 
 test('plays and seeks a generated replay', async ({ page }) => {
@@ -581,7 +614,64 @@ test('plays and seeks a generated replay', async ({ page }) => {
   await expectNonBlankCanvas(page);
 });
 
+test('keeps the destroyed target visible in terminal and aftermath cameras', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  test.skip(
+    testInfo.project.name !== 'desktop-chromium',
+    'Destroyed-target visual acceptance is desktop-only.',
+  );
+  if (!persistedSceneId) {
+    throw new Error('ISE_E2E_SCENE_ID is required for destroyed-target visual acceptance.');
+  }
+
+  await authenticate(page);
+  const sceneConfigResponse = page.waitForResponse((response) =>
+    response.request().method() === 'GET'
+    && response.url().includes(`/SceneBack/scene/${encodeURIComponent(persistedSceneId)}`),
+  );
+  await page.goto(`/preview?projectId=${encodeURIComponent(persistedSceneId)}`);
+  await expect(page.getByTestId('scene-runtime-ready')).toHaveAttribute('data-status', 'ready');
+  const sceneConfig = await persistedSceneConfig(await sceneConfigResponse);
+  const destroyedState = sceneConfig.tracks
+    .filter((track): track is ModelTrack => track.type === 'model' && track.visible)
+    .flatMap((track) => track.items)
+    .find(isDestroyedStateItem);
+  expect(destroyedState).toBeDefined();
+  const targetId = destroyedState!.params.entityId;
+  const phaseCameras = sceneConfig.tracks
+    .filter((track): track is CameraTrack => track.type === 'camera' && track.visible)
+    .flatMap((track) => track.items)
+    .filter((item) => (
+      item.eventUnitId === destroyedState!.eventUnitId
+      && /:(terminal|aftermath):camera$/.test(item.id)
+    ))
+    .sort((left, right) => left.startMs - right.startMs);
+  expect(phaseCameras).toHaveLength(2);
+
+  for (const cameraItem of phaseCameras) {
+    const phase = cameraItem.id.match(/:(terminal|aftermath):camera$/)?.[1];
+    await seekPreviewRuntime(page, cameraItem.startMs + cameraItem.durationMs - 10);
+    expect(cameraItem.params.pitch).toBe(0);
+    expect(cameraItem.params.zoom).toBeLessThanOrEqual(11.5);
+    const camera = await previewMapCamera(page);
+    expect(Math.abs(camera.pitch)).toBeLessThan(0.1);
+    const focusPixels = await isolatePreviewModelPixels(page, targetId);
+    expect(focusPixels.changedPixels).toBeGreaterThan(4);
+    expect(focusPixels.changedPixelRatio).toBeGreaterThan(0.01);
+    expect(focusPixels.maximumChannelDelta).toBeGreaterThan(8);
+    if (phase === 'aftermath') {
+      const screenshotPath = testInfo.outputPath('destroyed-target-aftermath.png');
+      await page.screenshot({ path: screenshotPath });
+      await testInfo.attach('destroyed-target-aftermath', {
+        path: screenshotPath,
+        contentType: 'image/png',
+      });
+    }
+  }
+});
+
 test('plays and seeks a persisted generated replay', async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
   test.skip(
     testInfo.project.name !== 'desktop-chromium',
     'Persisted preview visual acceptance is desktop-only.',
@@ -603,6 +693,32 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   );
   const sceneConfig = await persistedSceneConfig(await sceneConfigResponse);
   const samples = persistedAcceptanceSamples(sceneConfig);
+  const engagementCameraItems = sceneConfig.tracks
+    .filter((track): track is CameraTrack => track.type === 'camera' && track.visible)
+    .flatMap((track) => track.items)
+    .filter((item) => /:(launch|midcourse|terminal|aftermath):camera$/.test(item.id));
+  expect(engagementCameraItems).toHaveLength(12);
+  for (const phase of ['launch', 'midcourse', 'terminal', 'aftermath']) {
+    expect(engagementCameraItems.filter((item) => item.id.endsWith(`:${phase}:camera`)))
+      .toHaveLength(3);
+  }
+  const engagementCameraGroups = new Map<string, typeof engagementCameraItems>();
+  for (const item of engagementCameraItems) {
+    const engagementKey = item.id.replace(/:(launch|midcourse|terminal|aftermath):camera$/, '');
+    engagementCameraGroups.set(
+      engagementKey,
+      [...(engagementCameraGroups.get(engagementKey) ?? []), item],
+    );
+  }
+  expect(engagementCameraGroups.size).toBe(3);
+  for (const items of engagementCameraGroups.values()) {
+    expect(items).toHaveLength(4);
+    expect(new Set(items.map((item) => (
+      item.id.match(/:(launch|midcourse|terminal|aftermath):camera$/)?.[1]
+    )))).toEqual(new Set(['launch', 'midcourse', 'terminal', 'aftermath']));
+    expect(new Set(items.map((item) => JSON.stringify(item.params.center))).size)
+      .toBeGreaterThan(1);
+  }
   const entityIds = sceneConfig.entities.map((entity) => entity.entityId);
   const defaultRoutes = sceneConfig.entities.map((entity) => entity.defaultTrajectoryAssetId);
   const registeredRoutes = new Set(
@@ -642,6 +758,11 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
       .map((entity) => entity.defaultTrajectoryAssetId)
       .filter((route): route is string => route !== undefined && expectedAwacsRoutes.has(route)),
   )).toEqual(expectedAwacsRoutes);
+  expect(new Set(
+    aircraftEntities
+      .filter((entity) => expectedAwacsRoutes.has(entity.defaultTrajectoryAssetId ?? ''))
+      .map((entity) => entity.modelAssetId),
+  )).toEqual(new Set(['model:netra-awacs', 'model:awacs-generic-e3a']));
   expect(defaultRoutes.every((route): route is string => route !== undefined)).toBe(true);
   expect(new Set(defaultRoutes).size).toBe(defaultRoutes.length);
   expect(followEntityIds).toHaveLength(entityIds.length);
@@ -673,6 +794,9 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   expect(destroyedStates).toHaveLength(1);
   const destroyedState = destroyedStates[0]!;
   const destroyedTargetId = destroyedState.params.entityId;
+  expect(destroyedTargetId).toBe('actor:india-rafale-ambala:leader');
+  expect(sceneConfig.entities.find((entity) => entity.entityId === destroyedTargetId)?.modelAssetId)
+    .toBe('model:rafale');
   const destroyedHides = modelTracks
     .flatMap((track) => track.items)
     .filter((item) => (
@@ -711,27 +835,40 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   expect(await image.evaluate((element) => element.naturalWidth)).toBeGreaterThan(0);
   expect(await image.evaluate((element) => element.naturalHeight)).toBeGreaterThan(0);
 
+  expect(samples.videos).toHaveLength(3);
+  for (const sample of samples.videos) {
+    await seekRuntimeHarness(page, sample.timeMs);
+    const visibleVideo = page.locator('video[data-runtime-kind="video"]:visible');
+    await expect(visibleVideo).toHaveCount(1);
+    await expect
+      .poll(() => visibleVideo.evaluate((element) => (
+        element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        && element.videoWidth > 0
+        && element.videoHeight > 0
+      )))
+      .toBe(true);
+    expect(await visibleVideo.evaluate((element) => element.currentTime))
+      .toBeCloseTo(sample.offsetMs / 1_000, 1);
+  }
   await seekRuntimeHarness(page, samples.video.timeMs);
-  const video = page.locator('video[data-runtime-kind="video"]');
-  await expect(video).toBeVisible();
-  await expect
-    .poll(() =>
-      video.evaluate(
-        (element) =>
-          element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-          element.videoWidth > 0 &&
-          element.videoHeight > 0,
-      ),
-    )
-    .toBe(true);
-  const initialVideoTime = await video.evaluate((element) => element.currentTime);
+  const video = page.locator('video[data-runtime-kind="video"]:visible');
+  await expect(video).toHaveCount(1);
+  await video.evaluate((element) => {
+    element.dataset.e2eAcceptanceVideo = 'true';
+    element.dataset.e2ePlayEvents = '0';
+    element.addEventListener('play', () => {
+      element.dataset.e2ePlayEvents = '1';
+    }, { once: true });
+  });
+  const activeVideo = page.locator('video[data-e2e-acceptance-video="true"]');
+  const initialVideoTime = await activeVideo.evaluate((element) => element.currentTime);
   expect(initialVideoTime).toBeCloseTo(samples.video.offsetMs / 1_000, 1);
   await page.getByTestId('runtime-play').click();
-  await expect.poll(() => video.evaluate((element) => element.paused)).toBe(false);
+  await expect.poll(() => activeVideo.getAttribute('data-e2e-play-events')).toBe('1');
   await expect
-    .poll(() => video.evaluate((element) => element.currentTime))
+    .poll(() => activeVideo.evaluate((element) => element.currentTime))
     .toBeGreaterThan(initialVideoTime + 0.2);
-  const decodedFrames = await video.evaluate((element) => {
+  const decodedFrames = await activeVideo.evaluate((element) => {
     const quality = element.getVideoPlaybackQuality?.();
     return quality?.totalVideoFrames;
   });
@@ -746,11 +883,13 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     .find((item) => item.entityId === destroyedTargetId);
   expect(beforeDestroyed).toBeDefined();
   expect(beforeDestroyed!.visible).toBe(true);
+  expect(beforeDestroyed!.state).toBe('normal');
   await seekRuntimeHarness(page, destroyedState.startMs + 500);
   const duringDestroyed = (await runtimeModelSnapshots(page))
     .find((item) => item.entityId === destroyedTargetId);
   expect(duringDestroyed).toBeDefined();
   expect(duringDestroyed!.visible).toBe(true);
+  expect(duringDestroyed!.state).toBe('destroyed');
   expect(duringDestroyed!.quaternion.some(
     (value, index) => value !== beforeDestroyed!.quaternion[index],
   )).toBe(true);
@@ -759,6 +898,51 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     .find((item) => item.entityId === destroyedTargetId);
   expect(afterDestroyedHide).toBeDefined();
   expect(afterDestroyedHide!.visible).toBe(false);
+  expect(afterDestroyedHide!.state).toBe('destroyed');
+
+  const missileFollows = samples.follows.filter((item) => (
+    missileEntities.some((entity) => entity.entityId === item.params.entityId)
+  ));
+  expect(missileFollows).toHaveLength(3);
+  for (const item of missileFollows) {
+    const earlyMs = item.startMs + Math.max(1, Math.floor(item.durationMs * 0.1));
+    const lateMs = item.startMs + Math.max(2, Math.floor(item.durationMs * 0.45));
+    await seekRuntimeHarness(page, earlyMs);
+    const early = (await runtimeModelSnapshots(page)).find(
+      (snapshot) => snapshot.visible && snapshot.entityId === item.params.entityId,
+    );
+    expect(early).toBeDefined();
+    expectFiniteModelSnapshot(early!);
+    await seekRuntimeHarness(page, lateMs);
+    const late = (await runtimeModelSnapshots(page)).find(
+      (snapshot) => snapshot.visible && snapshot.entityId === item.params.entityId,
+    );
+    expect(late).toBeDefined();
+    expectFiniteModelSnapshot(late!);
+    expect(late!.position.some((value, index) => value !== early!.position[index])).toBe(true);
+  }
+
+  const awacsFollows = samples.follows.filter((item) => (
+    stationaryTrajectoryAssetIds.has(item.params.trajectoryAssetId)
+  ));
+  expect(awacsFollows).toHaveLength(2);
+  for (const item of awacsFollows) {
+    const earlyMs = item.startMs + Math.max(1, Math.floor(item.durationMs * 0.2));
+    const lateMs = item.startMs + Math.max(2, Math.floor(item.durationMs * 0.8));
+    await seekRuntimeHarness(page, earlyMs);
+    const early = (await runtimeModelSnapshots(page)).find(
+      (snapshot) => snapshot.visible && snapshot.entityId === item.params.entityId,
+    );
+    expect(early).toBeDefined();
+    expectFiniteModelSnapshot(early!);
+    await seekRuntimeHarness(page, lateMs);
+    const late = (await runtimeModelSnapshots(page)).find(
+      (snapshot) => snapshot.visible && snapshot.entityId === item.params.entityId,
+    );
+    expect(late).toBeDefined();
+    expectFiniteModelSnapshot(late!);
+    expect(late!.position).toEqual(early!.position);
+  }
 
   const modelPairs: Array<{ first: RuntimeModelSnapshot; second: RuntimeModelSnapshot }> = [];
   let firstCanvas: Uint8ClampedArray | undefined;
@@ -861,20 +1045,58 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     .toBeGreaterThan(0.95);
   await expectNonBlankCanvas(page);
   const initialCamera = await previewMapCamera(page);
-  const dataLinkItem = dataLinkItems.find((item) => item.params.linkKind === 'awacs-fighter')
-    ?? dataLinkItems[0]!;
-  expect(dataLinkItem.durationMs).toBeGreaterThan(1);
-  const dataLinkTimeMs = dataLinkItem.startMs + Math.max(
-    1,
-    Math.min(dataLinkItem.durationMs - 1, Math.floor(dataLinkItem.durationMs / 2)),
-  );
-  await seekPreviewRuntime(page, dataLinkTimeMs);
-  await expect.poll(() => page.evaluate(() => {
-    const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
-    if (!map || !map.getSource('ise:data-links')) return 0;
-    return map.querySourceFeatures('ise:data-links')
-      .filter((feature) => feature.geometry.type === 'LineString').length;
-  })).toBeGreaterThan(0);
+  for (const cameraItem of [...engagementCameraItems].sort((left, right) => left.startMs - right.startMs)) {
+    await seekPreviewRuntime(page, cameraItem.startMs + cameraItem.durationMs);
+    const applied = await previewMapCamera(page);
+    expect(applied.center[0]).toBeCloseTo(cameraItem.params.center[0], 5);
+    expect(applied.center[1]).toBeCloseTo(cameraItem.params.center[1], 5);
+    expect(applied.zoom).toBeCloseTo(cameraItem.params.zoom, 5);
+    expect(applied.pitch).toBeCloseTo(cameraItem.params.pitch, 5);
+    const bearingDelta = Math.abs(applied.bearing - cameraItem.params.bearing) % 360;
+    expect(Math.min(bearingDelta, 360 - bearingDelta)).toBeLessThan(0.00001);
+  }
+  for (const linkKind of ['awacs-fighter', 'fighter-missile'] as const) {
+    const dataLinkItem = dataLinkItems.find((item) => item.params.linkKind === linkKind);
+    expect(dataLinkItem).toBeDefined();
+    expect(dataLinkItem!.durationMs).toBeGreaterThan(1);
+    const dataLinkTimeMs = dataLinkItem!.startMs + Math.max(
+      1,
+      Math.min(dataLinkItem!.durationMs - 1, Math.floor(dataLinkItem!.durationMs / 2)),
+    );
+    await seekPreviewRuntime(page, dataLinkTimeMs);
+    await page.evaluate(({ sourceEntityId, targetEntityId }) => {
+      const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+      if (!map) throw new Error('The preview Mapbox map is not available.');
+      const overlay = document.querySelector('[data-testid="scene-runtime-overlay"]');
+      const models = JSON.parse(overlay?.getAttribute('data-runtime-models') ?? '[]') as RuntimeModelSnapshot[];
+      const endpoints = [sourceEntityId, targetEntityId].map((entityId) => (
+        models.find((model) => model.visible && model.entityId === entityId)
+      ));
+      if (endpoints.some((endpoint) => !endpoint)) {
+        throw new Error('The data-link endpoints are not both visible.');
+      }
+      const coordinates = endpoints.map((endpoint) => [endpoint!.longitude!, endpoint!.latitude!] as [number, number]);
+      map.fitBounds([
+        [Math.min(...coordinates.map((point) => point[0])), Math.min(...coordinates.map((point) => point[1]))],
+        [Math.max(...coordinates.map((point) => point[0])), Math.max(...coordinates.map((point) => point[1]))],
+      ], { padding: 100, duration: 0 });
+    }, {
+      sourceEntityId: dataLinkItem!.params.sourceEntityId,
+      targetEntityId: dataLinkItem!.params.targetEntityId,
+    });
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    const layerId = linkKind === 'awacs-fighter'
+      ? 'ise:data-links:awacs-fighter'
+      : 'ise:data-links:fighter-missile';
+    await expect.poll(() => page.evaluate(({ expectedId, expectedLayerId }) => {
+      const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+      if (!map?.getLayer(expectedLayerId)) return 0;
+      return map.queryRenderedFeatures(undefined, { layers: [expectedLayerId] })
+        .filter((feature) => feature.properties?.id === expectedId).length;
+    }, { expectedId: dataLinkItem!.id, expectedLayerId: layerId })).toBeGreaterThan(0);
+  }
   const dataLinkStyle = await page.evaluate(() => {
     const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
     if (!map) throw new Error('The preview Mapbox map is not available.');
@@ -889,6 +1111,84 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     awacsFighterLayer: 'line',
     fighterMissileLayer: 'line',
   });
+  const destroyedWeaponLink = dataLinkItems.find((item) => (
+    item.eventUnitId === destroyedState.eventUnitId
+    && item.params.linkKind === 'fighter-missile'
+  ));
+  expect(destroyedWeaponLink).toBeDefined();
+  const destroyedEngagementKey = [...engagementCameraGroups.keys()].find((key) => (
+    key.includes(`:${destroyedWeaponLink!.params.targetEntityId}`)
+  ));
+  expect(destroyedEngagementKey).toBeDefined();
+  const destroyedEngagementCameras = [...engagementCameraGroups.get(destroyedEngagementKey!)!]
+    .sort((left, right) => left.startMs - right.startMs);
+  expect(destroyedEngagementCameras).toHaveLength(4);
+  const destroyedPhaseCameras: MapCameraSnapshot[] = [];
+  const destroyedPhasePixels: number[][] = [];
+  for (const cameraItem of destroyedEngagementCameras) {
+    const phase = cameraItem.id.match(/:(launch|midcourse|terminal|aftermath):camera$/)?.[1];
+    expect(phase).toBeDefined();
+    const phaseTimeMs = Math.min(
+      cameraItem.startMs + cameraItem.durationMs - 1,
+      cameraItem.startMs + Math.max(1, cameraItem.durationMs - 10),
+    );
+    await seekPreviewRuntime(page, phaseTimeMs);
+    const visibleModels = await page.getByTestId('scene-runtime-overlay').evaluate((overlay) => {
+      const value = overlay.getAttribute('data-runtime-models');
+      const models = value ? (JSON.parse(value) as RuntimeModelSnapshot[]) : [];
+      return models.filter((model) => model.visible);
+    });
+    const visibleEntityIds = visibleModels.map((model) => model.entityId);
+    expect(visibleEntityIds).toContain(destroyedTargetId);
+    expect(visibleEntityIds).toContain(destroyedWeaponLink!.params.targetEntityId);
+    expect(phaseTimeMs).toBeGreaterThanOrEqual(destroyedWeaponLink!.startMs);
+    expect(phaseTimeMs).toBeLessThan(
+      destroyedWeaponLink!.startMs + destroyedWeaponLink!.durationMs,
+    );
+    const focusEntityId = phase === 'launch' || phase === 'midcourse'
+      ? destroyedWeaponLink!.params.targetEntityId
+      : destroyedTargetId;
+    const focus = visibleModels.find((model) => model.entityId === focusEntityId)!;
+    expect(focus).toBeDefined();
+    const projectedFocus = await page.evaluate(({ longitude, latitude }) => {
+      const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+      if (!map) throw new Error('The preview Mapbox map is not available.');
+      const point = map.project([longitude, latitude]);
+      const canvas = map.getCanvas();
+      return { x: point.x, y: point.y, width: canvas.clientWidth, height: canvas.clientHeight };
+    }, { longitude: focus.longitude!, latitude: focus.latitude! });
+    expect(projectedFocus.x).toBeGreaterThanOrEqual(0);
+    expect(projectedFocus.x).toBeLessThanOrEqual(projectedFocus.width);
+    expect(projectedFocus.y).toBeGreaterThanOrEqual(0);
+    expect(projectedFocus.y).toBeLessThanOrEqual(projectedFocus.height);
+    if (phase === 'launch' || phase === 'midcourse') {
+      await expect.poll(() => page.evaluate((expectedId) => {
+        const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+        if (!map?.getLayer('ise:data-links:fighter-missile')) return 0;
+        return map.queryRenderedFeatures(undefined, { layers: ['ise:data-links:fighter-missile'] })
+          .filter((feature) => feature.properties?.id === expectedId).length;
+      }, destroyedWeaponLink!.id)).toBeGreaterThan(0);
+    } else if (phase === 'terminal') {
+      await expect(page.locator('video[data-runtime-kind="video"]:visible')).toHaveCount(1);
+    } else {
+      expect(focus.state).toBe('destroyed');
+    }
+    destroyedPhaseCameras.push(await previewMapCamera(page));
+    destroyedPhasePixels.push(await canvasPixels(page));
+    await expectNonBlankCanvas(page);
+    const phaseScreenshotPath = testInfo.outputPath(`persisted-engagement-${phase}.png`);
+    await page.screenshot({ path: phaseScreenshotPath });
+    await testInfo.attach(`persisted-engagement-${phase}`, {
+      path: phaseScreenshotPath,
+      contentType: 'image/png',
+    });
+  }
+  expect(maximumCenterSpread(destroyedPhaseCameras)).toBeGreaterThan(0.01);
+  expect(maximumCameraSpread(destroyedPhaseCameras, (camera) => camera.zoom))
+    .toBeGreaterThan(0.05);
+  expect(Math.max(...destroyedPhasePixels.slice(1).map((pixels) => (
+    changedPixelRatio(destroyedPhasePixels[0]!, pixels)
+  )))).toBeGreaterThan(0.005);
   expect(samples.cameraTimes.every(
     (timeMs) => timeMs >= 0 && timeMs < sceneConfig.totalDurationMs,
   )).toBe(true);
@@ -910,10 +1210,10 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
     projectedModel.viewport.height - safeInsetPx,
   );
 
-  const modelPixelIsolation = await isolatePreviewModelPixels(page, projectedModel);
+  const modelPixelIsolation = await isolatePreviewModelPixels(page);
   expect(modelPixelIsolation.pixelCount).toBeGreaterThan(0);
   expect(modelPixelIsolation.changedPixels).toBeGreaterThan(8);
-  expect(modelPixelIsolation.changedPixelRatio).toBeGreaterThan(0.002);
+  expect(modelPixelIsolation.changedPixelRatio).toBeGreaterThan(0.0005);
   expect(modelPixelIsolation.maximumChannelDelta).toBeGreaterThan(8);
 
   await seekPreviewRuntime(page, samples.cameraTimes[1]);

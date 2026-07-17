@@ -681,7 +681,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         const point = routePointAtPlaybackTime(
           assetRegistry,
           assignment.trajectoryAssetRef,
-          startMs,
+          startMs + phaseDurationMs,
           playbackWindow.followStartMs,
           playbackWindow.followEndMs,
         )
@@ -691,10 +691,16 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
       const camera = cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template))
       const zoomOffset = shot.phase === 'launch' ? 0 : shot.phase === 'midcourse' ? 0.5 : shot.phase === 'terminal' ? 1 : 0.75
+      const phasePitch = shot.phase === 'terminal' || shot.phase === 'aftermath'
+        ? 0
+        : camera.pitch
+      const phaseZoom = shot.phase === 'terminal' || shot.phase === 'aftermath'
+        ? Math.min(11.5, camera.zoom + zoomOffset)
+        : Math.min(24, camera.zoom + zoomOffset)
       phaseCommands.push(runtimeCommandSchema.parse({
         commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
         type: 'camera.transition',
-        params: { ...camera, zoom: Math.min(24, camera.zoom + zoomOffset) },
+        params: { ...camera, pitch: phasePitch, zoom: phaseZoom },
         startMs, durationMs: phaseDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
       }))
       if (shot.phase === 'terminal' && (engagement.outcome === 'interception' || engagement.outcome === 'destroyed')) {

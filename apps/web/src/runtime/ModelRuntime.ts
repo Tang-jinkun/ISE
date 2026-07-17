@@ -40,6 +40,7 @@ export interface ModelFrameState {
 
 export interface ModelEntityFrameSnapshot {
   entityId: string;
+  state: SceneEntity['initialState'];
   modelAssetId?: string;
   defaultTrajectoryAssetId?: string;
   trajectoryAssetId?: string;
@@ -396,6 +397,7 @@ export class ModelRuntime {
   getFrameSnapshot(): ModelEntityFrameSnapshot[] {
     return this.instances.map(({ entity, transform, frame, appliedScale, projectedSizePx }) => ({
       entityId: entity.entityId,
+      state: frame?.state ?? entity.initialState,
       ...(entity.modelAssetId ? { modelAssetId: entity.modelAssetId } : {}),
       ...(entity.defaultTrajectoryAssetId
         ? { defaultTrajectoryAssetId: entity.defaultTrajectoryAssetId }

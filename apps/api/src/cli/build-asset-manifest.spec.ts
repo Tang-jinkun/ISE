@@ -410,7 +410,7 @@ describe('buildAssetManifest', () => {
 });
 
 describe('asset-source-map.json', () => {
-  it('contains exactly the 39 frozen IDs and Unicode source-relative paths', async () => {
+  it('contains exactly the 43 frozen IDs and Unicode source-relative paths', async () => {
     const sourceMap = JSON.parse(
       await readFile(resolve(__dirname, '../../../../provenance/asset-source-map.json'), 'utf8'),
     ) as { assets: Array<{ assetId: string; sourceRelativePath: string }> };
@@ -420,10 +420,12 @@ describe('asset-source-map.json', () => {
 
     expect(actual).toEqual({
       'model:j10': '印巴glb（修改6.0）/J-10.glb',
-      'model:jf17': '印巴glb（修改6.0）/JF-17.glb',
+      'model:jf17': 'newGLB/pakistan_jf_17_thunder.glb',
       'model:mig29': '印巴glb（修改6.0）/MiG-29.glb',
+      'model:netra-awacs': 'newGLB/indian_netra_awacs.glb',
+      'model:awacs-generic-e3a': 'newGLB/boeing_e-3a_sentry_awacs.glb',
       'model:pl15e': '印巴glb（修改6.0）/pl-15e.glb',
-      'model:rafale': '印巴glb（修改6.0）/Refale.glb',
+      'model:rafale': 'newGLB/dassault_rafale.glb',
       'model:su30mki': '印巴glb（修改6.0）/SU-30MKI.glb',
       'video:ooda-chain': '素材/ooda作战链示例视频.mp4',
       'video:runway-exit': '素材/冲出跑道.mp4',
@@ -457,8 +459,10 @@ describe('asset-source-map.json', () => {
       'trajectory:pakistan-missile-1': 'json/巴方导弹1.json',
       'trajectory:pakistan-strike-missile-2': 'json/巴方打击导弹2.json',
       'trajectory:india-missile-1': 'json/印方导弹1.json',
+      'trajectory:india-awacs-1': 'json/印度方预警机驻留-1.json',
+      'trajectory:pakistan-awacs-1': 'json/巴基斯坦方预警机驻留-1.json',
       'trajectory:ambala-su30mki-1': 'json/AMBALA Su-30MKI-1.json',
     });
-    expect(sourceMap.assets).toHaveLength(39);
+    expect(sourceMap.assets).toHaveLength(43);
   });
 });
