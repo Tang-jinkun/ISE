@@ -127,6 +127,12 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     }
     return undefined
   }
+  const actorForScene = (predicate: (group: SceneBlueprint['actorGroups'][number]) => boolean): string | undefined => {
+    for (const group of sceneBlueprint.actorGroups) {
+      if (predicate(group)) return actorsForGroup(group.groupId)[0]?.actorInstanceId
+    }
+    return undefined
+  }
   const weaponEngagements = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
     const narrationBeat = narrationPlan.beats.find(beat => beat.subtitleId === sceneBeat.subtitleId)
     if (!narrationBeat) return []
@@ -142,19 +148,32 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
         const entity = group.semanticEntityRef.toLocaleLowerCase('en-US')
         if (platform === 'su30') return /su[- ]?30mki|30mki/u.test(entity)
         if (platform === 'jf17') return /jf[- ]?17/u.test(entity)
-        return /rafale/u.test(entity)
+        return /rafale|\u9635\u98ce/u.test(entity)
       })
       const firstStrikeWeapon = actorForCurrentBeat(sceneBeat, group =>
         group.role === 'weapon-launch' && group.behaviorProfile === 'weapon-launch/india-first-strike/v1')
       const profile = weaponGroup.behaviorProfile
+      const groundedPakistaniFighterTarget = sceneBeat.requiredFacts.some(fact =>
+        /\bpakistani\s+(?:fighters?|aircraft)\b|\bpakistan(?:'s|\u2019s)\s+(?:fighters?|aircraft)\b|\b(?:fighters?|aircraft)\s+of\s+pakistan\b|\u5df4\u65b9(?:\u6218\u673a|\u98de\u673a)/iu.test(fact))
+      const groundedIncomingIndianMissile = sceneBeat.requiredFacts.some(fact =>
+        /\b(?:incoming\s+indian|indian\s+incoming|indian\s+first[- ]strike|first[- ]strike\s+indian|incoming\s+first[- ]strike|first[- ]strike\s+incoming)\s+missiles?\b|\u5370\u65b9\u6765\u88ad\u5bfc\u5f39/iu.test(fact))
+      const firstStrikeTarget = fighter('pakistan', 'jf17') ?? (groundedPakistaniFighterTarget
+        ? actorForScene(group => group.role === 'fighter-formation'
+          && group.side === 'pakistan'
+          && /jf[- ]?17/u.test(group.semanticEntityRef.toLocaleLowerCase('en-US')))
+        : undefined)
+      const interceptedWeapon = firstStrikeWeapon ?? (groundedIncomingIndianMissile
+        ? actorForScene(group => group.role === 'weapon-launch'
+          && group.behaviorProfile === 'weapon-launch/india-first-strike/v1')
+        : undefined)
       const confirmedDestruction = sceneBeat.requiredFacts.some(fact =>
         /\bdestroyed\b|\bdestroys\b|击毁|坠毁|命中并击毁/iu.test(fact))
         && !sceneBeat.forbiddenClaims.some(claim =>
           /confirmed\s+(?:outcome|destruction|destroyed|target\s+destruction)|确认(?:战果|毁伤|击毁|命中结果)/iu.test(claim))
       const specification = profile === 'weapon-launch/india-first-strike/v1'
-        ? { launcherRef: fighter('india', 'su30'), targetRef: fighter('pakistan', 'jf17'), outcome: 'intercepted' }
+        ? { launcherRef: fighter('india', 'su30'), targetRef: firstStrikeTarget, outcome: 'intercepted' }
         : profile === 'weapon-launch/pakistan-intercept/v1'
-          ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: firstStrikeWeapon, outcome: 'interception' }
+          ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: interceptedWeapon, outcome: 'interception' }
           : profile === 'weapon-launch/pakistan-counterattack/v1'
             ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: fighter('india', 'rafale'), outcome: confirmedDestruction ? 'destroyed' : 'unconfirmed' }
             : undefined

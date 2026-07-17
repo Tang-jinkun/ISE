@@ -592,6 +592,79 @@ function finalInputForEngagementFixture() {
   }
 }
 
+function realCrossBeatEngagementFixture() {
+  const fixture = finalInputForEngagementFixture()
+  const indiaAwacsGroup: SceneBlueprint['actorGroups'][number] = {
+    groupId: 'group:india-netra-awacs', semanticEntityRef: 'Netra AEW&CS', side: 'india', locationRef: 'Adampur',
+    platformType: 'Netra AEW&CS', role: 'early-warning-support',
+    quantityDecision: { value: 1, constraint: 'exact', source: 'evidence', evidenceRefs: ['ev-first-strike'], reason: 'Fixture AWACS' },
+    formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: 'awacs-support/india/v1', lifecycle: 'scene-persistent',
+  }
+  const pakistanAwacsGroup: SceneBlueprint['actorGroups'][number] = {
+    groupId: 'group:pakistan-awacs-proxy', semanticEntityRef: '\u5df4\u65b9\u9884\u8b66\u673a\uff08\u901a\u7528\u793a\u610f\u6a21\u578b\uff09',
+    side: 'pakistan', locationRef: 'location:pakistan-awacs', platformType: 'Saab 2000 Erieye', role: 'early-warning-support',
+    quantityDecision: { value: 1, constraint: 'exact', source: 'evidence', evidenceRefs: ['ev-intercept'], reason: 'Fixture AWACS' },
+    formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: 'awacs-support/pakistan/v1', lifecycle: 'scene-persistent',
+  }
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    assets: [
+      ...fixture.input.assetRegistry.assets,
+      ...([
+        ['model:netra-awacs', 'Netra AWACS'],
+        ['model:awacs-generic-e3a', 'Pakistani AWACS proxy'],
+      ] as const).map(([assetId, displayName]) => ({
+        assetId, kind: 'model' as const, displayName, aliases: [], fingerprint: hash,
+        size: 10, availability: 'available' as const, criticality: 'required' as const, fallbackAssetIds: [], allowFallback: false,
+        mediaType: 'model/gltf-binary' as const,
+        model: { scale: 1, rotationOffsetDeg: [0, 0, 0] as [number, number, number], altitudeOffsetM: 0, entityTypes: ['aircraft' as const] },
+      })),
+    ],
+  }
+  const fighterGroups = fixture.input.sceneBlueprint.actorGroups
+    .filter(group => group.role === 'fighter-formation')
+    .map(group => group.groupId === 'group:india-su30-adampur' || group.groupId === 'group:india-rafale-ambala'
+      ? {
+          ...group,
+          semanticEntityRef: group.groupId === 'group:india-rafale-ambala' ? '\u9635\u98ce' : group.semanticEntityRef,
+          quantityDecision: { ...group.quantityDecision, value: 1 },
+        }
+      : group)
+  const weaponGroups = fixture.input.sceneBlueprint.actorGroups.filter(group => group.role === 'weapon-launch')
+  fixture.input.sceneBlueprint = {
+    ...fixture.input.sceneBlueprint,
+    actorGroups: [...fighterGroups, indiaAwacsGroup, pakistanAwacsGroup, ...weaponGroups],
+    sceneBeats: fixture.input.sceneBlueprint.sceneBeats.map(beat => {
+      if (beat.sceneBeatId === 'scene-beat-first-strike') {
+        return {
+          ...beat,
+          actorRefs: ['group:weapon-first-strike', 'group:india-su30-adampur', indiaAwacsGroup.groupId],
+          requiredFacts: ['\u5370\u5ea6\u9884\u8b66\u673a\u8ddf\u8e2a\u5df4\u65b9\u6218\u673a\u76ee\u6807\u3002'],
+        }
+      }
+      if (beat.sceneBeatId === 'scene-beat-intercept') {
+        return {
+          ...beat,
+          actorRefs: ['group:weapon-intercept', 'group:pakistan-jf17-minhas', pakistanAwacsGroup.groupId],
+          requiredFacts: ['\u5df4\u65b9 JF-17 \u62e6\u622a\u5370\u65b9\u6765\u88ad\u5bfc\u5f39\u3002'],
+        }
+      }
+      return beat
+    }),
+  }
+  fixture.input.resolvedScenePlan = resolveSceneBlueprint({
+    blueprint: fixture.input.sceneBlueprint,
+    assetRegistry: fixture.input.assetRegistry,
+  })
+  fixture.input.choreographyPlan = compileChoreography({
+    narrationPlan: fixture.input.narrationPlan,
+    sceneBlueprint: fixture.input.sceneBlueprint,
+    resolvedScenePlan: fixture.input.resolvedScenePlan,
+    assetRegistry: fixture.input.assetRegistry,
+  })
+  return fixture
+}
+
 test('final compiler emits automatic missile lifecycle, phased cameras, impact, and confirmed destruction commands', () => {
   const fixture = finalInputForEngagementFixture()
   const plan = compileFinalScene(fixture.input)
@@ -787,6 +860,168 @@ test('compiles grounded missile engagements and four ordered phase shots', () =>
     const shots = fixture.choreographyPlan.shotPlan.filter(shot => shot.subtitleId === subtitleId)
     assert.equal(shots.length, 1)
     assert.equal(shots[0]?.phase, undefined)
+  }
+})
+
+test('compiles the real cross-beat engagement shape with grounded target borrowing and the Chinese Rafale alias', () => {
+  const fixture = realCrossBeatEngagementFixture()
+  const actorRef = (groupRef: string) => fixture.input.resolvedScenePlan.resolvedActors
+    .find(actor => actor.actorGroupRef === groupRef)!.actorInstanceId
+  const firstStrike = actorRef('group:weapon-first-strike')
+  const intercept = actorRef('group:weapon-intercept')
+  const counterattack = actorRef('group:weapon-counterattack')
+  const su30 = actorRef('group:india-su30-adampur')
+  const jf17 = actorRef('group:pakistan-jf17-minhas')
+  const rafale = actorRef('group:india-rafale-ambala')
+  const choreography = fixture.input.choreographyPlan
+  const actors = fixture.input.resolvedScenePlan.resolvedActors
+  const groupRoles = new Map(fixture.input.sceneBlueprint.actorGroups.map(group => [group.groupId, group.role]))
+
+  assert.equal(actors.length, 15)
+  assert.equal(actors.filter(actor => groupRoles.get(actor.actorGroupRef) !== 'weapon-launch').length, 12)
+  assert.equal(actors.filter(actor => groupRoles.get(actor.actorGroupRef) === 'weapon-launch').length, 3)
+  assert.deepEqual(
+    fixture.input.sceneBlueprint.actorGroups.filter(group => group.role === 'early-warning-support').map(group => group.groupId),
+    ['group:india-netra-awacs', 'group:pakistan-awacs-proxy'],
+  )
+  assert.equal(new Set(fixture.input.resolvedScenePlan.actorRouteAssignments
+    .map(assignment => assignment.trajectoryAssetRef)).size, 15)
+
+  assert.deepEqual(choreography.weaponEngagements.map(engagement => ({
+    launcherRef: engagement.launcherRef,
+    weaponRef: engagement.weaponRef,
+    targetRef: engagement.targetRef,
+    outcome: engagement.outcome,
+  })), [
+    { launcherRef: su30, weaponRef: firstStrike, targetRef: jf17, outcome: 'intercepted' },
+    { launcherRef: jf17, weaponRef: intercept, targetRef: firstStrike, outcome: 'interception' },
+    { launcherRef: jf17, weaponRef: counterattack, targetRef: rafale, outcome: 'destroyed' },
+  ])
+  assert.equal(choreography.relationSegments.filter(relation => relation.linkKind === 'fighter-missile').length, 3)
+  for (const subtitleId of ['subtitle-first-strike', 'subtitle-intercept', 'subtitle-counterattack']) {
+    assert.deepEqual(
+      choreography.shotPlan.filter(shot => shot.subtitleId === subtitleId).map(shot => shot.phase),
+      ['launch', 'midcourse', 'terminal', 'aftermath'],
+    )
+  }
+
+  const plan = compileFinalScene(fixture.input)
+  const impactVideos = plan.commands.filter(command => command.type === 'video.play'
+    && command.params.assetId === 'video:missile-impact')
+  assert.equal(impactVideos.length, 2)
+  assert.ok(impactVideos.some(command => command.evidenceRefs.includes('ev-intercept')))
+  assert.ok(impactVideos.some(command => command.evidenceRefs.includes('ev-counterattack')))
+  const destroyedStates = plan.commands.filter(command => command.type === 'model.set_state'
+    && command.params.state === 'destroyed')
+  assert.deepEqual(destroyedStates.map(command => command.targetId), [rafale])
+})
+
+test('does not treat a report about Indian fighters as a Pakistani fighter target fact', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-first-strike'
+    ? {
+        ...beat,
+        actorRefs: ['group:weapon-first-strike', 'group:india-su30-adampur'],
+        requiredFacts: ['Pakistan reports Indian fighters.'],
+      }
+    : beat)
+  fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+
+  const choreography = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  assert.equal(choreography.weaponEngagements.some(engagement =>
+    engagement.sceneBeatRef === 'scene-beat-first-strike'), false)
+})
+
+test('recognizes only direct Pakistani fighter target identity phrases for first-strike borrowing', () => {
+  const requiredFacts = [
+    'The AWACS tracks Pakistani fighters.',
+    'The AWACS tracks Pakistani aircraft.',
+    "The AWACS tracks Pakistan's fighters.",
+    "The AWACS tracks Pakistan's aircraft.",
+    'The AWACS tracks fighters of Pakistan.',
+    'The AWACS tracks aircraft of Pakistan.',
+    '\u5370\u65b9\u9884\u8b66\u673a\u8ddf\u8e2a\u5df4\u65b9\u6218\u673a\u3002',
+    '\u5370\u65b9\u9884\u8b66\u673a\u8ddf\u8e2a\u5df4\u65b9\u98de\u673a\u3002',
+  ]
+  for (const requiredFact of requiredFacts) {
+    const fixture = multiEngagementChoreographyFixture()
+    fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-first-strike'
+      ? {
+          ...beat,
+          actorRefs: ['group:weapon-first-strike', 'group:india-su30-adampur'],
+          requiredFacts: [requiredFact],
+        }
+      : beat)
+    fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+
+    const choreography = compileChoreography({
+      narrationPlan: fixture.narrationPlan,
+      sceneBlueprint: fixture.sceneBlueprint,
+      resolvedScenePlan: fixture.resolvedScenePlan,
+      assetRegistry: fixture.assetRegistry,
+    })
+
+    assert.equal(choreography.weaponEngagements.some(engagement =>
+      engagement.sceneBeatRef === 'scene-beat-first-strike'), true, requiredFact)
+  }
+})
+
+test('does not treat an incoming Pakistani missile near Indian aircraft as an incoming Indian missile fact', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-intercept'
+    ? {
+        ...beat,
+        actorRefs: ['group:weapon-intercept', 'group:pakistan-jf17-minhas'],
+        requiredFacts: ['An incoming Pakistani missile threatens an Indian aircraft.'],
+      }
+    : beat)
+  fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+
+  const choreography = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  assert.equal(choreography.weaponEngagements.some(engagement =>
+    engagement.sceneBeatRef === 'scene-beat-intercept'), false)
+})
+
+test('recognizes only direct incoming Indian missile identity phrases for interception borrowing', () => {
+  const requiredFacts = [
+    'JF-17 intercepts the incoming Indian missile.',
+    'JF-17 intercepts the Indian incoming missile.',
+    'JF-17 intercepts the Indian first-strike missile.',
+    'JF-17 intercepts the first-strike Indian missile.',
+    '\u5df4\u65b9 JF-17 \u62e6\u622a\u5370\u65b9\u6765\u88ad\u5bfc\u5f39\u3002',
+  ]
+  for (const requiredFact of requiredFacts) {
+    const fixture = multiEngagementChoreographyFixture()
+    fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-intercept'
+      ? {
+          ...beat,
+          actorRefs: ['group:weapon-intercept', 'group:pakistan-jf17-minhas'],
+          requiredFacts: [requiredFact],
+        }
+      : beat)
+    fixture.resolvedScenePlan.sourceBlueprintFingerprint = fingerprint(fixture.sceneBlueprint)
+
+    const choreography = compileChoreography({
+      narrationPlan: fixture.narrationPlan,
+      sceneBlueprint: fixture.sceneBlueprint,
+      resolvedScenePlan: fixture.resolvedScenePlan,
+      assetRegistry: fixture.assetRegistry,
+    })
+
+    assert.equal(choreography.weaponEngagements.some(engagement =>
+      engagement.sceneBeatRef === 'scene-beat-intercept'), true, requiredFact)
   }
 })
 
