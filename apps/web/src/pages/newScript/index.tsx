@@ -51,6 +51,8 @@ type ChatMessage = {
   time: string;
 };
 
+type ProjectLoadStatus = 'loading' | 'ready' | 'error';
+
 function UserMessageBubble({ content, time }: { content: string; time: string }) {
   return (
     <div className="flex justify-end gap-3">
@@ -580,35 +582,79 @@ export default function Script() {
   const [hasSentInitialMessage, setHasSentInitialMessage] = useState(false);
   const [sending, setSending] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [projectLoadStatus, setProjectLoadStatus] = useState<ProjectLoadStatus>(
+    projectId ? 'loading' : 'ready'
+  );
+  const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
+  const [projectLoadAttempt, setProjectLoadAttempt] = useState(0);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const projectLoadRequestRef = useRef(0);
+  const sessionBindingVersionRef = useRef(0);
 
   useEffect(() => {
-    if (!projectId) return;
+    const requestId = ++projectLoadRequestRef.current;
+    const bindingVersion = ++sessionBindingVersionRef.current;
     let active = true;
+
+    setAgentSessionId('');
+    setHasSentInitialMessage(false);
+    useAgentSessionStore.setState({
+      sessionId: null,
+      status: 'idle',
+      lastEventId: undefined,
+      activities: [],
+      turns: [],
+      artifacts: {},
+      activeReview: null,
+      diagnostics: [],
+      compiledConfig: null,
+      latestCompletedRuntimeArtifactId: null
+    });
+    setProjectLoadError(null);
+
+    if (!projectId) {
+      setProjectLoadStatus('ready');
+      return () => {
+        active = false;
+      };
+    }
+
+    setProjectLoadStatus('loading');
 
     void getScript(projectId)
       .then((response) => {
-        if (!active) return;
+        if (
+          !active ||
+          projectLoadRequestRef.current !== requestId ||
+          sessionBindingVersionRef.current !== bindingVersion
+        ) return;
         const script = response.data;
         setEditableTitle(script.title ?? script.name ?? '');
         const restoredSessionId = restoredAgentSessionId(script.config);
-        if (!restoredSessionId) return;
-        useAgentSessionStore.getState().open(restoredSessionId);
-        setAgentSessionId(restoredSessionId);
-        setHasSentInitialMessage(true);
+        if (restoredSessionId) {
+          useAgentSessionStore.getState().open(restoredSessionId);
+          setAgentSessionId(restoredSessionId);
+          setHasSentInitialMessage(true);
+        }
+        setProjectLoadStatus('ready');
       })
       .catch((error) => {
-        if (!active) return;
+        if (
+          !active ||
+          projectLoadRequestRef.current !== requestId ||
+          sessionBindingVersionRef.current !== bindingVersion
+        ) return;
         console.error(error);
-        message.error('加载脚本项目失败，请稍后重试');
+        setProjectLoadStatus('error');
+        setProjectLoadError('加载脚本项目失败，请重试');
       });
 
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, projectLoadAttempt]);
 
   const pendingMessages = useMemo(
     () => messages.filter((item) => !item.runId || !turns.some((turn) => turn.id === item.runId)),
@@ -630,7 +676,11 @@ export default function Script() {
     const text =
       typeof overrideContent === 'string' ? overrideContent : input.trim();
     const attachment = pendingAttachment;
-    if ((!text && !attachment) || sending) return;
+    if (
+      (!text && !attachment) ||
+      sending ||
+      (projectId && projectLoadStatus !== 'ready')
+    ) return;
     const objective = text || '请解析附件并生成可审核、可播放的场景。';
 
     setSending(true);
@@ -660,6 +710,7 @@ export default function Script() {
         });
       }
       if (needsSession) {
+        sessionBindingVersionRef.current += 1;
         useAgentSessionStore.getState().open(sessionId);
         setAgentSessionId(sessionId);
         if (projectId) {
@@ -835,7 +886,7 @@ export default function Script() {
               <ChatComposer
                 value={input}
                 attachment={pendingAttachment}
-                disabled={sending}
+                disabled={sending || (Boolean(projectId) && projectLoadStatus !== 'ready')}
                 error={operationError}
                 onValueChange={setInput}
                 onAttachmentChange={(file) => {
@@ -844,6 +895,22 @@ export default function Script() {
                 }}
                 onSend={() => void send()}
               />
+              {projectLoadStatus === 'error' && (
+                <div
+                  role="alert"
+                  className="mt-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+                >
+                  <span>{projectLoadError}</span>
+                  <button
+                    type="button"
+                    aria-label="重试加载项目"
+                    onClick={() => setProjectLoadAttempt((attempt) => attempt + 1)}
+                    className="ml-auto shrink-0 rounded-md border border-destructive/30 px-2 py-1 font-medium hover:bg-destructive/10"
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

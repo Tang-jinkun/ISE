@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   getScript: vi.fn(),
   getModelConfig: vi.fn(),
   navigate: vi.fn(),
+  projectId: 'script-1',
   rejectAgentReview: vi.fn(),
   reviseEventPlan: vi.fn(),
   saveModelConfig: vi.fn(),
@@ -75,7 +76,11 @@ vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
   return {
     ...actual,
-    useNavigate: () => mocks.navigate
+    useNavigate: () => mocks.navigate,
+    useSearchParams: () => [
+      new URLSearchParams({ projectId: mocks.projectId }),
+      vi.fn()
+    ]
   };
 });
 
@@ -349,14 +354,21 @@ function selectReport() {
 async function uploadReport(objective = '生成印巴空战复盘场景') {
   setObjective(objective);
   const file = selectReport();
-  fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+  await sendWhenReady();
   await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
   return file;
+}
+
+async function sendWhenReady() {
+  const sendButton = screen.getByRole('button', { name: '发送消息' });
+  await waitFor(() => expect(sendButton).toBeEnabled());
+  fireEvent.click(sendButton);
 }
 
 describe('NewScript real Agent flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.projectId = 'script-1';
     useAgentSessionStore.setState(useAgentSessionStore.getInitialState(), true);
 
     mocks.uploadFile.mockResolvedValue({
@@ -464,6 +476,74 @@ describe('NewScript real Agent flow', () => {
           artifactIds: []
         })
       });
+    });
+  });
+
+  it('blocks generation until the current project identity has loaded', async () => {
+    let resolveProject!: (value: unknown) => void;
+    mocks.getScript.mockReturnValueOnce(new Promise((resolve) => {
+      resolveProject = resolve;
+    }));
+    renderNewScript();
+
+    setObjective('生成场景');
+    selectReport();
+
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
+    expect(mocks.createAgentSession).not.toHaveBeenCalled();
+    expect(mocks.updateScript).not.toHaveBeenCalled();
+
+    resolveProject({
+      data: { id: 'script-1', title: '脚本一', config: '{}', conversation: [] }
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled();
+    });
+  });
+
+  it('keeps generation blocked when project restore fails and exposes retry', async () => {
+    mocks.getScript.mockRejectedValueOnce(new Error('加载失败'));
+    renderNewScript();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('加载脚本项目失败');
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '重试加载项目' })).toBeInTheDocument();
+    expect(mocks.createAgentSession).not.toHaveBeenCalled();
+    expect(mocks.updateScript).not.toHaveBeenCalled();
+  });
+
+  it('clears the previous Agent binding when projectId changes', async () => {
+    mocks.getScript.mockResolvedValueOnce({
+      data: {
+        id: 'script-1', title: '脚本一',
+        config: JSON.stringify({ agentSessionId: 'session-old' }),
+        conversation: []
+      }
+    });
+    const view = renderNewScript();
+    await waitFor(() => {
+      expect(mocks.useAgentSession).toHaveBeenCalledWith('session-old');
+    });
+
+    let resolveNext!: (value: unknown) => void;
+    mocks.getScript.mockReturnValueOnce(new Promise((resolve) => {
+      resolveNext = resolve;
+    }));
+    mocks.projectId = 'script-2';
+    view.rerender(
+      <MemoryRouter initialEntries={['/new-script?projectId=script-2']}>
+        <NewScript />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(mocks.getScript).toHaveBeenCalledWith('script-2');
+      expect(useAgentSessionStore.getState().sessionId).toBeNull();
+    });
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
+
+    resolveNext({
+      data: { id: 'script-2', title: '脚本二', config: '{}', conversation: [] }
     });
   });
 
@@ -667,7 +747,7 @@ describe('NewScript real Agent flow', () => {
     expect(mocks.attachAgentFile).not.toHaveBeenCalled();
     expect(mocks.sendAgentMessage).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await sendWhenReady();
     await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
 
     expect(order).toEqual(['upload', 'session', 'attach', 'open', 'message']);
@@ -707,7 +787,7 @@ describe('NewScript real Agent flow', () => {
 
     renderNewScript();
     setObjective('直接根据文字生成港口态势场景');
-    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await sendWhenReady();
 
     await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
     expect(order).toEqual(['session', 'open', 'message']);
@@ -722,9 +802,7 @@ describe('NewScript real Agent flow', () => {
     renderNewScript();
     const file = selectReport();
 
-    const sendButton = screen.getByRole('button', { name: '发送消息' });
-    expect(sendButton).toBeEnabled();
-    fireEvent.click(sendButton);
+    await sendWhenReady();
 
     await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
     expect(mocks.uploadFile).toHaveBeenCalledWith(file, {
@@ -743,7 +821,7 @@ describe('NewScript real Agent flow', () => {
   it('renders one durable Agent turn with collapsed activity and a separate final answer', async () => {
     renderNewScript();
     setObjective('生成港口态势场景');
-    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await sendWhenReady();
     await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
 
     act(() => {
@@ -789,7 +867,7 @@ describe('NewScript real Agent flow', () => {
     renderNewScript();
     setObjective('生成失败后可以重试');
     selectReport();
-    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    await sendWhenReady();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('智能体暂时不可用');
     expect(screen.getByPlaceholderText('描述你想生成的场景...')).toHaveValue(
