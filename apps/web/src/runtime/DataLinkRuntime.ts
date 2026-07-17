@@ -1,6 +1,9 @@
 import type { SceneTrack } from '@ise/runtime-contracts';
 import type mapboxgl from 'mapbox-gl';
 import * as THREE from 'three';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import type { ModelEntityFrameSnapshot } from './ModelRuntime';
 import { SceneRuntimeError } from './errors';
 
@@ -18,7 +21,7 @@ export interface DataLinkRuntimeDependencies {
 
 interface DataLinkInstance {
   item: DataLinkItem;
-  line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  line: Line2;
 }
 
 const browserDependencies: DataLinkRuntimeDependencies = {
@@ -49,15 +52,16 @@ export class DataLinkRuntime {
       ))
       .flatMap((track) => track.items);
     for (const item of items) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
-      const material = new THREE.LineBasicMaterial({
+      const geometry = new LineGeometry();
+      geometry.setPositions([0, 0, 0, 0, 0, 0]);
+      const material = new LineMaterial({
         color: linkColors[item.params.linkKind],
         depthTest: false,
         transparent: true,
         opacity: 0.95,
       });
-      const line = new THREE.Line(geometry, material);
+      setLineWidth(material, 2);
+      const line = new Line2(geometry, material);
       line.name = item.id;
       line.visible = false;
       line.frustumCulled = false;
@@ -86,15 +90,17 @@ export class DataLinkRuntime {
       }
       line.visible = true;
       line.position.fromArray(source.position);
-      const positions = line.geometry.getAttribute('position') as THREE.BufferAttribute;
-      positions.setXYZ(0, 0, 0, 0);
-      positions.setXYZ(
-        1,
+      const start = line.geometry.getAttribute('instanceStart') as THREE.InterleavedBufferAttribute;
+      const end = line.geometry.getAttribute('instanceEnd') as THREE.InterleavedBufferAttribute;
+      start.setXYZ(0, 0, 0, 0);
+      end.setXYZ(
+        0,
         target.position[0] - source.position[0],
         target.position[1] - source.position[1],
         target.position[2] - source.position[2],
       );
-      positions.needsUpdate = true;
+      start.data.needsUpdate = true;
+      end.data.needsUpdate = true;
     }
     this.map.triggerRepaint();
   }
@@ -152,6 +158,7 @@ export class DataLinkRuntime {
           antialias: true,
         });
         this.renderer.autoClear = false;
+        this.updateMaterialResolution();
       },
       render: (_gl, matrix) => {
         const projectionMatrix =
@@ -163,6 +170,7 @@ export class DataLinkRuntime {
                 }
               ).defaultProjectionData.mainMatrix;
         this.camera.projectionMatrix.fromArray(projectionMatrix);
+        this.updateMaterialResolution();
         this.renderer?.resetState();
         this.renderer?.render(this.scene, this.camera);
       },
@@ -177,11 +185,22 @@ export class DataLinkRuntime {
     this.renderer = undefined;
   }
 
+  private updateMaterialResolution() {
+    const canvas = this.map.getCanvas();
+    for (const { line } of this.instances) {
+      line.material.resolution.set(canvas.width, canvas.height);
+    }
+  }
+
   private assertUsable() {
     if (this.disposed) {
       throw new SceneRuntimeError('RUNTIME_DISPOSED', 'Data link runtime is disposed');
     }
   }
+}
+
+function setLineWidth(material: LineMaterial, width: number) {
+  (material as LineMaterial & { linewidth: number }).linewidth = width;
 }
 
 function isActive(item: DataLinkItem, timeMs: number) {

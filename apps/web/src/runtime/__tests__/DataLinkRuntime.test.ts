@@ -1,5 +1,7 @@
 import type { SceneTrack } from '@ise/runtime-contracts';
 import * as THREE from 'three';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { expect, it } from 'vitest';
 import { DataLinkRuntime } from '../DataLinkRuntime';
 import type { ModelEntityFrameSnapshot } from '../ModelRuntime';
@@ -93,7 +95,16 @@ function renderedLines(
   };
   layer.render({}, new Float64Array(new THREE.Matrix4().identity().toArray()));
   const scene = renderer.render.mock.calls.at(-1)![0] as THREE.Scene;
-  return scene.children.filter((child): child is THREE.Line => child instanceof THREE.Line);
+  return scene.children.filter((child): child is Line2 => child instanceof Line2);
+}
+
+function lineOffsets(lineItem: Line2) {
+  const start = lineItem.geometry.getAttribute('instanceStart') as THREE.InterleavedBufferAttribute;
+  const end = lineItem.geometry.getAttribute('instanceEnd') as THREE.InterleavedBufferAttribute;
+  return [
+    start.getX(0), start.getY(0), start.getZ(0),
+    end.getX(0), end.getY(0), end.getZ(0),
+  ];
 }
 
 it('renders altitude-aware endpoints from model Mercator positions with distinct link styling', async () => {
@@ -116,16 +127,35 @@ it('renders altitude-aware endpoints from model Mercator positions with distinct
   const awacsLine = byName.get('awacs-to-fighter')!;
   const missileLine = byName.get('fighter-to-missile')!;
   expect(awacsLine.position.toArray()).toEqual([0.25, 0.4, 0.00012]);
-  expect([...awacsLine.geometry.getAttribute('position').array]).toEqual([
+  expect(lineOffsets(awacsLine)).toEqual([
     0, 0, 0, expect.closeTo(0.02), expect.closeTo(0.02), expect.closeTo(0.00006),
   ]);
   expect(missileLine.position.toArray()).toEqual([0.27, 0.42, 0.00018]);
-  expect([...missileLine.geometry.getAttribute('position').array]).toEqual([
+  expect(lineOffsets(missileLine)).toEqual([
     0, 0, 0, expect.closeTo(0.04), expect.closeTo(0.03), expect.closeTo(0.00015),
   ]);
-  expect((awacsLine.material as THREE.LineBasicMaterial).color.getHexString()).toBe('22d3ee');
-  expect((missileLine.material as THREE.LineBasicMaterial).color.getHexString()).toBe('f59e0b');
+  expect(awacsLine.material.color.getHexString()).toBe('22d3ee');
+  expect(missileLine.material.color.getHexString()).toBe('f59e0b');
   expect(map.getSource(sourceId)).toBeUndefined();
+});
+
+it('keeps data links two pixels wide at the current canvas resolution', async () => {
+  const { map, renderers, runtime } = rendererHarness();
+  map.getCanvas().width = 1_280;
+  map.getCanvas().height = 720;
+  await runtime.load([
+    dataLinkTrack([link('fighter-to-missile', 'fighter', 'missile', 'fighter-missile')]),
+  ]);
+  runtime.apply(500, [
+    snapshot('fighter', 77, 31, true, [0.27, 0.42, 0.00018]),
+    snapshot('missile', 78, 32, true, [0.31, 0.45, 0.00033]),
+  ]);
+
+  const lineItem = renderedLines(map, renderers[0]!)[0]!;
+  const material = lineItem.material as LineMaterial & { linewidth: number };
+  expect(lineItem.type).toBe('Line2');
+  expect(material.linewidth).toBe(2);
+  expect(material.resolution.toArray()).toEqual([1_280, 720]);
 });
 
 it('updates line endpoints from the current moving model snapshots', async () => {
@@ -143,7 +173,7 @@ it('updates line endpoints from the current moving model snapshots', async () =>
 
   const lineItem = renderedLines(map, renderers[0]!)[0]!;
   expect(lineItem.position.toArray()).toEqual([0.3, 0.4, 0.0002]);
-  expect([...lineItem.geometry.getAttribute('position').array]).toEqual([
+  expect(lineOffsets(lineItem)).toEqual([
     0, 0, 0, expect.closeTo(0.08), expect.closeTo(0.07), expect.closeTo(0.0002),
   ]);
 });
