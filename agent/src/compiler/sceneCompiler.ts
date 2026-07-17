@@ -608,22 +608,6 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       followEndMs: lastSubtitle.startMs + lastSubtitle.durationMs,
     }] as const
   }))
-  const dataLinkCommands = choreographyPlan.relationSegments.map(relation => {
-    const sceneBeat = sceneBeats.get(relation.sceneBeatRef)
-    const subtitle = sceneBeat?.subtitleId ? subtitles.get(sceneBeat.subtitleId) : undefined
-    const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
-    if (!sceneBeat || !subtitle || !unit) fail('NARRATION_SCENE_BEAT_UNBOUND', relation.sceneBeatRef)
-    const startMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
-    return runtimeCommandSchema.parse({
-      commandId: `cmd:${relation.segmentId}:show`, eventUnitId: unit.eventUnitId,
-      targetId: `data-link:${relation.sourceRef}:${relation.targetRef}`,
-      type: 'data_link.show', params: {
-        sourceEntityId: relation.sourceRef, targetEntityId: relation.targetRef, linkKind: relation.linkKind,
-      },
-      startMs, durationMs: subtitle.startMs + subtitle.durationMs - startMs,
-      dependsOn: [], onFailure: 'abort', evidenceRefs: [...relation.evidenceRefs],
-    })
-  })
   const cameraCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
   const interceptedTargetHides = new Map<string, CanonicalCommand>()
@@ -816,6 +800,31 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       scheduleActorCommand(follow, followStartMs, followDurationMs),
       ...(destroyedHide || interceptedHide ? [] : [scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide'])]),
     ]
+  })
+  const modelHides = [
+    ...actorCommands,
+    ...destroyedTargetHides.values(),
+    ...interceptedTargetHides.values(),
+  ].filter((command): command is Extract<CanonicalCommand, { type: 'model.hide' }> => command.type === 'model.hide')
+  const dataLinkCommands = choreographyPlan.relationSegments.map(relation => {
+    const sceneBeat = sceneBeats.get(relation.sceneBeatRef)
+    const subtitle = sceneBeat?.subtitleId ? subtitles.get(sceneBeat.subtitleId) : undefined
+    const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
+    if (!sceneBeat || !subtitle || !unit) fail('NARRATION_SCENE_BEAT_UNBOUND', relation.sceneBeatRef)
+    const startMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    const targetHide = relation.linkKind === 'fighter-missile'
+      ? modelHides.find(command => command.params.entityId === relation.targetRef)
+      : undefined
+    const endMs = targetHide?.startMs ?? subtitle.startMs + subtitle.durationMs
+    return runtimeCommandSchema.parse({
+      commandId: `cmd:${relation.segmentId}:show`, eventUnitId: unit.eventUnitId,
+      targetId: `data-link:${relation.sourceRef}:${relation.targetRef}`,
+      type: 'data_link.show', params: {
+        sourceEntityId: relation.sourceRef, targetEntityId: relation.targetRef, linkKind: relation.linkKind,
+      },
+      startMs, durationMs: endMs - startMs,
+      dependsOn: [], onFailure: 'abort', evidenceRefs: [...relation.evidenceRefs],
+    })
   })
   const finalCommands = [
     ...scheduled.commands,

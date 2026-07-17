@@ -1060,7 +1060,13 @@ test('choreography grounds every missile data link and only same-side supported 
   for (const command of dataLinks) {
     const subtitle = plan.subtitles.find(item => item.eventUnitId === command.eventUnitId)!
     assert.equal(command.startMs, subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
-    assert.equal(command.startMs + command.durationMs, subtitle.startMs + subtitle.durationMs)
+    const targetHide = command.params.linkKind === 'fighter-missile'
+      ? plan.commands.find(item => item.type === 'model.hide' && item.targetId === command.params.targetEntityId)
+      : undefined
+    assert.equal(
+      command.startMs + command.durationMs,
+      targetHide?.startMs ?? subtitle.startMs + subtitle.durationMs,
+    )
   }
 })
 
@@ -1076,6 +1082,21 @@ test('actor lifecycle extends through later cross-beat weapon engagement uses', 
   assert.equal(interception.targetRef, firstStrikeWeapon.actorInstanceId)
   assert.equal(lifecycle.firstSceneBeatRef, 'scene-beat-first-strike')
   assert.equal(lifecycle.lastSceneBeatRef, 'scene-beat-intercept')
+})
+
+test('fighter missile data link extends through a later cross-beat interception', () => {
+  const fixture = realCrossBeatEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const firstStrike = fixture.input.choreographyPlan.weaponEngagements.find(engagement =>
+    engagement.sceneBeatRef === 'scene-beat-first-strike')!
+  const dataLink = plan.commands.find(command =>
+    command.type === 'data_link.show'
+    && command.params.linkKind === 'fighter-missile'
+    && command.params.targetEntityId === firstStrike.weaponRef)!
+  const targetHide = plan.commands.find(command =>
+    command.type === 'model.hide' && command.targetId === firstStrike.weaponRef)!
+
+  assert.equal(dataLink.startMs + dataLink.durationMs, targetHide.startMs)
 })
 
 test('final compiler rejects an engagement subtitle too short for its four phase cameras', () => {
