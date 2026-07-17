@@ -77,4 +77,35 @@ describe('Timeline', () => {
       targetTrackId: sourceTrack.trackId,
     });
   });
+
+  it('uses a generated empty model track id as its entity owner', () => {
+    const sourceTrack: SceneTrack = {
+      ...entityTracks[0]!,
+      trackId: 'track:model',
+    };
+    const sourceItem = sourceTrack.items[0]!;
+    const emptySameEntityTrack: SceneTrack = {
+      ...entityTracks[0]!,
+      items: [],
+    };
+    const emptyOtherEntityTrack: SceneTrack = {
+      ...entityTracks[1]!,
+      items: [],
+    };
+
+    expect(resolveClipDragChange(sourceTrack, sourceItem, emptySameEntityTrack, 17_500, 8_000))
+      .toMatchObject({ targetTrackId: emptySameEntityTrack.trackId });
+    expect(resolveClipDragChange(sourceTrack, sourceItem, emptyOtherEntityTrack, 17_500, 8_000))
+      .toMatchObject({ targetTrackId: sourceTrack.trackId });
+  });
+
+  it('rejects an empty legacy model track as a cross-track target', () => {
+    const sourceTrack = entityTracks[0]!;
+    const emptyLegacyTrack: SceneTrack = {
+      trackId: 'track:model', type: 'model', label: 'Legacy model track', visible: true, items: [],
+    };
+
+    expect(resolveClipDragChange(sourceTrack, sourceTrack.items[0]!, emptyLegacyTrack, 17_500, 8_000))
+      .toMatchObject({ targetTrackId: sourceTrack.trackId });
+  });
 });

@@ -38,6 +38,17 @@ type TimelineTrack = {
   source: SceneTrack;
 };
 
+function modelTrackOwnerId(track: Extract<SceneTrack, { type: 'model' }>): string | undefined {
+  const generatedTrackPrefix = 'track:model:';
+  if (track.trackId.startsWith(generatedTrackPrefix)) {
+    const entityId = track.trackId.slice(generatedTrackPrefix.length);
+    if (entityId) return entityId;
+  }
+
+  const entityIds = new Set(track.items.map((item) => item.params.entityId));
+  return entityIds.size === 1 ? entityIds.values().next().value : undefined;
+}
+
 function isCompatibleClipTarget(
   sourceTrack: SceneTrack,
   sourceItem: SceneTrackItem,
@@ -47,9 +58,7 @@ function isCompatibleClipTarget(
   if (sourceTrack.trackId === targetTrack.trackId || sourceTrack.type !== 'model') return true;
   if (targetTrack.type !== 'model' || !('entityId' in sourceItem.params)) return false;
 
-  const targetEntityIds = new Set(targetTrack.items.map((item) => item.params.entityId));
-  return targetEntityIds.size === 0
-    || (targetEntityIds.size === 1 && targetEntityIds.has(sourceItem.params.entityId));
+  return modelTrackOwnerId(targetTrack) === sourceItem.params.entityId;
 }
 
 export function resolveClipDragChange(
