@@ -37,7 +37,7 @@ const inspectReportEvidenceInputSchema = {
       type: 'array',
       items: { type: 'string', minLength: 1 },
     },
-    limit: { type: 'integer' },
+    limit: { type: 'integer', minimum: 1, maximum: 50 },
   },
 } as const
 
@@ -82,7 +82,7 @@ export function createDocumentTools(registry: AttachmentReader): AgentTool[] {
 
   const inspectTool: AgentTool = {
     name: 'inspect_report_evidence',
-    description: 'Inspect matching records from active report evidence artifacts',
+    description: 'Inspect active report evidence artifacts. One unfiltered call can inspect up to 50 records and returns completion metadata.',
     inputSchema: inspectReportEvidenceInputSchema,
     risk: 'read',
     isConcurrencySafe: true,
@@ -99,18 +99,26 @@ export function createDocumentTools(registry: AttachmentReader): AgentTool[] {
 
       const normalizedQuery = query?.toLowerCase()
       const selectedIds = evidenceIds === undefined ? undefined : new Set(evidenceIds)
-      const limit = Math.min(20, Math.max(1, requestedLimit ?? 10))
-      const records = activeEvidence
-        .flatMap(evidence => evidence.records)
+      const documentRecords = activeEvidence.flatMap(evidence => evidence.records)
+      const matchingRecords = documentRecords
         .filter(record => selectedIds === undefined || selectedIds.has(record.evidenceId))
         .filter(record => normalizedQuery === undefined || [
           record.claim,
           ...record.entities,
           record.sourceRef,
         ].some(value => value.toLowerCase().includes(normalizedQuery)))
-        .slice(0, limit)
+      const limit = Math.min(50, Math.max(1, requestedLimit ?? 50))
+      const records = matchingRecords.slice(0, limit)
 
-      return { content: JSON.stringify({ records }) }
+      return {
+        content: JSON.stringify({
+          totalRecords: documentRecords.length,
+          matchingRecords: matchingRecords.length,
+          returnedRecords: records.length,
+          inspectionComplete: records.length === matchingRecords.length,
+          records,
+        }),
+      }
     },
   }
 

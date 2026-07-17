@@ -53,6 +53,81 @@ test('inspect_report_evidence returns bounded evidence selected by section text'
   assert.ok(payload.records.length <= 5)
 })
 
+test('inspect_report_evidence returns a complete 44-record document by default', async () => {
+  const context = testAgentContext()
+  const records = Array.from({ length: 44 }, (_, index) =>
+    evidenceRecord(`ev-${index}`, `Claim ${index}`),
+  )
+  context.artifacts.create({
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:doc-complete',
+    data: {
+      schemaVersion: 'evidence-ir/v1',
+      documentId: 'doc-complete',
+      records,
+    },
+  })
+  const inspect = createDocumentTools(new AttachmentRegistry())
+    .find(tool => tool.name === 'inspect_report_evidence')!
+
+  const result = await inspect.execute({}, context)
+  const payload = JSON.parse(result.content) as {
+    totalRecords: number
+    matchingRecords: number
+    returnedRecords: number
+    inspectionComplete: boolean
+    records: unknown[]
+  }
+
+  assert.deepEqual(payload, {
+    totalRecords: 44,
+    matchingRecords: 44,
+    returnedRecords: 44,
+    inspectionComplete: true,
+    records,
+  })
+})
+
+test('inspect_report_evidence distinguishes total, matching, and returned records', async () => {
+  const context = testAgentContext()
+  const records = [
+    evidenceRecord('ev-match-1', 'Matched claim one'),
+    evidenceRecord('ev-match-2', 'Matched claim two'),
+    evidenceRecord('ev-other-1', 'Other claim one'),
+    evidenceRecord('ev-other-2', 'Other claim two'),
+  ]
+  context.artifacts.create({
+    type: EVIDENCE_IR_ARTIFACT,
+    createdBy: 'tool',
+    logicalKey: 'evidence:doc-metadata',
+    data: {
+      schemaVersion: 'evidence-ir/v1',
+      documentId: 'doc-metadata',
+      records,
+    },
+  })
+  const inspect = createDocumentTools(new AttachmentRegistry())
+    .find(tool => tool.name === 'inspect_report_evidence')!
+
+  const result = await inspect.execute({ query: 'matched', limit: 1 }, context)
+  const payload = JSON.parse(result.content) as {
+    totalRecords: number
+    matchingRecords: number
+    returnedRecords: number
+    inspectionComplete: boolean
+    records: Array<{ evidenceId: string }>
+  }
+
+  assert.deepEqual(payload, {
+    totalRecords: 4,
+    matchingRecords: 2,
+    returnedRecords: 1,
+    inspectionComplete: false,
+    records: [records[0]],
+  })
+})
+
 test('attachment registry creates stable records and returns defensive copies', async () => {
   const attachments = new AttachmentRegistry()
   const first = await attachments.register(fixturePath)
@@ -141,6 +216,19 @@ test('document tools expose constrained risk and input contracts', () => {
   })
   assert.equal(inspect.risk, 'read')
   assert.equal(inspect.isConcurrencySafe, true)
+  assert.deepEqual(inspect.inputSchema, {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      documentId: { type: 'string', minLength: 1 },
+      query: { type: 'string' },
+      evidenceIds: {
+        type: 'array',
+        items: { type: 'string', minLength: 1 },
+      },
+      limit: { type: 'integer', minimum: 1, maximum: 50 },
+    },
+  })
 })
 
 test('inspect_report_evidence requires active evidence', async () => {
@@ -241,7 +329,7 @@ test('inspect_report_evidence filters case-insensitively and clamps limits', asy
   }
 
   const maximum = await inspect.execute({ limit: 99 }, context)
-  assert.equal(JSON.parse(maximum.content).records.length, 20)
+  assert.equal(JSON.parse(maximum.content).records.length, 25)
   const minimum = await inspect.execute({ limit: -99 }, context)
   assert.equal(JSON.parse(minimum.content).records.length, 1)
   await assert.rejects(inspect.execute({ limit: 1.5 }, context), /expected int/i)

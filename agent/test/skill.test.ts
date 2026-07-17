@@ -32,6 +32,10 @@ test('loads the generate-battle-replay project skill with its bounded tool surfa
   assert.match(skill.instructions, /never invent asset IDs/i)
   assert.match(skill.instructions, /without an attachment/i)
   assert.match(skill.instructions, /user-provided text brief/i)
+  assert.match(skill.instructions, /inspect_report_evidence`? exactly once with the returned `?documentId`? and `?limit: 50`?/i)
+  assert.match(skill.instructions, /when `?inspectionComplete`? is true, do not inspect again and immediately draft and propose the EventPlan/i)
+  assert.match(skill.instructions, /Do not inspect records one by one/i)
+  assert.match(skill.instructions, /Filtered follow-up is permitted only when the first response explicitly has `?inspectionComplete: false`?/i)
 })
 
 test('documents all evidence classes and rejects the known unsupported SRT claims', async () => {

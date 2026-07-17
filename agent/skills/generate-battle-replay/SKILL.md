@@ -19,7 +19,9 @@ version: 1.0.0
 
 # Battle Replay Event Planning
 
-When an attachment file ID is present, read the document through `parse_battle_report`. Without an attachment, use the active user-provided text brief and call `inspect_report_evidence` directly. Inspect bounded evidence before selecting events in both paths.
+When an attachment file ID is present, call `parse_battle_report`. After parsing, call `inspect_report_evidence` exactly once with the returned `documentId` and `limit: 50`. When `inspectionComplete` is true, do not inspect again and immediately draft and propose the EventPlan. Do not inspect records one by one. Filtered follow-up is permitted only when the first response explicitly has `inspectionComplete: false`.
+
+Without an attachment, use the active user-provided text brief and call `inspect_report_evidence` directly. Inspect bounded evidence before selecting events in both paths.
 
 Build 5 to 10 EventUnits when the document supports them. Each EventUnit must describe one complete world-state change, not a camera shot or editor command.
 
