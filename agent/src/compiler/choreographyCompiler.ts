@@ -240,19 +240,45 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     })
   const relationSegments = [...fighterMissileRelationSegments, ...awacsRelationCandidates]
     .sort((left, right) => left.segmentId.localeCompare(right.segmentId))
+  const sceneBeatOrder = new Map(sceneBlueprint.sceneBeats.map((beat, index) => [beat.sceneBeatId, index]))
+  const weaponsResolvedByLaterEngagement = new Set(weaponEngagements
+    .filter(engagement => weaponEngagements.some(candidate =>
+      candidate.targetRef === engagement.weaponRef
+      && (sceneBeatOrder.get(candidate.sceneBeatRef) ?? -1) > (sceneBeatOrder.get(engagement.sceneBeatRef) ?? -1)))
+    .map(engagement => engagement.weaponRef))
   const shotPlan = narrationPlan.beats.flatMap(narrationBeat => {
     const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.subtitleId === narrationBeat.subtitleId)
     if (!sceneBeat) fail('NARRATION_SCENE_BEAT_UNBOUND', narrationBeat.subtitleId)
     const engagements = engagementsBySceneBeat.get(sceneBeat.sceneBeatId) ?? []
     if (engagements.length > 0) {
-      return engagements.flatMap(engagement => {
+      const subjectRefs = nearestSubjectRefs(sceneBlueprint.sceneBeats.indexOf(sceneBeat))
+      if (subjectRefs.length === 0) fail('SCENE_BEAT_SUBJECTS_EMPTY', sceneBeat.sceneBeatId)
+      return [{
+        shotId: `shot:${sceneBeat.sceneBeatId}:establishing`,
+        subtitleId: narrationBeat.subtitleId,
+        sceneBeatRefs: [sceneBeat.sceneBeatId],
+        intent: `engagement:establishing`,
+        subjectRefs,
+        framing: 'engagement-establishing',
+        movement: 'track-engagement-context',
+        startConstraint: `time:${narrationBeat.subtitleId}:subtitle-visual-lead`,
+        durationRange: {
+          minMs: narrationBeat.estimatedDurationMs,
+          maxMs: narrationBeat.estimatedDurationMs,
+        },
+        transition: 'easeInOut',
+        visibilityRequirements: subjectRefs,
+      }, ...engagements.flatMap(engagement => {
       const phases = [
         { phase: 'launch' as const, subjectRefs: [engagement.launcherRef, engagement.weaponRef], movement: 'track-launcher-to-weapon' },
         { phase: 'midcourse' as const, subjectRefs: [engagement.weaponRef, engagement.targetRef], movement: 'track-weapon-to-target' },
         { phase: 'terminal' as const, subjectRefs: [engagement.weaponRef, engagement.targetRef], movement: 'track-terminal-weapon-to-target' },
         { phase: 'aftermath' as const, subjectRefs: [engagement.targetRef], movement: 'hold-target-outcome' },
       ]
-      return phases.map(({ phase, subjectRefs, movement }) => ({
+      const supportedPhases = weaponsResolvedByLaterEngagement.has(engagement.weaponRef)
+        ? phases.slice(0, 2)
+        : phases
+      return supportedPhases.map(({ phase, subjectRefs, movement }) => ({
         shotId: `shot:${sceneBeat.sceneBeatId}:${engagement.weaponRef}:${phase}`,
         subtitleId: narrationBeat.subtitleId,
         sceneBeatRefs: [sceneBeat.sceneBeatId],
@@ -269,7 +295,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
         visibilityRequirements: subjectRefs,
         phase,
       }))
-      })
+      })]
     }
     const subjectRefs = nearestSubjectRefs(sceneBlueprint.sceneBeats.indexOf(sceneBeat))
     if (subjectRefs.length === 0) fail('SCENE_BEAT_SUBJECTS_EMPTY', sceneBeat.sceneBeatId)

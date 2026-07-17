@@ -246,7 +246,7 @@ function validatePlan(plan: CanonicalRuntimePlan, input: LegacyCompilerInput): v
       }
     }
   }
-  noOverlap(plan.commands.filter(command => command.type === 'camera.transition'), 'CAMERA_COMMAND_OVERLAP')
+  noOverlap(plan.commands.filter(command => command.type.startsWith('camera.')), 'CAMERA_COMMAND_OVERLAP')
   for (const target of new Set(plan.commands.filter(command => command.type === 'model.set_state').map(command => command.targetId))) {
     noOverlap(plan.commands.filter(command => command.type === 'model.set_state' && command.targetId === target), 'STATE_COMMAND_OVERLAP')
   }
@@ -536,25 +536,6 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     actorCommandDrafts.push({ actorInstanceRef: actor.actorInstanceId, spawn, follow, hide })
   }
 
-  for (const shot of choreographyPlan.shotPlan) {
-    if (shot.phase) continue
-    const beat = shot.sceneBeatRefs.length === 1 ? sceneBeats.get(shot.sceneBeatRefs[0]!) : undefined
-    const unit = beat ? eventUnits.get(beat.eventUnitId) : undefined
-    if (!beat || !unit) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
-    const subjectBounds = shot.subjectRefs.map(actorId => {
-      const assignment = assignments.get(actorId)
-      if (!assignment) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
-      return routeBounds(assetRegistry, assignment.trajectoryAssetRef)
-    })
-    const requirement = narrativePlan.sceneRequirements.find(item => item.eventUnitId === unit.eventUnitId)
-    const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
-    commands.push({
-      commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
-      type: 'camera.transition', params: cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template)),
-      dependsOn: [], onFailure: 'abort', evidenceRefs: [...unit.evidenceRefs], desiredDurationMs: 1_500,
-    })
-  }
-
   const registry = new AssetRegistry(assetRegistry)
   for (const requirement of narrativePlan.sceneRequirements) {
     const unit = eventUnits.get(requirement.eventUnitId)
@@ -643,7 +624,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       dependsOn: [], onFailure: 'abort', evidenceRefs: [...relation.evidenceRefs],
     })
   })
-  const phaseCommands: CanonicalCommand[] = []
+  const cameraCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
   const interceptedTargetHides = new Map<string, CanonicalCommand>()
   const engagementForShot = (shot: ChoreographyPlan['shotPlan'][number]) =>
@@ -655,33 +636,78 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   for (const narrationBeat of narrationPlan.beats) {
     const subtitle = subtitles.get(narrationBeat.subtitleId)
     if (!subtitle) fail('NARRATION_SCENE_BEAT_UNBOUND', narrationBeat.subtitleId)
-    const phaseShots = choreographyPlan.shotPlan.filter(shot => shot.subtitleId === narrationBeat.subtitleId && shot.phase)
-    if (phaseShots.length === 0) continue
-    const phaseDurationMs = capabilityManifest.minimumDurations['camera.transition']
-    const phaseStartMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
-    const phaseWindowEndMs = subtitle.startMs + subtitle.durationMs
-    if (phaseStartMs + phaseShots.length * phaseDurationMs > phaseWindowEndMs) {
-      fail('NARRATION_VISUAL_DURATION_CONFLICT', narrationBeat.subtitleId)
+    const subtitleShots = choreographyPlan.shotPlan.filter(shot => shot.subtitleId === narrationBeat.subtitleId)
+    if (subtitleShots.length === 0) continue
+    const phaseShots = subtitleShots.filter(shot => shot.phase)
+    const shotIntervals = new Map<string, readonly [number, number]>()
+    const visualStartMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
+    const visualEndMs = subtitle.startMs + subtitle.durationMs
+    const transitionDurationMs = capabilityManifest.minimumDurations['camera.transition']
+    const followMinimumMs = capabilityManifest.minimumDurations['camera.follow_group']
+    const intervalMinimumMs = transitionDurationMs + followMinimumMs
+    if (phaseShots.length > 0) {
+      const establishing = subtitleShots.find(shot => !shot.phase)
+      if (!establishing || subtitleShots.length !== phaseShots.length + 1
+        || visualEndMs - visualStartMs < subtitleShots.length * intervalMinimumMs) {
+        fail('NARRATION_VISUAL_DURATION_CONFLICT', narrationBeat.subtitleId)
+      }
+      const establishingEndMs = visualStartMs + intervalMinimumMs
+      shotIntervals.set(establishing.shotId, [visualStartMs, establishingEndMs])
+      const remainingMs = visualEndMs - establishingEndMs
+      const phaseBaseDurationMs = Math.floor(remainingMs / phaseShots.length)
+      let cursorMs = establishingEndMs
+      for (const [index, shot] of phaseShots.entries()) {
+        const endMs = index === phaseShots.length - 1
+          ? visualEndMs
+          : cursorMs + phaseBaseDurationMs
+        shotIntervals.set(shot.shotId, [cursorMs, endMs])
+        cursorMs = endMs
+      }
+    } else {
+      for (const shot of subtitleShots) {
+        if (visualEndMs - visualStartMs < intervalMinimumMs) {
+          fail('NARRATION_VISUAL_DURATION_CONFLICT', narrationBeat.subtitleId)
+        }
+        shotIntervals.set(shot.shotId, [visualStartMs, visualEndMs])
+      }
     }
-    for (const [index, shot] of phaseShots.entries()) {
+    for (const shot of subtitleShots) {
       const sceneBeat = shot.sceneBeatRefs.length === 1 ? sceneBeats.get(shot.sceneBeatRefs[0]!) : undefined
       const unit = sceneBeat ? eventUnits.get(sceneBeat.eventUnitId) : undefined
       const engagement = engagementForShot(shot)
-      if (!sceneBeat || !unit || !engagement || !shot.phase) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
-      const startMs = phaseStartMs + index * phaseDurationMs
-      const phaseSubjectRefs = shot.phase === 'launch'
-        ? [engagement.launcherRef, engagement.weaponRef]
+      const interval = shotIntervals.get(shot.shotId)
+      if (!sceneBeat || !unit || !interval) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+      const [startMs, endMs] = interval
+      const isEngagementShot = phaseShots.length > 0
+      if (shot.phase && !engagement) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+      const subjectRefs = shot.phase === 'launch'
+        ? [engagement!.launcherRef, engagement!.weaponRef]
         : shot.phase === 'midcourse'
-          ? [engagement.weaponRef, engagement.targetRef]
-          : [engagement.targetRef]
-      const subjectBounds = phaseSubjectRefs.map(actorId => {
+          ? [engagement!.weaponRef, engagement!.targetRef]
+          : shot.phase === 'aftermath' && engagement?.outcome === 'interception'
+            ? [engagement.launcherRef, engagement.weaponRef]
+            : shot.phase
+              ? [engagement!.targetRef]
+              : shot.subjectRefs.length >= 5
+                ? resolvedScenePlan.resolvedActors
+                  .filter(actor => {
+                    const playback = actorPlaybackWindows.get(actor.actorInstanceId)
+                    return playback !== undefined
+                      && playback.followStartMs < subtitle.startMs + subtitle.durationMs
+                      && playback.followEndMs > subtitle.startMs
+                  })
+                  .map(actor => actor.actorInstanceId)
+                : shot.subjectRefs
+      if (subjectRefs.length === 0) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
+      const subjectBounds = subjectRefs.map(actorId => {
         const assignment = assignments.get(actorId)
         const playbackWindow = actorPlaybackWindows.get(actorId)
         if (!assignment || !playbackWindow) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
+        if (!shot.phase) return routeBounds(assetRegistry, assignment.trajectoryAssetRef)
         const point = routePointAtPlaybackTime(
           assetRegistry,
           assignment.trajectoryAssetRef,
-          startMs + phaseDurationMs,
+          startMs + transitionDurationMs,
           playbackWindow.followStartMs,
           playbackWindow.followEndMs,
         )
@@ -690,54 +716,76 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       const requirement = narrativePlan.sceneRequirements.find(item => item.eventUnitId === unit.eventUnitId)
       const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
       const camera = cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template))
-      const zoomOffset = shot.phase === 'launch' ? 0 : shot.phase === 'midcourse' ? 0.5 : shot.phase === 'terminal' ? 1 : 0.75
-      const phasePitch = shot.phase === 'terminal' || shot.phase === 'aftermath'
-        ? 0
-        : camera.pitch
-      const phaseZoom = shot.phase === 'terminal' || shot.phase === 'aftermath'
-        ? Math.min(11.5, camera.zoom + zoomOffset)
-        : Math.min(24, camera.zoom + zoomOffset)
-      phaseCommands.push(runtimeCommandSchema.parse({
+      const followStartMs = startMs + transitionDurationMs
+      const evidenceRefs = engagement ? engagement.evidenceRefs : unit.evidenceRefs
+      cameraCommands.push(runtimeCommandSchema.parse({
         commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
         type: 'camera.transition',
-        params: { ...camera, pitch: phasePitch, zoom: phaseZoom },
-        startMs, durationMs: phaseDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+        params: camera,
+        startMs, durationMs: transitionDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
       }))
-      if (shot.phase === 'terminal' && (engagement.outcome === 'interception' || engagement.outcome === 'destroyed')) {
-        phaseCommands.push(runtimeCommandSchema.parse({
+      if (subjectRefs.length === 1) {
+        cameraCommands.push(runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:follow-actor`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
+          type: 'camera.follow_actor', params: {
+            action: 'camera.follow_actor', entityId: subjectRefs[0]!,
+            framing: shot.phase === 'terminal' || shot.phase === 'aftermath' ? 'close' : 'tracking',
+            zoom: Math.min(11.5, camera.zoom), pitch: Math.min(35, camera.pitch), bearing: camera.bearing,
+            lookAheadMs: 0, transitionMs: transitionDurationMs,
+          },
+          startMs: followStartMs, durationMs: endMs - followStartMs,
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
+        }))
+      } else {
+        const global = !isEngagementShot && subjectRefs.length >= 5
+        cameraCommands.push(runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:follow-group`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
+          type: 'camera.follow_group', params: {
+            action: 'camera.follow_group', entityIds: subjectRefs,
+            framing: global ? 'global' : isEngagementShot ? 'engagement' : 'formation',
+            paddingPx: global ? 120 : 100, minZoom: global ? 4 : isEngagementShot ? 6 : 5,
+            maxZoom: global ? 7 : isEngagementShot ? 10 : 9,
+            pitch: global ? 35 : camera.pitch, bearing: camera.bearing, transitionMs: transitionDurationMs,
+          },
+          startMs: followStartMs, durationMs: endMs - followStartMs,
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
+        }))
+      }
+      if (shot.phase === 'terminal' && (engagement!.outcome === 'interception' || engagement!.outcome === 'destroyed')) {
+        cameraCommands.push(runtimeCommandSchema.parse({
           commandId: `cmd:${shot.shotId}:impact-video`, eventUnitId: unit.eventUnitId, targetId: 'overlay:missile-impact',
           type: 'video.play', params: {
             assetId: 'video:missile-impact',
             layout: { xPct: 64, yPct: 6, widthPct: 30, heightPct: 24, zIndex: 30, opacity: 1, fit: 'cover' },
             volume: 0, playbackRate: 1, loop: false,
           },
-          startMs, durationMs: capabilityManifest.minimumDurations['video.play'], dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+          startMs, durationMs: capabilityManifest.minimumDurations['video.play'], dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
         }))
-        if (engagement.outcome === 'interception') {
+        if (engagement!.outcome === 'interception') {
           const interceptedHide = runtimeCommandSchema.parse({
-            commandId: `cmd:${shot.shotId}:intercepted-hide`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
-            type: 'model.hide', params: { action: 'model.hide', entityId: engagement.targetRef },
+            commandId: `cmd:${shot.shotId}:intercepted-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
+            type: 'model.hide', params: { action: 'model.hide', entityId: engagement!.targetRef },
             startMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
-            dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+            dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
           })
-          const existingHide = interceptedTargetHides.get(engagement.targetRef)
+          const existingHide = interceptedTargetHides.get(engagement!.targetRef)
           if (!existingHide || interceptedHide.startMs < existingHide.startMs) {
-            interceptedTargetHides.set(engagement.targetRef, interceptedHide)
+            interceptedTargetHides.set(engagement!.targetRef, interceptedHide)
           }
         }
       }
-      if (shot.phase === 'aftermath' && engagement.outcome === 'destroyed') {
+      if (shot.phase === 'aftermath' && engagement!.outcome === 'destroyed') {
         const stateDurationMs = 1_000
-        phaseCommands.push(runtimeCommandSchema.parse({
-          commandId: `cmd:${shot.shotId}:destroyed`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
-          type: 'model.set_state', params: { action: 'model.set_state', entityId: engagement.targetRef, state: 'destroyed' },
-          startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+        cameraCommands.push(runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:destroyed`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
+          type: 'model.set_state', params: { action: 'model.set_state', entityId: engagement!.targetRef, state: 'destroyed' },
+          startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
         }))
-        destroyedTargetHides.set(engagement.targetRef, runtimeCommandSchema.parse({
-          commandId: `cmd:${shot.shotId}:destroyed-hide`, eventUnitId: unit.eventUnitId, targetId: engagement.targetRef,
-          type: 'model.hide', params: { action: 'model.hide', entityId: engagement.targetRef },
-          startMs: startMs + stateDurationMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
-          dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement.evidenceRefs],
+        destroyedTargetHides.set(engagement!.targetRef, runtimeCommandSchema.parse({
+          commandId: `cmd:${shot.shotId}:destroyed-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
+          type: 'model.hide', params: { action: 'model.hide', entityId: engagement!.targetRef },
+          startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
         }))
       }
     }
@@ -770,7 +818,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   const finalCommands = [
     ...scheduled.commands,
     ...dataLinkCommands,
-    ...phaseCommands,
+    ...cameraCommands,
     ...actorCommands,
     ...destroyedTargetHides.values(),
     ...interceptedTargetHides.values(),

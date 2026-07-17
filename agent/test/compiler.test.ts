@@ -445,7 +445,7 @@ function multiEngagementChoreographyFixture() {
     subtitleId,
     eventUnitId,
     evidenceRefs: [evidenceRef],
-    estimatedDurationMs: 6_000,
+    estimatedDurationMs: 12_000,
   })
   const deploymentNarration = fixture.narrationPlan.beats.find(beat => beat.subtitleId === 'subtitle-deployment')!
   const summaryNarration = fixture.narrationPlan.beats.find(beat => beat.subtitleId === 'subtitle-summary')!
@@ -607,6 +607,145 @@ function finalInputForEngagementFixture() {
   }
 }
 
+function refreshFinalChoreographyFixture(fixture: ReturnType<typeof multiActorCompilerFixture>) {
+  const resolvedScenePlan = resolveSceneBlueprint({
+    blueprint: fixture.sceneBlueprint,
+    assetRegistry: fixture.assetRegistry,
+  })
+  const choreographyPlan = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+  return {
+    ...fixture.input,
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan,
+    choreographyPlan,
+    assetRegistry: fixture.assetRegistry,
+  }
+}
+
+test('dynamic camera choreography retains establishing shots before supported engagement phases', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  const firstStrike = fixture.choreographyPlan.weaponEngagements.find(item =>
+    item.sceneBeatRef === 'scene-beat-first-strike')!
+  const interception = fixture.choreographyPlan.weaponEngagements.find(item =>
+    item.sceneBeatRef === 'scene-beat-intercept')!
+
+  assert.deepEqual(
+    fixture.choreographyPlan.shotPlan
+      .filter(shot => shot.subtitleId === 'subtitle-first-strike')
+      .map(shot => shot.phase),
+    [undefined, 'launch', 'midcourse'],
+  )
+  assert.deepEqual(
+    fixture.choreographyPlan.shotPlan
+      .filter(shot => shot.subtitleId === 'subtitle-intercept')
+      .map(shot => shot.phase),
+    [undefined, 'launch', 'midcourse', 'terminal', 'aftermath'],
+  )
+  assert.deepEqual(
+    fixture.choreographyPlan.shotPlan.find(shot => shot.shotId === `shot:scene-beat-first-strike:establishing`)?.subjectRefs,
+    fixture.resolvedScenePlan.resolvedActors
+      .filter(actor => fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === firstStrike.sceneBeatRef)!
+        .actorRefs.includes(actor.actorGroupRef))
+      .map(actor => actor.actorInstanceId),
+  )
+  assert.equal(firstStrike.weaponRef, interception.targetRef)
+})
+
+test('dynamic camera ordinary fifteen-second subtitle transitions then follows through the tail', () => {
+  const fixture = multiActorCompilerFixture()
+  fixture.narrationPlan = {
+    ...fixture.narrationPlan,
+    beats: fixture.narrationPlan.beats.map(beat => beat.subtitleId === 'subtitle-deployment'
+      ? { ...beat, estimatedDurationMs: 15_000 }
+      : beat),
+  }
+  fixture.sceneBlueprint = {
+    ...fixture.sceneBlueprint,
+    sourceNarrationFingerprint: fingerprint(fixture.narrationPlan),
+  }
+  const plan = compileFinalScene(refreshFinalChoreographyFixture(fixture))
+  const subtitle = plan.subtitles.find(item => item.subtitleId === 'subtitle-deployment')!
+  const cameras = plan.commands.filter(command => command.commandId.includes('shot:scene-beat-deployment'))
+    .sort((left, right) => left.startMs - right.startMs)
+
+  assert.deepEqual(cameras.map(command => command.type), ['camera.transition', 'camera.follow_group'])
+  assert.equal(cameras[0]!.startMs, subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
+  assert.equal(cameras[0]!.startMs + cameras[0]!.durationMs, cameras[1]!.startMs)
+  assert.equal(cameras[1]!.startMs + cameras[1]!.durationMs, subtitle.startMs + subtitle.durationMs)
+  assert.ok(cameras[1]!.commandId.endsWith(':follow-group'))
+})
+
+test('dynamic camera global ordinary groups include every actor active in the subtitle', () => {
+  const fixture = multiActorCompilerFixture()
+  const plan = compileFinalScene(refreshFinalChoreographyFixture(fixture))
+  const subtitle = plan.subtitles.find(item => item.subtitleId === 'subtitle-summary')!
+  const follow = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'camera.follow_group' }> =>
+    command.type === 'camera.follow_group' && command.commandId.includes('shot:scene-beat-summary'))!
+  const expected = fixture.resolvedScenePlan.resolvedActors
+    .filter(actor => {
+      const lifecycle = fixture.choreographyPlan.actorLifecycles.find(item => item.actorInstanceRef === actor.actorInstanceId)!
+      const first = plan.subtitles.find(item => item.subtitleId === fixture.sceneBlueprint.sceneBeats
+        .find(beat => beat.sceneBeatId === lifecycle.firstSceneBeatRef)!.subtitleId)!
+      const last = plan.subtitles.find(item => item.subtitleId === fixture.sceneBlueprint.sceneBeats
+        .find(beat => beat.sceneBeatId === lifecycle.lastSceneBeatRef)!.subtitleId)!
+      return first.startMs + SUBTITLE_VISUAL_LEAD_MS + capabilityManifest.minimumDurations['model.spawn']
+        < subtitle.startMs + subtitle.durationMs
+        && last.startMs + last.durationMs > subtitle.startMs
+    })
+    .map(actor => actor.actorInstanceId)
+
+  assert.equal(follow.params.framing, 'global')
+  assert.deepEqual(follow.params.entityIds, expected)
+  assert.equal(follow.params.paddingPx, 120)
+  assert.deepEqual([follow.params.minZoom, follow.params.maxZoom, follow.params.pitch], [4, 7, 35])
+})
+
+test('dynamic camera engagement intervals cover the complete visual window without overlap', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const subtitle = plan.subtitles.find(item => item.subtitleId === 'subtitle-intercept')!
+  const cameras = plan.commands.filter(command => command.eventUnitId === subtitle.eventUnitId && command.targetId === 'camera:main')
+    .sort((left, right) => left.startMs - right.startMs)
+
+  assert.equal(cameras[0]!.startMs, subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
+  assert.equal(cameras.at(-1)!.startMs + cameras.at(-1)!.durationMs, subtitle.startMs + subtitle.durationMs)
+  assert.equal(cameras[0]!.durationMs + cameras[1]!.durationMs, 2_000)
+  assert.ok(cameras.filter(command => command.type === 'camera.follow_actor' || command.type === 'camera.follow_group')
+    .every(command => command.durationMs >= capabilityManifest.minimumDurations[command.type]))
+  for (let index = 1; index < cameras.length; index++) {
+    assert.equal(cameras[index - 1]!.startMs + cameras[index - 1]!.durationMs, cameras[index]!.startMs)
+  }
+  assert.ok(cameras.every(command => command.commandId.endsWith(':camera') || command.commandId.endsWith(':follow-group') || command.commandId.endsWith(':follow-actor')))
+})
+
+test('dynamic camera interception aftermath retains launcher and weapon after hiding the target', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const aftermath = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'camera.follow_group' }> =>
+    command.type === 'camera.follow_group' && command.commandId.includes(`:${engagement.weaponRef}:aftermath:follow-group`))!
+  const targetHide = plan.commands.find(command => command.type === 'model.hide' && command.targetId === engagement.targetRef)!
+
+  assert.deepEqual(aftermath.params.entityIds, [engagement.launcherRef, engagement.weaponRef])
+  assert.ok(targetHide.startMs < aftermath.startMs)
+})
+
+test('dynamic camera destroyed target hide starts when the aftermath interval ends', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const aftermath = plan.commands.find(command => command.commandId.includes(`:${engagement.weaponRef}:aftermath:follow`))!
+  const hide = plan.commands.find(command => command.type === 'model.hide' && command.targetId === engagement.targetRef)!
+
+  assert.equal(hide.startMs, aftermath.startMs + aftermath.durationMs)
+})
+
 function realCrossBeatEngagementFixture() {
   const fixture = finalInputForEngagementFixture()
   const indiaAwacsGroup: SceneBlueprint['actorGroups'][number] = {
@@ -702,14 +841,14 @@ test('final compiler emits automatic missile lifecycle, phased cameras, impact, 
       command.type === 'camera.transition'
       && command.commandId.includes(`scene-beat-${subtitleId.replace('subtitle-', '')}`))
       .sort((left, right) => left.startMs - right.startMs)
-    assert.equal(cameras.length, 4)
+    const shots = fixture.choreographyPlan.shotPlan.filter(shot => shot.subtitleId === subtitleId)
+    const follows = plan.commands.filter(command => command.commandId.includes(`scene-beat-${subtitleId.replace('subtitle-', '')}`)
+      && (command.type === 'camera.follow_actor' || command.type === 'camera.follow_group'))
+    assert.equal(cameras.length, shots.length)
+    assert.equal(follows.length, shots.length)
     assert.equal(cameras[0]?.startMs, subtitle.startMs + 800)
-    assert.ok(cameras[2]!.params.zoom > cameras[0]!.params.zoom)
-    assert.equal(cameras[2]!.params.pitch, 0)
-    assert.equal(cameras[3]!.params.pitch, 0)
-    assert.ok(cameras[2]!.params.zoom <= 11.5)
-    assert.ok(cameras[3]!.params.zoom <= 11.5)
     assert.ok(cameras.every(command => command.startMs + command.durationMs <= subtitle.startMs + subtitle.durationMs))
+    assert.ok(follows.every(command => command.commandId.endsWith(':follow-actor') || command.commandId.endsWith(':follow-group')))
   }
   const destroyed = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
   const destroyedState = plan.commands.find(command => command.type === 'model.set_state'
@@ -962,7 +1101,7 @@ test('final compiler rejects an engagement subtitle too short for its four phase
     && error.diagnostics.some(item => item.code === 'NARRATION_VISUAL_DURATION_CONFLICT'))
 })
 
-test('compiles grounded missile engagements and four ordered phase shots', () => {
+test('compiles grounded missile engagements with establishing and supported phase shots', () => {
   const fixture = multiEngagementChoreographyFixture()
   const actorRef = (groupRef: string) => fixture.resolvedScenePlan.resolvedActors
     .find(actor => actor.actorGroupRef === groupRef)!.actorInstanceId
@@ -993,19 +1132,19 @@ test('compiles grounded missile engagements and four ordered phase shots', () =>
   ] as const
   for (const [subtitleId, launcherRef, weaponRef, targetRef] of phaseExpectations) {
     const shots = fixture.choreographyPlan.shotPlan.filter(shot => shot.subtitleId === subtitleId)
-    assert.deepEqual(shots.map(shot => shot.phase), phases)
+    const expectedPhases = weaponRef === firstStrike ? phases.slice(0, 2) : phases
+    const phaseShots = shots.filter(shot => shot.phase)
+    assert.deepEqual(shots.map(shot => shot.phase), [undefined, ...expectedPhases])
     assert.ok(shots.every(shot => shot.startConstraint === `time:${subtitleId}:subtitle-visual-lead`))
-    assert.deepEqual(shots.map(shot => shot.subjectRefs), [
+    assert.deepEqual(phaseShots.map(shot => shot.subjectRefs), [
       [launcherRef, weaponRef],
       [weaponRef, targetRef],
-      [weaponRef, targetRef],
-      [targetRef],
+      ...(weaponRef === firstStrike ? [] : [[weaponRef, targetRef], [targetRef]]),
     ])
-    assert.deepEqual(shots.map(shot => shot.visibilityRequirements), [
+    assert.deepEqual(phaseShots.map(shot => shot.visibilityRequirements), [
       [launcherRef, weaponRef],
       [weaponRef, targetRef],
-      [weaponRef, targetRef],
-      [targetRef],
+      ...(weaponRef === firstStrike ? [] : [[weaponRef, targetRef], [targetRef]]),
     ])
   }
   for (const subtitleId of ['subtitle-deployment', 'subtitle-summary']) {
@@ -1051,9 +1190,12 @@ test('compiles the real cross-beat engagement shape with grounded target borrowi
   ])
   assert.equal(choreography.relationSegments.filter(relation => relation.linkKind === 'fighter-missile').length, 3)
   for (const subtitleId of ['subtitle-first-strike', 'subtitle-intercept', 'subtitle-counterattack']) {
+    const firstStrikePhases = subtitleId === 'subtitle-first-strike'
+      ? ['launch', 'midcourse']
+      : ['launch', 'midcourse', 'terminal', 'aftermath']
     assert.deepEqual(
       choreography.shotPlan.filter(shot => shot.subtitleId === subtitleId).map(shot => shot.phase),
-      ['launch', 'midcourse', 'terminal', 'aftermath'],
+      [undefined, ...firstStrikePhases],
     )
   }
 
@@ -1283,8 +1425,8 @@ test('emits independent engagements and phase shots for every weapon actor in on
 
   assert.equal(engagements.length, 2)
   assert.equal(new Set(engagements.map(engagement => engagement.weaponRef)).size, 2)
-  assert.equal(shots.length, 8)
-  assert.equal(new Set(shots.map(shot => shot.shotId)).size, 8)
+  assert.equal(shots.length, 9)
+  assert.equal(new Set(shots.map(shot => shot.shotId)).size, 9)
 })
 
 test('the final Indo-Pak compiler emits exact multi-actor choreography with media and subtitle lead', () => {
