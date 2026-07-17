@@ -108,7 +108,7 @@ test('EvidenceIR confidence includes zero and one but rejects values outside the
   }
 })
 
-test('CanonicalRuntimePlan supports strict actor and group camera follow commands', () => {
+test('CanonicalRuntimePlan accepts strict actor and group camera follow commands', () => {
   const command = {
     commandId: 'camera-1', eventUnitId: 'unit-1', targetId: 'camera:main', startMs: 0, durationMs: 1_000,
     dependsOn: [], onFailure: 'abort', evidenceRefs: ['ev-1'],
@@ -130,12 +130,36 @@ test('CanonicalRuntimePlan supports strict actor and group camera follow command
     } }],
   })
   assert.equal(groupFollow.success, true)
+})
 
+test('CanonicalRuntimePlan rejects duplicate camera follow group entity IDs', () => {
   const invalid = canonicalRuntimePlanSchema.safeParse({
     ...validRuntimePlan(),
-    commands: [{ ...command, type: 'camera.follow_group', params: {
+    commands: [{ ...cameraFollowGroupCommand(), params: {
       action: 'camera.follow_group', entityIds: ['entity-1', 'entity-1'], framing: 'global',
-      paddingPx: -1, minZoom: 13, maxZoom: 12, pitch: 90, bearing: 0, transitionMs: 0,
+      paddingPx: 20, minZoom: 5, maxZoom: 12, pitch: 40, bearing: 0, transitionMs: 0,
+    } }],
+  })
+  assert.equal(invalid.success, false)
+})
+
+test('CanonicalRuntimePlan rejects negative camera follow group padding', () => {
+  const invalid = canonicalRuntimePlanSchema.safeParse({
+    ...validRuntimePlan(),
+    commands: [{ ...cameraFollowGroupCommand(), params: {
+      action: 'camera.follow_group', entityIds: ['entity-1', 'entity-2'], framing: 'global',
+      paddingPx: -1, minZoom: 5, maxZoom: 12, pitch: 40, bearing: 0, transitionMs: 0,
+    } }],
+  })
+  assert.equal(invalid.success, false)
+})
+
+test('CanonicalRuntimePlan rejects inverted camera follow group zoom bounds', () => {
+  const invalid = canonicalRuntimePlanSchema.safeParse({
+    ...validRuntimePlan(),
+    commands: [{ ...cameraFollowGroupCommand(), params: {
+      action: 'camera.follow_group', entityIds: ['entity-1', 'entity-2'], framing: 'global',
+      paddingPx: 20, minZoom: 13, maxZoom: 12, pitch: 40, bearing: 0, transitionMs: 0,
     } }],
   })
   assert.equal(invalid.success, false)
@@ -215,5 +239,12 @@ function validRuntimePlan() {
     informationCards: [],
     lineage: [],
     diagnostics: [],
+  }
+}
+
+function cameraFollowGroupCommand() {
+  return {
+    commandId: 'camera-group-1', eventUnitId: 'unit-1', targetId: 'camera:main', startMs: 0, durationMs: 1_000,
+    dependsOn: [], onFailure: 'abort' as const, evidenceRefs: ['ev-1'], type: 'camera.follow_group' as const,
   }
 }
