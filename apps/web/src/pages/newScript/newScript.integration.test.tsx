@@ -7,6 +7,7 @@ import {
   waitFor,
   within
 } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -359,6 +360,16 @@ async function uploadReport(objective = '生成印巴空战复盘场景') {
   return file;
 }
 
+function renderNewScriptStrict() {
+  return render(
+    <StrictMode>
+      <MemoryRouter initialEntries={['/new-script?projectId=script-1']}>
+        <NewScript />
+      </MemoryRouter>
+    </StrictMode>
+  );
+}
+
 async function sendWhenReady() {
   const sendButton = screen.getByRole('button', { name: '发送消息' });
   await waitFor(() => expect(sendButton).toBeEnabled());
@@ -437,6 +448,18 @@ describe('NewScript real Agent flow', () => {
     renderNewScript();
 
     expect(mocks.useAgentSession).not.toHaveBeenCalled();
+  });
+
+  it('sends normally after the StrictMode effect setup cycle', async () => {
+    renderNewScriptStrict();
+    setObjective('StrictMode generation');
+    await sendWhenReady();
+
+    await waitFor(() => expect(mocks.sendAgentMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.sendAgentMessage).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ content: expect.stringContaining('StrictMode generation') })
+    );
   });
 
   it('reopens the Agent session persisted with the script project', async () => {

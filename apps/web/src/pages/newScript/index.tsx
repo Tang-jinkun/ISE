@@ -597,9 +597,12 @@ export default function Script() {
   const sendOperationRef = useRef(0);
   currentProjectIdRef.current = projectId;
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    sendOperationRef.current += 1;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      sendOperationRef.current += 1;
+    };
   }, []);
 
   useEffect(() => {
