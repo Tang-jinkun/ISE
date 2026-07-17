@@ -284,23 +284,45 @@ export const Dragger: React.FC<DraggerProps> = ({
     latestResizeResult.current = null;
   };
 
+  const dragHandlers = useRef({
+    move: handleMouseMove,
+    up: handleMouseUp
+  });
+  dragHandlers.current = {
+    move: handleMouseMove,
+    up: handleMouseUp
+  };
+
+  const resizeHandlers = useRef({
+    move: handleResizeMove,
+    up: handleResizeUp
+  });
+  resizeHandlers.current = {
+    move: handleResizeMove,
+    up: handleResizeUp
+  };
+
   useEffect(() => {
     if (!isDragging) return;
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    const handleMove = (event: MouseEvent) => dragHandlers.current.move(event);
+    const handleUp = () => dragHandlers.current.up();
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
     };
   }, [isDragging]);
 
   useEffect(() => {
     if (!isResizing) return;
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeUp);
+    const handleMove = (event: MouseEvent) => resizeHandlers.current.move(event);
+    const handleUp = () => resizeHandlers.current.up();
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
     return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeUp);
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
     };
   }, [isResizing]);
 

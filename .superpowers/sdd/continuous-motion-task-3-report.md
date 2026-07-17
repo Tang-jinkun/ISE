@@ -38,3 +38,31 @@ Implementation commit: `f2c3b17c27b538e1b5c310aa15f7e5fec6fcd286`
 
 - The optional focused Biome check cannot start because the repository currently has conflicting root configurations at the repository root and `apps/web/biome.json`. This task did not modify either configuration. The required Vitest, TypeScript, and diff checks pass.
 - Git reports that LF files may be converted to CRLF the next time it touches them; `git diff --check` reports no whitespace errors.
+
+## Task 2/3 Joint Review Follow-up
+
+### Root Cause
+
+The active document listeners were installed by effects that only depended on `isDragging` or `isResizing`. A parent rerender during a gesture updated the component props but did not replace those listeners, so their closures kept the gesture-start axis, snapping and collision targets, validation function, resize constraints, and completion callbacks.
+
+### RED Evidence
+
+Node: `v24.14.0`
+
+- Focused `Dragger.test.tsx`: 2 of 4 tests failed.
+- The drag listener called the initial validation with unsnapped, unrestricted coordinates `(39, 59)` instead of the rerendered validation with the latest axis and snapped coordinates `(40, 20)`.
+- The resize listener called the initial callback with `width: 55` instead of applying the rerendered `maxW: 40` constraint and latest callback.
+
+### Fix
+
+The document listeners now use stable wrapper functions that dispatch through refs updated on every render. Move and mouse-up handling therefore read the latest props and callbacks while the refs holding final geometry, collisions, and guides remain continuous for the gesture.
+
+### GREEN Evidence
+
+- Focused `Dragger.test.tsx`: 1 file passed, 4 tests passed.
+- Web typecheck: `tsc --noEmit` exited 0.
+- `git diff --check` exited 0.
+
+### Follow-up Concerns
+
+None beyond the existing repository Biome configuration and line-ending notes above.

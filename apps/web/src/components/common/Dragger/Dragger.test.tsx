@@ -98,4 +98,170 @@ describe('Dragger completion callbacks', () => {
 
     expect(onResizeEnd).toHaveBeenCalledWith(latestResize);
   });
+
+  it('uses rerendered drag behavior and callbacks throughout an active gesture', () => {
+    const snapTarget: Rect = {
+      id: 'latest-snap-target',
+      x: 40,
+      y: 20,
+      width: 30,
+      height: 20
+    };
+    const collisionTarget: Rect = {
+      id: 'latest-collision-target',
+      x: 35,
+      y: 15,
+      width: 100,
+      height: 100
+    };
+    const initialValidation = vi.fn(() => true);
+    const latestValidation = vi.fn(() => true);
+    const initialOnDrag = vi.fn<(result: DragResult) => void>();
+    const latestOnDrag = vi.fn<(result: DragResult) => void>();
+    const initialOnDragEnd = vi.fn<(result: DragResult) => void>();
+    const intermediateOnDragEnd = vi.fn<(result: DragResult) => void>();
+    const latestOnDragEnd = vi.fn<(result: DragResult) => void>();
+    const child = <div key="rerendered-drag" data-testid="rerendered-drag" />;
+    const { rerender } = render(
+      <Dragger
+        x={10}
+        y={20}
+        w={30}
+        h={20}
+        isValidMove={initialValidation}
+        onDrag={initialOnDrag}
+        onDragEnd={initialOnDragEnd}
+      >
+        {child}
+      </Dragger>
+    );
+
+    fireEvent.mouseDown(screen.getByTestId('rerendered-drag'), {
+      button: 0,
+      clientX: 100,
+      clientY: 200
+    });
+    rerender(
+      <Dragger
+        x={10}
+        y={20}
+        w={30}
+        h={20}
+        axis="x"
+        snapToObjects
+        snapTargets={[snapTarget]}
+        collisionDetection
+        collisionTargets={[collisionTarget]}
+        isValidMove={latestValidation}
+        onDrag={latestOnDrag}
+        onDragEnd={intermediateOnDragEnd}
+      >
+        {child}
+      </Dragger>
+    );
+
+    fireEvent.mouseMove(document, { clientX: 129, clientY: 239 });
+
+    expect(initialValidation).not.toHaveBeenCalled();
+    expect(latestValidation).toHaveBeenCalledWith(40, 20);
+    expect(initialOnDrag).not.toHaveBeenCalled();
+    expect(latestOnDrag).toHaveBeenCalledOnce();
+    const latestDrag = latestOnDrag.mock.lastCall?.[0];
+    expect(latestDrag).toEqual(
+      expect.objectContaining({
+        x: 40,
+        y: 20,
+        isColliding: true,
+        collisions: [collisionTarget]
+      })
+    );
+    expect(latestDrag?.activeGuides.length).toBeGreaterThan(0);
+
+    rerender(
+      <Dragger
+        x={10}
+        y={20}
+        w={30}
+        h={20}
+        axis="x"
+        snapToObjects
+        snapTargets={[snapTarget]}
+        collisionDetection
+        collisionTargets={[collisionTarget]}
+        isValidMove={latestValidation}
+        onDrag={latestOnDrag}
+        onDragEnd={latestOnDragEnd}
+      >
+        {child}
+      </Dragger>
+    );
+    fireEvent.mouseUp(document);
+
+    expect(initialOnDragEnd).not.toHaveBeenCalled();
+    expect(intermediateOnDragEnd).not.toHaveBeenCalled();
+    expect(latestOnDragEnd).toHaveBeenCalledWith(latestDrag);
+  });
+
+  it('uses rerendered resize constraints and callbacks throughout an active gesture', () => {
+    const initialOnResize = vi.fn<(result: ResizeResult) => void>();
+    const latestOnResize = vi.fn<(result: ResizeResult) => void>();
+    const initialOnResizeEnd = vi.fn<(result: ResizeResult) => void>();
+    const intermediateOnResizeEnd = vi.fn<(result: ResizeResult) => void>();
+    const latestOnResizeEnd = vi.fn<(result: ResizeResult) => void>();
+    const { container, rerender } = render(
+      <Dragger
+        x={10}
+        y={20}
+        w={30}
+        h={20}
+        maxW={100}
+        onResize={initialOnResize}
+        onResizeEnd={initialOnResizeEnd}
+      />
+    );
+    const eastHandle = container.querySelector('.cursor-e-resize');
+    expect(eastHandle).not.toBeNull();
+
+    fireEvent.mouseDown(eastHandle!, {
+      button: 0,
+      clientX: 100,
+      clientY: 200
+    });
+    rerender(
+      <Dragger
+        x={10}
+        y={20}
+        w={30}
+        h={20}
+        maxW={40}
+        onResize={latestOnResize}
+        onResizeEnd={intermediateOnResizeEnd}
+      />
+    );
+    fireEvent.mouseMove(document, { clientX: 125, clientY: 200 });
+
+    expect(initialOnResize).not.toHaveBeenCalled();
+    expect(latestOnResize).toHaveBeenCalledOnce();
+    const latestResize = latestOnResize.mock.lastCall?.[0];
+    expect(latestResize).toEqual(
+      expect.objectContaining({ x: 10, y: 20, width: 40, height: 20 })
+    );
+
+    rerender(
+      <Dragger
+        x={10}
+        y={20}
+        w={30}
+        h={20}
+        maxW={40}
+        onResize={latestOnResize}
+        onResizeEnd={latestOnResizeEnd}
+      />
+    );
+    fireEvent.mouseUp(document);
+
+    expect(initialOnResizeEnd).not.toHaveBeenCalled();
+    expect(intermediateOnResizeEnd).not.toHaveBeenCalled();
+    expect(latestOnResizeEnd).toHaveBeenCalledWith(latestResize);
+  });
 });
