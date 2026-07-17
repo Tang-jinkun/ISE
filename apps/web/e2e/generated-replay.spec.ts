@@ -154,6 +154,13 @@ async function runtimeModelSnapshots(page: Page) {
 type ModelTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'model' }>;
 type ModelTrackItem = ModelTrack['items'][number];
 type CameraTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'camera' }>;
+type CameraTrackItem = CameraTrack['items'][number];
+type SubtitleTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'subtitle' }>;
+type DynamicCameraParams = Extract<
+  CameraTrackItem['params'],
+  { action: 'camera.follow_actor' | 'camera.follow_group' }
+>;
+type DynamicCameraItem = CameraTrackItem & { params: DynamicCameraParams };
 type DataLinkTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'data_link' }>;
 type FollowPathItem = ModelTrackItem & {
   params: Extract<ModelTrackItem['params'], { action: 'model.follow_path' }>;
@@ -168,6 +175,50 @@ function isFollowPathItem(item: ModelTrackItem): item is FollowPathItem {
 
 function isDestroyedStateItem(item: ModelTrackItem): item is DestroyedStateItem {
   return item.params.action === 'model.set_state' && item.params.state === 'destroyed';
+}
+
+function isDynamicCameraItem(item: CameraTrackItem): item is DynamicCameraItem {
+  return 'action' in item.params && (
+    item.params.action === 'camera.follow_actor'
+    || item.params.action === 'camera.follow_group'
+  );
+}
+
+function dynamicCameraSubjectIds(item: DynamicCameraItem) {
+  return item.params.action === 'camera.follow_actor'
+    ? [item.params.entityId]
+    : item.params.entityIds;
+}
+
+function dynamicCameraItems(config: SceneProjectConfig) {
+  return config.tracks
+    .filter((track): track is CameraTrack => track.type === 'camera' && track.visible)
+    .flatMap((track) => track.items)
+    .filter(isDynamicCameraItem)
+    .sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id));
+}
+
+function selectedSubtitleTailSamples(config: SceneProjectConfig) {
+  const subtitles = config.tracks
+    .filter((track): track is SubtitleTrack => track.type === 'subtitle' && track.visible)
+    .flatMap((track) => track.items)
+    .sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id));
+  const cameras = dynamicCameraItems(config);
+  return [2, 4, 6, 8]
+    .filter((ordinal) => ordinal <= subtitles.length)
+    .map((ordinal) => {
+      const subtitle = subtitles[ordinal - 1]!;
+      const timeMs = subtitle.startMs + Math.max(0, subtitle.durationMs - 10);
+      const activeCameras = cameras.filter((item) => (
+        item.startMs <= timeMs && timeMs < item.startMs + item.durationMs
+      ));
+      if (activeCameras.length !== 1) {
+        throw new Error(
+          `Subtitle ${ordinal} tail requires exactly one dynamic camera, found ${activeCameras.length}.`,
+        );
+      }
+      return { ordinal, subtitle, timeMs, camera: activeCameras[0]! };
+    });
 }
 
 function expectRegisteredRuntimeRoutes(
@@ -448,6 +499,43 @@ async function projectedPreviewModel(page: Page): Promise<ProjectedRuntimeModel 
   });
 }
 
+async function projectedReferencedPreviewModels(page: Page, entityIds: readonly string[]) {
+  return page.getByTestId('scene-runtime-overlay').evaluate((overlay, requestedEntityIds) => {
+    const value = overlay.getAttribute('data-runtime-models');
+    const models = value ? (JSON.parse(value) as RuntimeModelSnapshot[]) : [];
+    const requested = new Set(requestedEntityIds);
+    const map = (window as SceneMapWindow).__ISE_SCENE_MAP__;
+    if (!map) throw new Error('The preview Mapbox map is not available.');
+    const canvas = map.getCanvas();
+    return models
+      .filter((model) => (
+        requested.has(model.entityId)
+        && model.visible
+        && model.modelAssetId?.startsWith('model:')
+        && Number.isFinite(model.longitude)
+        && Number.isFinite(model.latitude)
+        && Number.isFinite(model.projectedSizePx)
+      ))
+      .map((model) => {
+        const point = map.project([model.longitude!, model.latitude!]);
+        const safeInsetPx = model.projectedSizePx! / 2 + 2;
+        return {
+          entityId: model.entityId,
+          modelAssetId: model.modelAssetId!,
+          projectedSizePx: model.projectedSizePx!,
+          point: { x: point.x, y: point.y },
+          viewport: { width: canvas.clientWidth, height: canvas.clientHeight },
+          fullyInViewport: (
+            point.x >= safeInsetPx
+            && point.x <= canvas.clientWidth - safeInsetPx
+            && point.y >= safeInsetPx
+            && point.y <= canvas.clientHeight - safeInsetPx
+          ),
+        };
+      });
+  }, [...entityIds]);
+}
+
 function maximumCameraSpread(
   cameras: MapCameraSnapshot[],
   value: (camera: MapCameraSnapshot) => number,
@@ -667,6 +755,91 @@ test('keeps the destroyed target visible in terminal and aftermath cameras', asy
         contentType: 'image/png',
       });
     }
+  }
+});
+
+test('keeps dynamic camera subjects visible at selected subtitle tails', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  test.skip(
+    testInfo.project.name !== 'desktop-chromium',
+    'Dynamic-camera visual acceptance is desktop-only.',
+  );
+  if (!persistedSceneId) {
+    throw new Error('ISE_E2E_SCENE_ID is required for dynamic-camera visual acceptance.');
+  }
+
+  await authenticate(page);
+  const sceneConfigResponse = page.waitForResponse((response) => (
+    response.request().method() === 'GET'
+    && response.url().includes(`/SceneBack/scene/${encodeURIComponent(persistedSceneId)}`)
+  ));
+  await page.goto(`/preview?projectId=${encodeURIComponent(persistedSceneId)}`);
+  await expect(page.getByTestId('scene-runtime-ready')).toHaveAttribute('data-status', 'ready');
+  await expectNonBlankCanvas(page);
+  const sceneConfig = await persistedSceneConfig(await sceneConfigResponse);
+  const cameras = dynamicCameraItems(sceneConfig);
+  const followActors = cameras.filter(
+    (item) => item.params.action === 'camera.follow_actor',
+  );
+  const followGroups = cameras.filter(
+    (item) => item.params.action === 'camera.follow_group',
+  );
+  expect(followActors.length).toBeGreaterThan(0);
+  expect(followGroups.length).toBeGreaterThan(0);
+
+  const subtitleSamples = selectedSubtitleTailSamples(sceneConfig);
+  const subtitleCount = sceneConfig.tracks
+    .filter((track): track is SubtitleTrack => track.type === 'subtitle' && track.visible)
+    .flatMap((track) => track.items).length;
+  expect(subtitleSamples.map((sample) => sample.ordinal)).toEqual(
+    [2, 4, 6, 8].filter((ordinal) => ordinal <= subtitleCount),
+  );
+  expect(subtitleSamples.length).toBeGreaterThan(0);
+
+  const expectVisibleCameraSubject = async (camera: DynamicCameraItem, timeMs: number) => {
+    await seekPreviewRuntime(page, timeMs);
+    const subjectIds = dynamicCameraSubjectIds(camera);
+    await expect.poll(async () => (
+      await projectedReferencedPreviewModels(page, subjectIds)
+    ).filter((model) => model.fullyInViewport).length).toBeGreaterThan(0);
+    const projected = await projectedReferencedPreviewModels(page, subjectIds);
+    const visibleModel = projected.find((model) => model.fullyInViewport);
+    expect(visibleModel).toBeDefined();
+    expect(visibleModel!.modelAssetId).toMatch(/^model:/);
+    expect(visibleModel!.projectedSizePx).toBeGreaterThan(0);
+    const isolatedPixels = await isolatePreviewModelPixels(page, visibleModel!.entityId);
+    expect(isolatedPixels.changedPixels).toBeGreaterThan(4);
+    expect(isolatedPixels.maximumChannelDelta).toBeGreaterThan(8);
+  };
+
+  for (const sample of subtitleSamples) {
+    await expectVisibleCameraSubject(sample.camera, sample.timeMs);
+  }
+
+  const globalCamera = followGroups.find((item) => (
+    item.params.action === 'camera.follow_group' && item.params.framing === 'global'
+  ));
+  const engagementCamera = [...followGroups].reverse().find((item) => (
+    item.params.action === 'camera.follow_group' && item.params.framing === 'engagement'
+  ));
+  expect(globalCamera).toBeDefined();
+  expect(engagementCamera).toBeDefined();
+
+  for (const [label, camera] of [
+    ['global-tail', globalCamera!],
+    ['engagement-tail', engagementCamera!],
+  ] as const) {
+    const timeMs = Math.min(
+      sceneConfig.totalDurationMs - 1,
+      camera.startMs + camera.durationMs - 10,
+    );
+    await expectVisibleCameraSubject(camera, timeMs);
+    const screenshotPath = testInfo.outputPath(`persisted-dynamic-camera-${label}.png`);
+    await page.screenshot({ path: screenshotPath });
+    await testInfo.attach(`persisted-dynamic-camera-${label}`, {
+      path: screenshotPath,
+      contentType: 'image/png',
+    });
   }
 });
 
