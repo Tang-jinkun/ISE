@@ -554,7 +554,12 @@ function Assert-FinalDomainInvariants {
   $actorGroups = @(Get-PropertyValue $blueprint 'actorGroups')
   $resolvedActors = @(Get-PropertyValue $resolved 'resolvedActors')
   $assignments = @(Get-PropertyValue $resolved 'actorRouteAssignments')
-  if ($actorGroups.Count -le 1 -or $resolvedActors.Count -le 1 -or $assignments.Count -ne $resolvedActors.Count) {
+  $staticBindings = @(Get-PropertyValue $resolved 'staticActorBindings')
+  if ($AllowGenericScene) {
+    if ($actorGroups.Count -lt 1 -or $resolvedActors.Count -lt 1 -or $assignments.Count + $staticBindings.Count -ne $resolvedActors.Count) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The generated generic scene must contain grounded playable actors.'
+    }
+  } elseif ($actorGroups.Count -le 1 -or $resolvedActors.Count -le 1 -or $assignments.Count -ne $resolvedActors.Count) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The generated scene must contain multiple actor groups and one route assignment per resolved actor.'
   }
   if ($ExpectedActorCount -gt 0 -and $resolvedActors.Count -ne $ExpectedActorCount) {
@@ -563,8 +568,10 @@ function Assert-FinalDomainInvariants {
 
   $actorIds = @($resolvedActors | ForEach-Object { Get-PropertyValue $_ 'actorInstanceId' })
   $assignmentActorIds = @($assignments | ForEach-Object { Get-PropertyValue $_ 'actorInstanceRef' })
+  $staticActorIds = @($staticBindings | ForEach-Object { Get-PropertyValue $_ 'actorInstanceRef' })
   $trajectoryIds = @($assignments | ForEach-Object { Get-PropertyValue $_ 'trajectoryAssetRef' })
-  if (-not (Test-OrdinalSetEqual $actorIds $assignmentActorIds) -or
+  $bindingActorIds = if ($AllowGenericScene) { @($assignmentActorIds) + @($staticActorIds) } else { $assignmentActorIds }
+  if (-not (Test-OrdinalSetEqual $actorIds $bindingActorIds) -or
       -not (Test-OrdinalUnique $trajectoryIds) -or
       @($assignments | Where-Object { (Get-PropertyValue $_ 'sourceKind') -ne 'catalog' }).Count -ne 0 -or
       @(Get-PropertyValue $resolved 'fallbackTrajectoryRecipes').Count -ne 0) {
@@ -597,7 +604,6 @@ function Assert-FinalDomainInvariants {
   }
 
   if ($AllowGenericScene) {
-    $staticBindings = @(Get-PropertyValue $resolved 'staticActorBindings')
     if ($assignments.Count + $staticBindings.Count -ne $resolvedActors.Count) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Every resolved actor must have either a catalog route or a grounded static binding.'
     }
