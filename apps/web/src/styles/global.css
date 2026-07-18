@@ -187,7 +187,7 @@
 
   .chat-markdown code {
     border-radius: 0.25rem;
-    background: hsl(var(--muted));
+    background: var(--muted);
     padding: 0.1rem 0.3rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
@@ -195,9 +195,9 @@
 
   .chat-markdown pre {
     overflow-x: auto;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid var(--border);
     border-radius: 0.5rem;
-    background: hsl(var(--muted) / 0.7);
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
     padding: 0.65rem 0.75rem;
   }
 
@@ -210,20 +210,20 @@
   }
 
   .chat-markdown blockquote {
-    border-left: 2px solid hsl(var(--border));
+    border-left: 2px solid var(--border);
     padding-left: 0.75rem;
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
   }
 
   .chat-markdown a {
-    color: hsl(var(--primary));
+    color: var(--primary);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
 
   .chat-markdown hr {
     margin: 0.75rem 0;
-    border-color: hsl(var(--border));
+    border-color: var(--border);
   }
 
   .timeline-scrollbar::-webkit-scrollbar {
