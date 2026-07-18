@@ -109,11 +109,17 @@ export function resolveActorAssets(
   }
 
   const model = compatibleModel(actor, registry)
-  if (model === null) return {
+  if (model === null) return position ? {
+    actorGroupId: actor.groupId, trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback', staticPosition: position,
+    diagnostics: [diagnostic('ACTOR_MODEL_AMBIGUOUS', `${actor.groupId}: multiple compatible models; using grounded marker only`, 'warning')],
+  } : {
     actorGroupId: actor.groupId, trajectoryAssetIds: [], mediaAssetIds: [], status: 'unresolved',
     diagnostics: [diagnostic('ACTOR_MODEL_AMBIGUOUS', `${actor.groupId}: multiple compatible models`, 'warning')],
   }
-  if (!model) return {
+  if (!model) return position ? {
+    actorGroupId: actor.groupId, trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback', staticPosition: position,
+    diagnostics: [diagnostic('ACTOR_MODEL_UNRESOLVED', `${actor.groupId}: no compatible model; using grounded marker only`, 'warning')],
+  } : {
     actorGroupId: actor.groupId, trajectoryAssetIds: [], mediaAssetIds: [], status: 'unresolved',
     diagnostics: [diagnostic('ACTOR_MODEL_UNRESOLVED', `${actor.groupId}: no compatible model`, 'warning')],
   }

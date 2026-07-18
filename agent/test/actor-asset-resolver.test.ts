@@ -80,6 +80,21 @@ test('reports ambiguity rather than guessing between compatible assets', () => {
   assert.equal(result.diagnostics[0]?.code, 'ACTOR_MODEL_AMBIGUOUS')
 })
 
+test('uses a marker-only static fallback when grounded coordinates exist but models are ambiguous', () => {
+  const result = resolveActorAssets(actor(), {
+    ...genericPack,
+    locationProfiles: [{ locationId: 'location:north-base', aliases: [], coordinates: [70, 30] }],
+  }, registry([
+    model('model:generic-fighter-a', 'Generic Fighter A'),
+    model('model:generic-fighter-b', 'Generic Fighter B'),
+  ]))
+
+  assert.equal(result.status, 'static-fallback')
+  assert.equal(result.modelAssetId, undefined)
+  assert.deepEqual(result.staticPosition?.coordinates, [70, 30])
+  assert.equal(result.diagnostics.some(item => item.code === 'ACTOR_MODEL_AMBIGUOUS'), true)
+})
+
 test('falls back to a static grounded marker when no trajectory is reliable', () => {
   const result = resolveActorAssets(actor(), {
     ...genericPack,
