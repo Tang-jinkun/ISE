@@ -37,3 +37,18 @@ This includes the frozen Indo-Pak planner suite and two invented-faction semanti
 - Legacy pack `actorProfiles` preserve current Indo-Pak actor IDs and output; general entity profiles supply the cross-scenario actor path.
 - Weapon actor planning remains event-scoped. It does not create launcher, target, hit, or outcome relations.
 - `npx tsc --noEmit` still reports one pre-existing unrelated implicit-any error in `test/review-api.test.ts:120`; focused planner tests are green.
+
+## Review Fixes
+
+- Added evidence-backed discovery for `generic/v1`: unmatched factual entities now create stable actor groups without assigning a model or route. Unknown faction and missing/ambiguous location or identity are emitted as public planning diagnostics.
+- Normalized `fighter-formation` pack profiles to the quantity resolver's `formation` role, preserving the protection against treating a single destruction as the full formation count.
+- Quantity conflict behavior now preserves exact evidence over a conflicting user value; the returned reason records the conflict so scene compilation continues.
+- Added a real unmatched `buildSceneBlueprint` test, an English numeric aircraft count assertion, and a profile-formation destruction regression.
+
+Focused verification after the review fixes:
+
+```text
+tests 54
+pass 54
+fail 0
+```

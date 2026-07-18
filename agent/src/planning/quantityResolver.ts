@@ -105,6 +105,17 @@ function exactQuantity(record: EvidenceRecord, input: ResolveQuantityInput): num
   const claim = normalized(record.claim)
   const kind = requestedEntityKind(input)
   const entities = requestedEntities(input)
+  const englishUnitMatches = [...claim.matchAll(/\b(\d+)\s+(?:(?:[a-z0-9-]+)\s+){0,3}(aircraft|fighters?|missiles?|weapons?|vehicles?)\b/gu)]
+    .filter(match => {
+      const unitKind: EntityKind = /aircraft|fighter/u.test(match[2]!) ? 'aircraft' : /missile|weapon/u.test(match[2]!) ? 'weapon' : 'generic'
+      return unitKind === kind || (unitKind === 'generic' && kind === 'generic')
+    })
+    .filter(match => {
+      const start = match.index ?? 0
+      const end = start + match[0].length
+      return Math.min(...entities.flatMap(entity => occurrenceDistances(claim, entity, start, end))) <= 8
+    })
+  if (englishUnitMatches[0] !== undefined) return Number(englishUnitMatches[0]![1])
   const matches = [...claim.matchAll(/(?<![0-9〇零一二两兩三四五六七八九十百千万萬亿億兆廿卄廾卅卌皕壹贰貳弐叁參肆伍陆陸柒捌玖拾佰仟点.,，．])(\d+|[一二三四五六七八九十])([架枚个])/gu)]
     .filter(match => isCompatibleUnit(match[2] as QuantityUnit, kind))
     .filter(match => belongsToRequestedEntity(
@@ -169,15 +180,14 @@ export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
       throw new Error(`FACTUAL_QUANTITY_CONFLICT: conflicting evidence quantities for ${input.entityName}`)
     }
     const value = formationMatches[0]!.value
-    if (input.userValue !== undefined && input.userValue !== value) {
-      throw new Error(`FACTUAL_QUANTITY_CONFLICT: ${input.entityName} evidence=${value} user=${input.userValue}`)
-    }
     return quantityDecisionSchema.parse({
       value,
       constraint: 'exact',
       source: 'evidence',
       evidenceRefs: formationMatches.map(match => match.evidenceId),
-      reason: 'Explicit quantity adjacent to entity',
+      reason: input.userValue !== undefined && input.userValue !== value
+        ? `Explicit quantity adjacent to entity; User quantity ${input.userValue} conflicts and evidence takes precedence`
+        : 'Explicit quantity adjacent to entity',
     })
   }
 

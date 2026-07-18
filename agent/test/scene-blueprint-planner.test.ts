@@ -231,14 +231,17 @@ test('uses the single-launch default for each explicit unquantified launch', () 
   })
 })
 
-test('rejects a user value that conflicts with an exact evidence quantity', () => {
-  assert.throws(() => resolveQuantity({
+test('keeps exact evidence when a user value conflicts', () => {
+  const decision = resolveQuantity({
     entityName: '阵风',
     platformType: 'fighter',
     role: 'formation',
     evidence: quantityEvidence,
     userValue: 3,
-  }), /FACTUAL_QUANTITY_CONFLICT/)
+  })
+  assert.equal(decision.value, 4)
+  assert.equal(decision.source, 'evidence')
+  assert.match(decision.reason, /User quantity 3 conflicts/)
 })
 
 test('uses a valid user value instead of a default', () => {

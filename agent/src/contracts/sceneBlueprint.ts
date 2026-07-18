@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { compilationDiagnosticSchema } from '../services/runtimeDiagnostics.ts'
+import type { CompilationDiagnostic } from '../services/runtimeDiagnostics.ts'
 
 const fingerprintSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 
@@ -78,6 +79,7 @@ export interface ActorGroupIntent extends ActorGroup {
   participantAliases: readonly string[]
   evidenceRefs: readonly string[]
   platformKind: 'aircraft' | 'weapon' | 'sensor' | 'vehicle' | 'unknown'
+  diagnostics: readonly CompilationDiagnostic[]
 }
 export type ActorInstance = z.infer<typeof actorInstanceSchema>
 export type SceneBeat = z.infer<typeof sceneBeatSchema>
