@@ -60,6 +60,7 @@ export const scenarioTrajectoryMappingSchema = z.strictObject({
 export const formationBundleSchema = z.strictObject({
   bundleId: z.string().min(1),
   actorGroupRef: z.string().min(1),
+  modelAssetRef: modelAssetRefSchema.optional(),
   routeAssetRefs: z.array(trajectoryAssetRefSchema).min(1),
   recommendedActorCount: z.number().int().positive(),
   role: z.string().min(1),

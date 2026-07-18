@@ -79,14 +79,16 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   const assetResolutions = blueprint.actorGroups.map(group =>
     resolveActorAssets(group, scenarioPack, assetRegistry))
   const resolutionByGroup = new Map(assetResolutions.map(resolution => [resolution.actorGroupId, resolution]))
+  const scenarioBundles = new Map(mapping.bundles.map(bundle => [bundle.bundleId, bundle]))
   const movingGroups = blueprint.actorGroups.filter(group =>
     (resolutionByGroup.get(group.groupId)?.trajectoryAssetIds.length ?? 0) > 0)
-  const resolvedFormationBundles = scenarioPack.packId === 'generic/v1'
+  const resolvedFormationBundles = (scenarioPack.packId === 'generic/v1'
     ? movingGroups.map(group => {
       const resolution = resolutionByGroup.get(group.groupId)!
       return formationBundleSchema.parse({
         bundleId: `catalog:${group.groupId}`,
         actorGroupRef: group.groupId,
+        ...(resolution.modelAssetId ? { modelAssetRef: resolution.modelAssetId } : {}),
         routeAssetRefs: resolution.trajectoryAssetIds,
         recommendedActorCount: resolution.trajectoryAssetIds.length,
         role: group.role,
@@ -97,7 +99,13 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
         diagnostics: [],
       })
     })
-    : resolveFormationBundles(movingGroups, catalog, mapping)
+    : resolveFormationBundles(movingGroups, catalog, mapping))
+    .map(bundle => ({
+      ...bundle,
+      ...(bundle.modelAssetRef ? {} : {
+        modelAssetRef: scenarioBundles.get(bundle.bundleId)?.modelAssetRef,
+      }),
+    }))
   const movingActors = resolvedActors.filter(actor =>
     (resolutionByGroup.get(actor.actorGroupRef)?.trajectoryAssetIds.length ?? 0) > 0)
   const actorRouteAssignments = assignActorRoutes(movingActors, resolvedFormationBundles)
@@ -113,7 +121,6 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
       lineage: [resolution.staticPosition.lineage, `actor-resolution:${resolution.status}`],
     }]
   })
-  const scenarioBundles = new Map(mapping.bundles.map(bundle => [bundle.bundleId, bundle]))
 
   const sourceBlueprintFingerprint = fingerprint(blueprint)
   const scenarioMappingFingerprint = fingerprint(mapping)

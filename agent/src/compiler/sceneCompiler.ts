@@ -15,7 +15,6 @@ import { narrationPlanSchema, type NarrationPlan } from '../contracts/narrationP
 import { sceneBlueprintSchema, type SceneBlueprint } from '../contracts/sceneBlueprint.ts'
 import { resolvedScenePlanSchema, type ResolvedScenePlan } from '../contracts/resolvedScenePlan.ts'
 import { choreographyPlanSchema, type ChoreographyPlan } from '../contracts/choreographyPlan.ts'
-import { indoPakTrajectoryScenario } from '../config/indoPakTrajectoryScenario.ts'
 import { solveHybridTiming, solveSynchronizedHybridTiming } from './hybridTimingSolver.ts'
 import { solveInteractionGeometry, type InteractionIntent, type InteractionPoint } from './interactionSolver.ts'
 import { AssetRegistry, normalizeAssetName } from '../services/assetRegistry.ts'
@@ -508,7 +507,6 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   const sceneBeats = new Map(sceneBlueprint.sceneBeats.map(beat => [beat.sceneBeatId, beat]))
   const actorGroups = new Map(sceneBlueprint.actorGroups.map(group => [group.groupId, group]))
   const formationBundles = new Map(resolvedScenePlan.resolvedFormationBundles.map(bundle => [bundle.actorGroupRef, bundle]))
-  const scenarioBundles = new Map(indoPakTrajectoryScenario.bundles.map(bundle => [bundle.bundleId, bundle]))
   const assignments = new Map(resolvedScenePlan.actorRouteAssignments.map(assignment => [assignment.actorInstanceRef, assignment]))
   const staticBindings = new Map(resolvedScenePlan.staticActorBindings.map(binding => [binding.actorInstanceRef, binding]))
   const lifecycles = new Map(choreographyPlan.actorLifecycles.map(lifecycle => [lifecycle.actorInstanceRef, lifecycle]))
@@ -516,7 +514,6 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   const entities = resolvedScenePlan.resolvedActors.map(actor => {
     const group = actorGroups.get(actor.actorGroupRef)
     const formation = formationBundles.get(actor.actorGroupRef)
-    const scenario = formation ? scenarioBundles.get(formation.bundleId) : undefined
     const assignment = assignments.get(actor.actorInstanceId)
     const staticBinding = staticBindings.get(actor.actorInstanceId)
     if (staticBinding) {
@@ -538,7 +535,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const compatibleModels = assetRegistry.assets.filter((asset): asset is Extract<AssetRegistryEntry, { kind: 'model' }> =>
       asset.kind === 'model' && asset.availability === 'available'
       && asset.model.entityTypes.includes(group.role.includes('weapon') ? 'missile' : 'aircraft'))
-    const modelAssetRef = scenario?.modelAssetRef ?? (compatibleModels.length === 1 ? compatibleModels[0]!.assetId : undefined)
+    const modelAssetRef = formation.modelAssetRef ?? (compatibleModels.length === 1 ? compatibleModels[0]!.assetId : undefined)
     if (!modelAssetRef) fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', actor.actorInstanceId)
     exactAvailableAsset(assetRegistry, modelAssetRef, 'model')
     exactAvailableAsset(assetRegistry, assignment.trajectoryAssetRef, 'trajectory')

@@ -1179,6 +1179,13 @@ test('resolveSceneBlueprint assigns unique registered routes with exact source f
   assert.equal(resolved.diagnostics.some(item => item.message.includes('J-10CE')), true)
 })
 
+test('resolveSceneBlueprint persists the exact moving model binding instead of requiring compiler scenario config', () => {
+  const { resolved } = resolvedFixture()
+  const rafale = resolved.resolvedFormationBundles.find(bundle => bundle.actorGroupRef === 'group:india-rafale-ambala') as typeof resolved.resolvedFormationBundles[number] & { modelAssetRef?: string }
+
+  assert.equal(rafale.modelAssetRef, 'model:rafale')
+})
+
 test('resolveSceneBlueprint propagates route capacity exhaustion instead of synthesizing routes', () => {
   const fixture = resolvedFixture()
   const actorGroups = fixture.blueprint.actorGroups.map(group => group.groupId === 'group:india-rafale-ambala'
