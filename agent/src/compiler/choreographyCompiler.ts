@@ -154,7 +154,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       const groundedPakistaniFighterTarget = sceneBeat.requiredFacts.some(fact =>
         /\bpakistani\s+(?:fighters?|aircraft)\b|\bpakistan(?:'s|\u2019s)\s+(?:fighters?|aircraft)\b|\b(?:fighters?|aircraft)\s+of\s+pakistan\b|\u5df4\u65b9(?:\u6218\u673a|\u98de\u673a)/iu.test(fact))
       const groundedIncomingIndianMissile = sceneBeat.requiredFacts.some(fact =>
-        /\b(?:incoming\s+indian|indian\s+incoming|indian\s+first[- ]strike|first[- ]strike\s+indian|incoming\s+first[- ]strike|first[- ]strike\s+incoming)\s+missiles?\b|\u5370\u65b9\u6765\u88ad\u5bfc\u5f39/iu.test(fact))
+        /\b(?:incoming\s+indian|indian\s+incoming|indian\s+first[- ]strike|first[- ]strike\s+indian|incoming\s+first[- ]strike|first[- ]strike\s+incoming)\s+missiles?\b|(?:\u5370\u65b9)?\u6765\u88ad\u5bfc\u5f39|\u62e6\u622a\u5bfc\u5f39.{0,12}\u6765\u88ad\u5bfc\u5f39/iu.test(fact))
       const firstStrikeTarget = fighter('pakistan', 'jf17') ?? (groundedPakistaniFighterTarget
         ? actorForScene(group => group.role === 'fighter-formation'
           && group.side === 'pakistan'

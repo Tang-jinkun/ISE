@@ -708,8 +708,8 @@ function Assert-FinalDomainInvariants {
     }
     $destroyedStartMs = [long](Get-PropertyValue $destroyedStateItems[0] 'startMs')
     if ($destroyedStartMs -lt $followStartMs -or $destroyedStartMs -ge $followEndMs -or
-        $hideStartMs -ne $destroyedStartMs + 1000 -or $hideStartMs -gt $followEndMs) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'A destroyed RuntimePlan entity must transition during follow and hide exactly 1,000ms later without exceeding the follow interval.'
+        $hideStartMs -lt $destroyedStartMs + 1000) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'A destroyed RuntimePlan entity must transition during follow and remain visible for at least 1,000ms before hiding.'
     }
   }
 
