@@ -171,11 +171,15 @@ export function reduceModelFrame(
           const sourceTimeMs = timing.sourceStartMs + narrativeProgress * (timing.sourceEndMs - timing.sourceStartMs);
           const sourceProgress = (sourceTimeMs - timing.sourceStartMs)
             / Math.max(1, timing.sourceEndMs - timing.sourceStartMs);
-          setTrajectory(item.params.trajectoryAssetId, sourceProgress);
+          setTrajectory(item.params.trajectoryAssetId, entity.kind === 'missile'
+            ? missileProgress(sourceProgress)
+            : sourceProgress);
         } else {
           setTrajectory(
             item.params.trajectoryAssetId,
-            item.durationMs === 0 ? 1 : (seekTimeMs - item.startMs) / item.durationMs,
+            entity.kind === 'missile'
+              ? missileProgress(item.durationMs === 0 ? 1 : (seekTimeMs - item.startMs) / item.durationMs)
+              : item.durationMs === 0 ? 1 : (seekTimeMs - item.startMs) / item.durationMs,
           );
         }
         break;
@@ -197,6 +201,13 @@ export function reduceModelFrame(
     sample,
     trail,
   };
+}
+
+function missileProgress(value: number): number {
+  const progress = clamp01(value);
+  // Preserve the source route while giving terminal guidance a visible
+  // acceleration instead of a perceptible crawl into the impact point.
+  return 1 - (1 - progress) ** 1.35;
 }
 
 export function createModelTransformHierarchy(content: THREE.Object3D): ModelTransformHierarchy {
