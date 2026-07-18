@@ -3,6 +3,9 @@ param(
   [switch]$DryRun,
   [string]$ApiBaseUrl = 'http://127.0.0.1:3333',
   [string]$AgentBaseUrl = 'http://127.0.0.1:4444',
+  [string]$SourceDocxPath = '',
+  [string]$OutputDirectory = '',
+  [switch]$GenericMode,
   [ValidateRange(1, 30)][int]$PollIntervalSeconds = 2,
   [ValidateRange(30, 3600)][int]$DraftTimeoutSeconds = 900,
   [ValidateRange(30, 3600)][int]$CompileTimeoutSeconds = 1200
@@ -540,7 +543,7 @@ function Test-RequiredEngagementOutcomes {
 }
 
 function Assert-FinalDomainInvariants {
-  param($Selection, [int]$ExpectedActorCount = 0)
+  param($Selection, [int]$ExpectedActorCount = 0, [switch]$AllowGenericScene)
   $blueprint = Get-PropertyValue $Selection.SceneBlueprint 'data'
   $resolved = Get-PropertyValue $Selection.ResolvedScenePlan 'data'
   $choreography = Get-PropertyValue $Selection.ChoreographyPlan 'data'
@@ -591,6 +594,22 @@ function Assert-FinalDomainInvariants {
   if (-not (Test-OrdinalSetEqual $choreographyActorIds $actorIds) -or
       -not (Test-OrdinalSetEqual $entityIds $actorIds)) {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Choreography and RuntimePlan entities must exactly match resolved actors.'
+  }
+
+  if ($AllowGenericScene) {
+    $staticBindings = @(Get-PropertyValue $resolved 'staticActorBindings')
+    if ($assignments.Count + $staticBindings.Count -ne $resolvedActors.Count) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Every resolved actor must have either a catalog route or a grounded static binding.'
+    }
+    $markerCommands = @($runtime.commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'marker.show' })
+    $followCommands = @($runtime.commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'model.follow_path' })
+    if ($markerCommands.Count -eq 0 -and $followCommands.Count -eq 0) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes require at least one grounded marker or moving actor.'
+    }
+    if (@($runtime.interactions | Where-Object { (Get-PropertyValue $_ 'status') -eq 'resolved' }).Count -gt 0) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes may not fabricate resolved interactions.'
+    }
+    return
   }
 
   if ($ExpectedActorCount -gt 0) {
@@ -1138,7 +1157,7 @@ function Get-FlowAccessToken {
 }
 
 function Invoke-RealFlow {
-  param([string]$RepoRoot, [System.IO.FileInfo]$SourceFile)
+  param([string]$RepoRoot, [System.IO.FileInfo]$SourceFile, [switch]$AllowGenericScene)
   Add-Type -AssemblyName System.Net.Http
   $handler = New-Object System.Net.Http.HttpClientHandler
   $handler.AllowAutoRedirect = $false
@@ -1219,7 +1238,7 @@ function Invoke-RealFlow {
 
   Assert-CompiledCorrelation $completed.Compiled $completed.Accepted $reviewArtifactId
   # Actor counts are authored by the source DOCX and may change with the scenario.
-  Assert-FinalDomainInvariants $completed
+  Assert-FinalDomainInvariants $completed -AllowGenericScene:$AllowGenericScene
   $eventPlan = Get-PropertyValue $completed.Accepted 'data'
   $narrationPlan = Get-PropertyValue $completed.Narration 'data'
   $sceneBlueprint = Get-PropertyValue $completed.SceneBlueprint 'data'
@@ -1242,9 +1261,15 @@ function Invoke-RealFlow {
   $sceneData = Require-EnvelopeData $sceneResponse 'REAL_DEMO_SCENE_RESPONSE_INVALID'
   $sceneId = Require-String (Get-PropertyValue $sceneData 'id') 'REAL_DEMO_SCENE_RESPONSE_INVALID' 'scene id'
 
-  $outputDir = Join-Path $RepoRoot '.superpowers/sdd/real-demo'
+  $outputDir = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    Join-Path $RepoRoot $(if ($AllowGenericScene) { '.superpowers/sdd/cross-document-demo' } else { '.superpowers/sdd/real-demo' })
+  } elseif ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    [System.IO.Path]::GetFullPath($OutputDirectory)
+  } else {
+    [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
+  }
   Export-FinalArtifacts $outputDir $completed $sceneId $SourceFile.FullName
-  [Console]::Out.WriteLine('REAL_DEMO_OK: correlated artifacts exported and Scene persisted under .superpowers/sdd/real-demo.')
+  [Console]::Out.WriteLine("REAL_DEMO_OK: correlated artifacts exported and Scene persisted under $outputDir.")
 }
 
 try {
@@ -1254,7 +1279,13 @@ try {
   $apiUri = Assert-ServiceOrigin $ApiBaseUrl 'REAL_DEMO_API_ORIGIN_INVALID' 'API origin'
   $agentUri = Assert-ServiceOrigin $AgentBaseUrl 'REAL_DEMO_AGENT_ORIGIN_INVALID' 'Agent origin'
   $sourceName = -join ([char[]]@(0x5370, 0x5DF4, 0x8FB9, 0x5883, 0x7A7A, 0x4E2D, 0x5BF9, 0x6297, 0x884C, 0x52A8, 0x6218, 0x540E, 0x590D, 0x76D8, 0x62A5, 0x544A))
-  $sourcePath = Join-Path $repoRoot ($sourceName + '.docx')
+  $sourcePath = if ([string]::IsNullOrWhiteSpace($SourceDocxPath)) {
+    Join-Path $repoRoot ($sourceName + '.docx')
+  } elseif ([System.IO.Path]::IsPathRooted($SourceDocxPath)) {
+    [System.IO.Path]::GetFullPath($SourceDocxPath)
+  } else {
+    [System.IO.Path]::GetFullPath((Join-Path $repoRoot $SourceDocxPath))
+  }
   $sourceFile = Assert-DocxFile $sourcePath
   Assert-RepositoryContracts $repoRoot
   $fixtures = New-DryRunFixtures
@@ -1270,7 +1301,7 @@ try {
   if ($DryRun) {
     [Console]::Out.WriteLine('DRY_RUN_OK: origins, route contracts, source DOCX, seven artifact schemas, and final-domain invariants passed; no service connection or HTTP request was attempted.')
   } else {
-    Invoke-RealFlow $repoRoot $sourceFile
+    Invoke-RealFlow $repoRoot $sourceFile -AllowGenericScene:$GenericMode
   }
 } catch {
   $message = $_.Exception.Message
