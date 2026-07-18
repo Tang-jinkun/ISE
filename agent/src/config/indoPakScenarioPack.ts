@@ -1,6 +1,6 @@
 import type { ScenarioPack } from '../contracts/scenarioPack.ts'
 
-export const indoPakScenarioPack: ScenarioPack = {
+export const indoPakScenarioPack = {
   schemaVersion: 'ise-scenario-pack/v1', packId: 'indo-pak-air-combat/v1', version: '1', displayName: 'Indo-Pak Air Combat',
   matchRules: [{ ruleId: 'indo-pak-explicit-platform-and-location/v1', entityAliases: ['Su-30MKI', '苏-30MKI', 'Rafale', '阵风', 'JF-17', 'JF17', 'Netra AEW&CS', 'Saab 2000 Erieye', 'ZDK-03'], locationAliases: ['Adampur', '阿达姆普尔', 'Ambala', '安巴拉', 'Minhas', 'Minas', '米纳斯', 'Rafiki', '拉菲基'], minimumScore: 2 }],
   factions: [{ factionId: 'india', aliases: ['India', '印方'], displayName: 'India' }, { factionId: 'pakistan', aliases: ['Pakistan', '巴方'], displayName: 'Pakistan' }],
@@ -32,4 +32,4 @@ export const indoPakScenarioPack: ScenarioPack = {
     { groupId: 'group:pakistan-awacs-proxy', semanticEntityRef: '巴方预警机（通用示意模型）', aliases: ['巴方预警机', '巴基斯坦预警机', 'Saab 2000 Erieye', 'ZDK-03'], factionId: 'pakistan', locationAliases: [], locationRef: 'location:pakistan-awacs', platformType: 'awacs', role: 'early-warning-support', formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: 'awacs-support/pakistan/v1', linkedEvidenceOnly: true, participantAliases: ['巴方预警机', 'Saab 2000 Erieye', 'ZDK-03'], sharedEvidenceAliases: ['Indian and Pakistani AWACS', '双方预警机', '印巴双方预警机'], diagnostics: [] },
   ],
   weaponBehaviorProfiles: [{ factionId: 'india', behaviorProfile: 'weapon-launch/india-first-strike/v1', matchTerms: [] }, { factionId: 'pakistan', behaviorProfile: 'weapon-launch/pakistan-intercept/v1', matchTerms: ['intercept', 'incoming missile', '拦截', '来袭导弹'] }, { factionId: 'pakistan', behaviorProfile: 'weapon-launch/pakistan-counterattack/v1', matchTerms: ['counterattack', 'rafale', '反击'] }],
-}
+} as const satisfies ScenarioPack

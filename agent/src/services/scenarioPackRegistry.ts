@@ -86,3 +86,9 @@ export function scenarioPackForLineage(lineage: { packId: string; version: strin
   }
   return undefined
 }
+
+export function legacyCompatibilityPackForBlueprint(
+  lineage: { packId: string; version: string } | undefined,
+): ScenarioPack | undefined {
+  return lineage === undefined ? indoPakScenarioPack : undefined
+}

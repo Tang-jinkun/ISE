@@ -16,8 +16,7 @@ import { fingerprint } from '../services/fingerprint.ts'
 import { resolveFormationBundles } from '../services/formationBundleResolver.ts'
 import { CompilationError, diagnostic, type CompilationDiagnostic } from '../services/runtimeDiagnostics.ts'
 import { buildTrajectoryCatalog } from '../services/trajectoryCatalog.ts'
-import { scenarioPackForLineage } from '../services/scenarioPackRegistry.ts'
-import { indoPakScenarioPack } from '../config/indoPakScenarioPack.ts'
+import { legacyCompatibilityPackForBlueprint, scenarioPackForLineage } from '../services/scenarioPackRegistry.ts'
 import { scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
 
 export interface ResolveSceneBlueprintInput {
@@ -61,7 +60,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   const assetRegistry = assetRegistrySnapshotSchema.parse(input.assetRegistry)
   const catalog = buildTrajectoryCatalog(assetRegistry)
   const scenarioPack = blueprint.scenarioPack === undefined
-    ? indoPakScenarioPack
+    ? legacyCompatibilityPackForBlueprint(undefined)
     : scenarioPackForLineage(blueprint.scenarioPack)
   if (scenarioPack === undefined) throw new CompilationError([diagnostic(
     'SCENARIO_PACK_UNAVAILABLE',

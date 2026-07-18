@@ -4,7 +4,7 @@ import type { EvidenceIR } from '../src/contracts/evidence.ts'
 import type { EventPlan } from '../src/contracts/eventPlan.ts'
 import type { ScenarioPack } from '../src/contracts/scenarioPack.ts'
 import { indoPakScenarioPack } from '../src/config/indoPakScenarioPack.ts'
-import { genericScenarioPack, selectScenarioPack, selectScenarioPackFrom } from '../src/services/scenarioPackRegistry.ts'
+import { genericScenarioPack, legacyCompatibilityPackForBlueprint, selectScenarioPack, selectScenarioPackFrom } from '../src/services/scenarioPackRegistry.ts'
 
 function eventPlan(): EventPlan {
   return {
@@ -85,4 +85,9 @@ test('selects deterministically for repeated identical EvidenceIR', () => {
 
   assert.deepEqual(selections.map(selection => ({ packId: selection.pack.packId, diagnostics: selection.diagnostics })),
     Array.from({ length: 10 }, () => ({ packId: 'indo-pak-air-combat/v1', diagnostics: [] })))
+})
+
+test('provides a registry-owned compatibility pack only for blueprints without lineage', () => {
+  assert.equal(legacyCompatibilityPackForBlueprint(undefined)?.packId, 'indo-pak-air-combat/v1')
+  assert.equal(legacyCompatibilityPackForBlueprint({ packId: 'missing/v1', version: '1' }), undefined)
 })

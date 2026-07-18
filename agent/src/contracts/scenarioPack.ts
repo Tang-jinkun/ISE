@@ -2,33 +2,33 @@ import type { ScenarioTrajectoryBundle } from './trajectoryCatalog.ts'
 
 export interface ScenarioMatchRule {
   ruleId: string
-  entityAliases: string[]
-  locationAliases: string[]
+  entityAliases: readonly string[]
+  locationAliases: readonly string[]
   minimumScore: number
 }
 
 export interface FactionProfile {
   factionId: string
-  aliases: string[]
+  aliases: readonly string[]
   displayName: string
 }
 
 export interface EntityProfile {
   entityId: string
-  aliases: string[]
+  aliases: readonly string[]
   platformKind: 'aircraft' | 'weapon' | 'sensor' | 'vehicle' | 'unknown'
-  modelAssetAliases: string[]
+  modelAssetAliases: readonly string[]
 }
 
 export interface LocationProfile {
   locationId: string
-  aliases: string[]
+  aliases: readonly string[]
 }
 
 export interface MediaProfile {
   mediaProfileId: string
-  aliases: string[]
-  assetIds: string[]
+  aliases: readonly string[]
+  assetIds: readonly string[]
 }
 
 export interface ScenarioDiagnosticProfile {
@@ -39,9 +39,9 @@ export interface ScenarioDiagnosticProfile {
 export interface ScenarioActorProfile {
   groupId: string
   semanticEntityRef: string
-  aliases: string[]
+  aliases: readonly string[]
   factionId: string
-  locationAliases: string[]
+  locationAliases: readonly string[]
   locationRef: string
   platformType: string
   role: string
@@ -49,15 +49,15 @@ export interface ScenarioActorProfile {
   leaderPolicy: string
   behaviorProfile: string
   linkedEvidenceOnly: boolean
-  participantAliases: string[]
-  sharedEvidenceAliases: string[]
-  diagnostics: ScenarioDiagnosticProfile[]
+  participantAliases: readonly string[]
+  sharedEvidenceAliases: readonly string[]
+  diagnostics: readonly ScenarioDiagnosticProfile[]
 }
 
 export interface WeaponBehaviorProfile {
   factionId?: string
   behaviorProfile: string
-  matchTerms: string[]
+  matchTerms: readonly string[]
 }
 
 export interface ScenarioPack {
@@ -65,12 +65,12 @@ export interface ScenarioPack {
   packId: string
   version: string
   displayName: string
-  matchRules: ScenarioMatchRule[]
-  factions: FactionProfile[]
-  entityProfiles: EntityProfile[]
-  locationProfiles: LocationProfile[]
-  routeBundles: ScenarioTrajectoryBundle[]
-  mediaProfiles: MediaProfile[]
-  actorProfiles: ScenarioActorProfile[]
-  weaponBehaviorProfiles: WeaponBehaviorProfile[]
+  matchRules: readonly ScenarioMatchRule[]
+  factions: readonly FactionProfile[]
+  entityProfiles: readonly EntityProfile[]
+  locationProfiles: readonly LocationProfile[]
+  routeBundles: readonly ScenarioTrajectoryBundle[]
+  mediaProfiles: readonly MediaProfile[]
+  actorProfiles: readonly ScenarioActorProfile[]
+  weaponBehaviorProfiles: readonly WeaponBehaviorProfile[]
 }
