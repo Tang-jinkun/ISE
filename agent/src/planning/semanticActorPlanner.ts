@@ -65,6 +65,13 @@ function genericGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scenari
 }
 
 function actorKey(group: Pick<ActorGroupIntent, 'semanticEntityRef' | 'side' | 'locationRef'>): string { return [group.semanticEntityRef, group.side, group.locationRef].map(normalize).join('|') }
+function launchObject(entity: string, record: EvidenceRecord, unit: EventUnit): boolean {
+  const claim = `${record.claim}|${unit.worldStateChange}`
+  const action = /\b(?:launch(?:es|ed|ing)?|fire(?:s|d|ing)?|intercept(?:s|ed|ing)?)\b|\u53d1\u5c04|\u62e6\u622a/iu.exec(claim)
+  if (action === null) return false
+  const index = claim.toLocaleLowerCase('en-US').indexOf(entity.toLocaleLowerCase('en-US'))
+  return index > (action.index ?? -1)
+}
 
 function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: ScenarioPack, occupied: ReadonlySet<string>): ActorGroupIntent[] {
   const groups = new Map<string, ActorGroupIntent>()
@@ -85,12 +92,12 @@ function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scen
         if (knownAliases.has(normalize(entity))) continue
         const source = `${record.claim}|${unit.worldStateChange}|${unit.participants.join('|')}`
         const platformKind = inferredKind(entity)
-        if (platformKind === 'weapon') continue
+        if (platformKind === 'weapon' || launchObject(entity, record, unit)) continue
         const role = inferredRole(platformKind, source); const side = faction(source, pack); const groupId = `group:${slug(`${side}-${entity}-${locationRef}`)}`
         const key = actorKey({ semanticEntityRef: entity, side, locationRef })
         if (groups.has(groupId) || occupied.has(key)) continue
         const diagnostics = [
-          diagnostic('ACTOR_FACTION_UNRESOLVED', `Actor ${entity} has no grounded faction.`, 'warning'),
+          ...(side === 'faction:unknown' ? [diagnostic('ACTOR_FACTION_UNRESOLVED', `Actor ${entity} has no grounded faction.`, 'warning')] : []),
           ...(locations.length === 0 ? [diagnostic('ACTOR_LOCATION_UNRESOLVED', `Actor ${entity} has no grounded location.`, 'warning')] : []),
           ...(entities.length > 1 ? [diagnostic('ACTOR_IDENTITY_AMBIGUOUS', `Evidence ${record.evidenceId} names multiple generic entities.`, 'warning')] : []),
         ]

@@ -66,3 +66,16 @@ tests 56
 pass 56
 fail 0
 ```
+
+## Final Review Fixes
+
+- A factual entity occurring after a launch, fire, or intercept action is treated as a weapon object even when its neutral name does not look like a model. Persistent discovery excludes it; the event-scoped weapon planner remains authoritative.
+- `ACTOR_FACTION_UNRESOLVED` is now emitted only for `faction:unknown`. Actors whose ownership is resolved by a pack faction alias have no false warning.
+
+Focused verification after final review:
+
+```text
+tests 57
+pass 57
+fail 0
+```

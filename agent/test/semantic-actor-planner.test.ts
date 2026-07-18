@@ -122,10 +122,19 @@ test('creates only an event-scoped weapon for an unmatched missile launch', () =
   assert.equal(weapons[0]?.lifecycle, 'event-scoped:event:launch')
 })
 
+test('keeps a neutral named launch object event-scoped', () => {
+  const launchEvidence: EvidenceIR = { schemaVersion: 'evidence-ir/v1', documentId: 'doc:arrow', records: [{ evidenceId: 'ev-arrow', sourceRef: 'docx:p1', claim: 'Patrol launches an Arrow weapon.', kind: 'explicit_fact', entities: ['Patrol', 'Arrow'], confidence: 1, ambiguities: [] }] }
+  const launchPlan: EventPlan = { schemaVersion: 'event-plan/v1', planId: 'event-plan:arrow', documentId: 'doc:arrow', version: 1, omittedEvidence: [], warnings: [], eventUnits: [{ eventUnitId: 'event:launch', title: 'Launch', worldStateChange: 'Patrol launches an Arrow weapon.', participants: ['Patrol', 'Arrow'], locationRefs: [], evidenceRefs: ['ev-arrow'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'launch', importance: 'high' }] }
+  const groups = planActorGroups({ eventPlan: launchPlan, evidence: launchEvidence, pack: genericScenarioPack })
+  assert.equal(groups.some(group => group.semanticEntityRef === 'Arrow' && group.lifecycle === 'scene-persistent'), false)
+  assert.deepEqual(groups.filter(group => group.platformKind === 'weapon').map(group => group.lifecycle), ['event-scoped:event:launch'])
+})
+
 test('discovers an unclaimed rescue actor alongside a resolved pack fighter', () => {
   const partialPack: ScenarioPack = { ...pack, entityProfiles: [], actorProfiles: [{ groupId: 'group:aurora-falcon-delta', semanticEntityRef: 'Falcon', aliases: ['Falcon'], factionId: 'aurora', locationAliases: ['Delta Base'], locationRef: 'location:delta', platformType: 'Falcon', role: 'fighter-formation', formationPattern: 'formation', leaderPolicy: 'stable-first-member', behaviorProfile: 'fighter-formation/v1', linkedEvidenceOnly: false, participantAliases: ['Falcon'], sharedEvidenceAliases: [], diagnostics: [] }] }
   const groups = planActorGroups({ eventPlan, evidence, pack: partialPack })
   assert.ok(groups.some(group => group.groupId === 'group:aurora-falcon-delta'))
   assert.ok(groups.some(group => group.semanticEntityRef === 'Rescue Truck'))
   assert.equal(groups.some(group => group.semanticEntityRef === 'Aurora' || group.semanticEntityRef === 'Borealis'), false)
+  assert.equal(groups.find(group => group.semanticEntityRef === 'Rescue Truck')?.diagnostics.some(item => item.code === 'ACTOR_FACTION_UNRESOLVED'), false)
 })
