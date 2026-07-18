@@ -58,6 +58,10 @@ export const sceneBlueprintSchema = z.strictObject({
   blueprintId: z.string().min(1),
   sourceNarrationPlanId: z.string().min(1),
   sourceNarrationFingerprint: fingerprintSchema,
+  scenarioPack: z.strictObject({
+    packId: z.string().min(1),
+    version: z.string().min(1),
+  }).optional(),
   actorGroups: z.array(actorGroupSchema),
   sceneBeats: z.array(sceneBeatSchema),
   diagnostics: z.array(compilationDiagnosticSchema),

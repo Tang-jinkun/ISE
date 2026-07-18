@@ -56,10 +56,8 @@ function bundle(
   }
 }
 
-export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
-  schemaVersion: 'ise.scenario-trajectory-mapping/v1',
-  scenarioId: 'indo-pak/v1',
-  bundles: [
+// Kept as a compatibility projection while ScenarioPack becomes the planner-facing source.
+export const indoPakRouteBundles: ScenarioTrajectoryBundle[] = [
     bundle(
       'formation:india-su30-adampur',
       'model:su30mki',
@@ -150,5 +148,10 @@ export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
       ['weapon-launch/pakistan-counterattack/v1'],
       [],
     ),
-  ],
+]
+
+export const indoPakTrajectoryScenario = scenarioTrajectoryMappingSchema.parse({
+  schemaVersion: 'ise.scenario-trajectory-mapping/v1',
+  scenarioId: 'indo-pak/v1',
+  bundles: indoPakRouteBundles,
 })
