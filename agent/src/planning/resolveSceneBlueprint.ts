@@ -73,7 +73,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     scenarioId: scenarioPack.packId,
     bundles: scenarioPack.routeBundles,
   })
-  const resolvedActors = expandActorGroups(blueprint.actorGroups)
+  const expandedActors = expandActorGroups(blueprint.actorGroups)
   // Keep asset selection explicit and auditable before route assignment. The
   // catalog assignment remains the only source of movement paths.
   const assetResolutions = blueprint.actorGroups.map(group =>
@@ -106,10 +106,10 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
         modelAssetRef: scenarioBundles.get(bundle.bundleId)?.modelAssetRef,
       }),
     }))
-  const movingActors = resolvedActors.filter(actor =>
+  const movingActors = expandedActors.filter(actor =>
     (resolutionByGroup.get(actor.actorGroupRef)?.trajectoryAssetIds.length ?? 0) > 0)
   const actorRouteAssignments = assignActorRoutes(movingActors, resolvedFormationBundles)
-  const staticActorBindings = resolvedActors.flatMap(actor => {
+  const staticActorBindings = expandedActors.flatMap(actor => {
     const resolution = resolutionByGroup.get(actor.actorGroupRef)
     if (resolution?.status !== 'static-fallback' || !resolution.staticPosition) return []
     return [{
@@ -120,6 +120,10 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
       locationRef: resolution.staticPosition.locationRef,
       lineage: [resolution.staticPosition.lineage, `actor-resolution:${resolution.status}`],
     }]
+  })
+  const resolvedActors = expandedActors.filter(actor => {
+    const resolution = resolutionByGroup.get(actor.actorGroupRef)
+    return resolution?.status === 'exact' || resolution?.status === 'compatible' || resolution?.status === 'static-fallback'
   })
 
   const sourceBlueprintFingerprint = fingerprint(blueprint)

@@ -277,7 +277,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     const engagements = engagementsBySceneBeat.get(sceneBeat.sceneBeatId) ?? []
     if (engagements.length > 0) {
       const subjectRefs = nearestSubjectRefs(sceneBlueprint.sceneBeats.indexOf(sceneBeat))
-      if (subjectRefs.length === 0) fail('SCENE_BEAT_SUBJECTS_EMPTY', sceneBeat.sceneBeatId)
+      if (subjectRefs.length === 0) return []
       return [{
         shotId: `shot:${sceneBeat.sceneBeatId}:establishing`,
         subtitleId: narrationBeat.subtitleId,
@@ -323,7 +323,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       })]
     }
     const subjectRefs = nearestSubjectRefs(sceneBlueprint.sceneBeats.indexOf(sceneBeat))
-    if (subjectRefs.length === 0) fail('SCENE_BEAT_SUBJECTS_EMPTY', sceneBeat.sceneBeatId)
+    if (subjectRefs.length === 0) return []
     return [{
       shotId: `shot:${sceneBeat.sceneBeatId}`,
       subtitleId: narrationBeat.subtitleId,

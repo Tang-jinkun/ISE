@@ -1186,6 +1186,23 @@ test('resolveSceneBlueprint persists the exact moving model binding instead of r
   assert.equal(rafale.modelAssetRef, 'model:rafale')
 })
 
+test('resolveSceneBlueprint keeps unresolved actors diagnostic-only and out of playable actors', () => {
+  const fixture = resolvedFixture()
+  const template = fixture.blueprint.actorGroups[0]!
+  const blueprint = {
+    ...fixture.blueprint,
+    actorGroups: [...fixture.blueprint.actorGroups, {
+      ...template, groupId: 'group:unresolved', semanticEntityRef: 'Unknown Platform', locationRef: 'location:unknown',
+    }],
+  }
+  const resolved = resolveSceneBlueprint({ blueprint, assetRegistry: fixture.assetRegistry })
+
+  assert.equal(resolved.resolvedActors.some(actor => actor.actorGroupRef === 'group:unresolved'), false)
+  assert.equal(resolved.actorRouteAssignments.some(item => item.actorInstanceRef.includes('unresolved')), false)
+  assert.equal(resolved.staticActorBindings.some(item => item.actorGroupRef === 'group:unresolved'), false)
+  assert.equal(resolved.diagnostics.some(item => item.code === 'ACTOR_MODEL_UNRESOLVED'), true)
+})
+
 test('resolveSceneBlueprint propagates route capacity exhaustion instead of synthesizing routes', () => {
   const fixture = resolvedFixture()
   const actorGroups = fixture.blueprint.actorGroups.map(group => group.groupId === 'group:india-rafale-ambala'
