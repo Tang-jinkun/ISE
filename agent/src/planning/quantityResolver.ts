@@ -148,15 +148,26 @@ export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
   const exactMatches = input.evidence.records.flatMap(record => {
     if (!isFactual(record) || !entityOccursInClaim(record, input)) return []
     const value = exactQuantity(record, input)
-    return value === undefined ? [] : [{ value, evidenceId: record.evidenceId }]
+    return value === undefined ? [] : [{ value, evidenceId: record.evidenceId, claim: record.claim }]
   })
 
-  if (exactMatches.length > 0) {
-    const values = new Set(exactMatches.map(match => match.value))
+  // A singular aircraft performing an action is not a formation-size claim.
+  // Only quantities explicitly scoped to a formation/flight/squadron may
+  // override the fighter-formation default.
+  const formationMatches = input.role === 'formation'
+    ? exactMatches.filter(match => !(
+      match.value === 1
+      && /launch|fire|发射|起飞|攻击|拦截/iu.test(match.claim)
+      && !/formation|flight|squadron|group|编队|机群|批次/iu.test(match.claim)
+    ))
+    : exactMatches
+
+  if (formationMatches.length > 0) {
+    const values = new Set(formationMatches.map(match => match.value))
     if (values.size > 1) {
       throw new Error(`FACTUAL_QUANTITY_CONFLICT: conflicting evidence quantities for ${input.entityName}`)
     }
-    const value = exactMatches[0]!.value
+    const value = formationMatches[0]!.value
     if (input.userValue !== undefined && input.userValue !== value) {
       throw new Error(`FACTUAL_QUANTITY_CONFLICT: ${input.entityName} evidence=${value} user=${input.userValue}`)
     }
@@ -164,7 +175,7 @@ export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
       value,
       constraint: 'exact',
       source: 'evidence',
-      evidenceRefs: exactMatches.map(match => match.evidenceId),
+      evidenceRefs: formationMatches.map(match => match.evidenceId),
       reason: 'Explicit quantity adjacent to entity',
     })
   }
