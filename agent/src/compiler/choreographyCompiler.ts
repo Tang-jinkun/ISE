@@ -29,6 +29,14 @@ function fail(code: string, message: string): never {
   throw new CompilationError([diagnostic(code, message)])
 }
 
+// Event ids originate from different document stages; keep zero-padding from
+// making an event-scoped actor look unrelated to its scene beat.
+function equivalentEventId(left: string, right: string): boolean {
+  const normalize = (value: string) => value.replace(/^(.*?)-(\d+)$/u, (_, prefix: string, ordinal: string) =>
+    `${prefix}-${Number.parseInt(ordinal, 10)}`)
+  return normalize(left) === normalize(right)
+}
+
 export function compileChoreography(rawInput: CompileChoreographyInput): ChoreographyPlan {
   const narrationPlan = narrationPlanSchema.parse(rawInput.narrationPlan)
   const sceneBlueprint = sceneBlueprintSchema.parse(rawInput.sceneBlueprint)
@@ -129,7 +137,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     const weaponGroups = sceneBeat.actorRefs
       .map(groupRef => groups.get(groupRef))
       .filter((group): group is SceneBlueprint['actorGroups'][number] => group?.role === 'weapon-launch'
-        && group.lifecycle === `event-scoped:${sceneBeat.eventUnitId}`)
+        && equivalentEventId(group.lifecycle.replace(/^event-scoped:/u, ''), sceneBeat.eventUnitId))
       .sort((left, right) => left.groupId.localeCompare(right.groupId))
     return weaponGroups.flatMap(weaponGroup => actorsForGroup(weaponGroup.groupId).flatMap(weaponActor => {
       const weaponRef = weaponActor.actorInstanceId

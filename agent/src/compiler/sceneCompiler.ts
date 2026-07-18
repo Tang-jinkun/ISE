@@ -363,6 +363,10 @@ function fail(code: string, message: string): never {
   throw new CompilationError([diagnostic(code, message)])
 }
 
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value))
+}
+
 function exactAvailableAsset(
   assetRegistry: AssetRegistrySnapshot,
   assetId: string,
@@ -739,6 +743,49 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       spawnStartMs: followStartMs - capabilityManifest.minimumDurations['model.spawn'],
       followStartMs,
     })
+  }
+  // Bind every resolved weapon route to its launcher and target geometry. The
+  // catalog route remains the shape source; this only supplies scene-specific
+  // start/end anchors for the runtime transform.
+  for (const engagement of choreographyPlan.weaponEngagements) {
+    const launcherAssignment = assignments.get(engagement.launcherRef)
+    const weaponAssignment = assignments.get(engagement.weaponRef)
+    const targetAssignment = assignments.get(engagement.targetRef)
+    if (!launcherAssignment || !weaponAssignment || !targetAssignment) continue
+    const launcherAsset = exactAvailableAsset(assetRegistry, launcherAssignment.trajectoryAssetRef, 'trajectory')
+    const weaponAsset = exactAvailableAsset(assetRegistry, weaponAssignment.trajectoryAssetRef, 'trajectory')
+    const targetAsset = exactAvailableAsset(assetRegistry, targetAssignment.trajectoryAssetRef, 'trajectory')
+    if (launcherAsset.kind !== 'trajectory' || weaponAsset.kind !== 'trajectory' || targetAsset.kind !== 'trajectory') continue
+    const weaponDraft = actorCommandDrafts.find(item => item.actorInstanceRef === engagement.weaponRef)?.follow
+    if (!weaponDraft || weaponDraft.type !== 'model.follow_path' || !weaponDraft.params.timing) continue
+    const launcherWindow = actorPlaybackWindows.get(engagement.launcherRef)
+    if (!launcherWindow) continue
+    const launcherPoints = launcherAsset.trajectory.points
+    const weaponPoints = weaponAsset.trajectory.points
+    const targetPoints = targetAsset.trajectory.points
+    const targetPoint = targetPoints?.at(-1)
+    if (!launcherPoints?.length || !weaponPoints?.length || !targetPoints?.length || !targetPoint) continue
+    const weaponWindow = actorPlaybackWindows.get(engagement.weaponRef)
+    const launchProgress = weaponWindow
+      ? clamp01((weaponWindow.followStartMs - launcherWindow.followStartMs)
+        / Math.max(1, launcherWindow.followEndMs - launcherWindow.followStartMs))
+      : 0
+    const launchSourceMs = launcherAsset.trajectory.startTimeMs
+      + launchProgress * (launcherAsset.trajectory.endTimeMs - launcherAsset.trajectory.startTimeMs)
+    const launcherPoint = launcherPoints.reduce((best, point) =>
+      Math.abs(point.timeMs - launchSourceMs) < Math.abs(best.timeMs - launchSourceMs) ? point : best, launcherPoints[0]!)
+    weaponDraft.params.timing = {
+      ...weaponDraft.params.timing,
+      spatialBinding: {
+        anchorEntityId: engagement.launcherRef,
+        anchorLongitudeDeg: launcherPoint.longitude,
+        anchorLatitudeDeg: launcherPoint.latitude,
+        anchorAltitudeM: launcherPoint.altitudeM,
+        terminalLongitudeDeg: targetPoint.longitude,
+        terminalLatitudeDeg: targetPoint.latitude,
+        terminalAltitudeM: targetPoint.altitudeM,
+      },
+    }
   }
   const cameraCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()

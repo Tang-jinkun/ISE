@@ -133,6 +133,15 @@ const hybridTimingSchema = z.strictObject({
   syncGroupId: nonEmptyId.optional(),
   status: z.enum(['resolved', 'unresolved']),
 });
+const spatialBindingSchema = z.strictObject({
+  anchorEntityId: nonEmptyId,
+  anchorLongitudeDeg: z.number().finite(),
+  anchorLatitudeDeg: z.number().finite(),
+  anchorAltitudeM: z.number().finite(),
+  terminalLongitudeDeg: z.number().finite(),
+  terminalLatitudeDeg: z.number().finite(),
+  terminalAltitudeM: z.number().finite(),
+});
 
 export const modelActionSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('model.spawn'), entityId: nonEmptyId }),
@@ -140,7 +149,7 @@ export const modelActionSchema = z.discriminatedUnion('action', [
     action: z.literal('model.follow_path'),
     entityId: nonEmptyId,
     trajectoryAssetId: assetId.regex(/^trajectory:/),
-    timing: hybridTimingSchema.optional(),
+    timing: hybridTimingSchema.extend({ spatialBinding: spatialBindingSchema.optional() }).optional(),
   }),
   z.strictObject({
     action: z.literal('model.set_state'),

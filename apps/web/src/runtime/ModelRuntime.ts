@@ -14,6 +14,7 @@ import {
 
 type ModelTrack = Extract<SceneTrack, { type: 'model' }>;
 type ModelItem = ModelTrack['items'][number];
+type FollowPathTiming = Extract<ModelItem['params'], { action: 'model.follow_path' }>['timing'];
 type ModelMetadata = Extract<ResolvedAssetAccess, { mediaType: 'model/gltf-binary' }>['model'];
 
 interface MercatorProjection {
@@ -120,7 +121,7 @@ export function reduceModelFrame(
   let sample: TrajectorySample | undefined;
   let trail: RuntimeTrail = { entityId: entity.entityId, coordinates: [] };
 
-  const setTrajectory = (trajectoryId: string, progress: number) => {
+  const setTrajectory = (trajectoryId: string, progress: number, spatialBinding?: NonNullable<NonNullable<FollowPathTiming>['spatialBinding']>) => {
     const trajectory = trajectories.get(trajectoryId);
     if (!trajectory) {
       throw new SceneRuntimeError(
@@ -131,9 +132,18 @@ export function reduceModelFrame(
     }
     trajectoryAssetId = trajectoryId;
     sample = sampleTrajectory(trajectory, clamp01(progress) * trajectory.durationMs);
+    const transform = spatialBinding ? createSpatialBindingTransform(trajectory.points[0]!, trajectory.points.at(-1)!, spatialBinding) : undefined;
+    const mapPoint = (point: { longitude: number; latitude: number; altitudeM: number }) => transform
+      ? transform(point)
+      : point;
+    const transformedSample = mapPoint(sample);
+    sample = { ...sample, ...transformedSample };
     const coordinates: Array<readonly [number, number]> = trajectory.points
       .slice(0, sample.tailEndIndex)
-      .map((point) => [point.longitude, point.latitude] as const);
+      .map((point) => {
+        const transformed = mapPoint(point);
+        return [transformed.longitude, transformed.latitude] as const;
+      });
     const interpolated = [sample.longitude, sample.latitude] as const;
     const tail = coordinates.at(-1);
     if (
@@ -173,7 +183,7 @@ export function reduceModelFrame(
             / Math.max(1, timing.sourceEndMs - timing.sourceStartMs);
           setTrajectory(item.params.trajectoryAssetId, entity.kind === 'missile'
             ? missileProgress(sourceProgress)
-            : sourceProgress);
+            : sourceProgress, timing.spatialBinding);
         } else {
           setTrajectory(
             item.params.trajectoryAssetId,
@@ -200,6 +210,37 @@ export function reduceModelFrame(
     ...(trajectoryAssetId ? { trajectoryAssetId } : {}),
     sample,
     trail,
+  };
+}
+
+function createSpatialBindingTransform(
+  sourceStart: { longitude: number; latitude: number; altitudeM: number },
+  sourceEnd: { longitude: number; latitude: number; altitudeM: number },
+  binding: NonNullable<NonNullable<FollowPathTiming>['spatialBinding']>,
+) {
+  const metersPerDegreeLat = 110_540;
+  const metersPerDegreeLon = 111_320 * Math.cos(((sourceStart.latitude + sourceEnd.latitude) * Math.PI) / 360);
+  const sourceX = (sourceEnd.longitude - sourceStart.longitude) * metersPerDegreeLon;
+  const sourceY = (sourceEnd.latitude - sourceStart.latitude) * metersPerDegreeLat;
+  const targetX = (binding.terminalLongitudeDeg - binding.anchorLongitudeDeg) * metersPerDegreeLon;
+  const targetY = (binding.terminalLatitudeDeg - binding.anchorLatitudeDeg) * metersPerDegreeLat;
+  const sourceLength = Math.hypot(sourceX, sourceY);
+  const targetLength = Math.hypot(targetX, targetY);
+  const scale = sourceLength > 1 ? targetLength / sourceLength : 1;
+  const angle = Math.atan2(targetY, targetX) - Math.atan2(sourceY, sourceX);
+  const cosine = Math.cos(angle) * scale;
+  const sine = Math.sin(angle) * scale;
+  const altitudeScale = Math.abs(sourceEnd.altitudeM - sourceStart.altitudeM) > 1
+    ? (binding.terminalAltitudeM - binding.anchorAltitudeM) / (sourceEnd.altitudeM - sourceStart.altitudeM)
+    : 1;
+  return (point: { longitude: number; latitude: number; altitudeM: number }) => {
+    const x = (point.longitude - sourceStart.longitude) * metersPerDegreeLon;
+    const y = (point.latitude - sourceStart.latitude) * metersPerDegreeLat;
+    return {
+      longitude: binding.anchorLongitudeDeg + (x * cosine - y * sine) / metersPerDegreeLon,
+      latitude: binding.anchorLatitudeDeg + (x * sine + y * cosine) / metersPerDegreeLat,
+      altitudeM: binding.anchorAltitudeM + (point.altitudeM - sourceStart.altitudeM) * altitudeScale,
+    };
   };
 }
 

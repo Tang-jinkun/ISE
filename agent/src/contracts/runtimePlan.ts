@@ -121,6 +121,15 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
       endMs: z.number().int().nonnegative(),
       syncGroupId: z.string().min(1).optional(),
       status: z.enum(['resolved', 'unresolved']),
+      spatialBinding: z.strictObject({
+        anchorEntityId: z.string().min(1),
+        anchorLongitudeDeg: z.number().finite(),
+        anchorLatitudeDeg: z.number().finite(),
+        anchorAltitudeM: z.number().finite(),
+        terminalLongitudeDeg: z.number().finite(),
+        terminalLatitudeDeg: z.number().finite(),
+        terminalAltitudeM: z.number().finite(),
+      }).optional(),
     }).optional(),
   }) }),
   z.strictObject({ ...commandBase, type: z.literal('model.set_state'), params: z.strictObject({
