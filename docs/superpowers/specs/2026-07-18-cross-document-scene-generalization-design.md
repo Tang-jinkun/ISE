@@ -85,6 +85,15 @@ interface ScenarioPack {
 }
 ```
 
+`SceneBlueprint` 增加可选的来源字段：
+
+```ts
+scenarioPack?: {
+  packId: string
+  version: string
+}
+```
+
 其中：
 
 - `matchRules` 只使用 EvidenceIR 中的显式实体、地点和事实做评分。
@@ -225,7 +234,7 @@ UI 行为：
 ## 11. 数据流与兼容性
 
 - EventPlan、NarrationPlan、SceneBlueprint、ChoreographyPlan 和运行时产物继续保留 source lineage 与 fingerprint。
-- ScenarioPack 的 `packId` 和版本写入 SceneBlueprint/ResolvedScenePlan 元数据，以便复现同一解析结果。
+- ScenarioPack 的 `packId` 和版本写入 SceneBlueprint 的 `scenarioPack` 字段，并随 lineage 进入 ResolvedScenePlan 元数据，以便复现同一解析结果。
 - 旧的印巴 EventPlan 和已导出 SceneProjectConfig 继续可播放。
 - 旧轨迹 asset ID 保持不变；迁移只改变配置所有权，不改写素材文件。
 - Runtime 不感知 ScenarioPack；它只消费最终实体、轨道、交互和诊断。
