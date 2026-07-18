@@ -643,6 +643,11 @@ function Assert-FinalDomainInvariants {
     }
   }
   $modelTrackEntityIdSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+  $interceptedTargetIds = @(
+    @(Get-PropertyValue $choreography 'weaponEngagements') |
+      Where-Object { (Get-PropertyValue $_ 'outcome') -eq 'interception' } |
+      ForEach-Object { Get-PropertyValue $_ 'targetRef' }
+  )
   foreach ($track in $modelTracks) {
     $items = @(Get-PropertyValue $track 'items')
     $trackEntityIdSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
@@ -697,11 +702,12 @@ function Assert-FinalDomainInvariants {
     $followStartMs = [long](Get-PropertyValue $followItems[0] 'startMs')
     $followEndMs = $followStartMs + [long](Get-PropertyValue $followItems[0] 'durationMs')
     $hideStartMs = [long](Get-PropertyValue $hideItems[0] 'startMs')
+    $trackEntityId = [string](Get-PropertyValue (Get-PropertyValue $followItems[0] 'params') 'entityId')
     if ($followStartMs -ne $spawnEndMs) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must have one contiguous spawn/follow/hide lifecycle.'
     }
     if ($destroyedStateItems.Count -eq 0) {
-      if ($followEndMs -ne $hideStartMs) {
+      if (-not (Test-OrdinalContains $interceptedTargetIds $trackEntityId) -and $followEndMs -ne $hideStartMs) {
         Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'A non-destroyed RuntimePlan entity must hide exactly when its follow interval ends.'
       }
       continue
