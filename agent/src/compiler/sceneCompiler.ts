@@ -26,6 +26,7 @@ import {
   expandRequestedMedia,
   expandSupplementalRequirement,
   inferTemplateFromStateChange,
+  preferredMediaAssetIds,
   type CameraProfile,
   type InformationCardDraft,
 } from './templates.ts'
@@ -98,6 +99,7 @@ function selectAsset(
   registry: AssetRegistry,
   kind: AssetRegistryEntry['kind'],
   requirement: SceneRequirement,
+  preferredAssetIds: readonly string[] = [],
 ): AssetRegistryEntry | undefined {
   const allCandidates = [...registry.entries.values()]
     .filter(entry => entry.kind === kind)
@@ -127,6 +129,12 @@ function selectAsset(
     const candidates = allCandidates.filter(entry => matchesSemanticValue(entry, values))
     if (candidates.length === 0) continue
     const selected = resolveCandidates(candidates)
+    if (selected) return selected
+  }
+  for (const preferredAssetId of preferredAssetIds) {
+    const candidate = registry.entries.get(preferredAssetId)
+    if (!candidate || candidate.kind !== kind) continue
+    const selected = resolveCandidates([candidate])
     if (selected) return selected
   }
   const fallback = resolveCandidates(allCandidates)
@@ -282,9 +290,11 @@ export function compileLegacyScene(rawInput: LegacyCompilerInput): CanonicalRunt
     if (!entity) throw new CompilationError([diagnostic('ENTITY_NOT_FOUND', requirement.requirementId)])
     const trajectory = requiresMovement ? selectAsset(registry, 'trajectory', requirement) : undefined
     const image = template === 'return_and_summary' || template === 'status_explanation'
-      ? selectAsset(registry, 'image', requirement)
+      ? selectAsset(registry, 'image', requirement, preferredMediaAssetIds(template, 'image'))
       : undefined
-    const video = template === 'attack_chain' ? selectAsset(registry, 'video', requirement) : undefined
+    const video = template === 'attack_chain'
+      ? selectAsset(registry, 'video', requirement, preferredMediaAssetIds(template, 'video'))
+      : undefined
     const geojson = template === 'electronic_warfare' ? selectAsset(registry, 'geojson', requirement) : undefined
     if (requiresMovement && !trajectory) throw new CompilationError([diagnostic('REQUIRED_ASSET_MISSING', 'trajectory')])
     if (requiresMovement && !entity.modelAssetId) throw new CompilationError([diagnostic('REQUIRED_ASSET_MISSING', 'model')])
@@ -409,6 +419,16 @@ function routePointAtPlaybackTime(
     ((((longitude + 180) % 360) + 360) % 360) - 180,
     start.latitude + (end.latitude - start.latitude) * ratio,
   ]
+}
+
+function approximateDistanceMeters(
+  left: { longitude: number, latitude: number },
+  right: { longitude: number, latitude: number },
+): number {
+  const latitudeRadians = (left.latitude + right.latitude) * Math.PI / 360
+  const longitudeMeters = (left.longitude - right.longitude) * 111_320 * Math.cos(latitudeRadians)
+  const latitudeMeters = (left.latitude - right.latitude) * 110_540
+  return Math.hypot(longitudeMeters, latitudeMeters)
 }
 
 function unionBounds(
@@ -579,10 +599,10 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const template = requirement.preferredTemplate ?? inferTemplateFromStateChange(requirement)
     const mediaIntents = beat?.mediaIntents ?? []
     const image = mediaIntents.includes('image') || template === 'return_and_summary' || template === 'status_explanation'
-      ? selectAsset(registry, 'image', requirement)
+      ? selectAsset(registry, 'image', requirement, preferredMediaAssetIds(template, 'image'))
       : undefined
     const video = mediaIntents.includes('video') || template === 'attack_chain'
-      ? selectAsset(registry, 'video', requirement)
+      ? selectAsset(registry, 'video', requirement, preferredMediaAssetIds(template, 'video'))
       : undefined
     const geojson = template === 'electronic_warfare' ? selectAsset(registry, 'geojson', requirement) : undefined
     const expansion = expandSupplementalRequirement(requirement, {
@@ -675,6 +695,50 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       actorPlaybackWindows.set(engagement.weaponRef, { ...weaponWindow, followStartMs: timing.startMs, followEndMs: timing.endMs })
       actorPlaybackWindows.set(engagement.targetRef, { ...targetWindow, followStartMs: timing.startMs, followEndMs: timing.endMs })
     }
+  }
+  // A weapon trajectory's absolute first sample is its launch instant. Anchor
+  // that instant to the launcher's existing source-clock playback so the
+  // weapon is born at the platform instead of drifting ahead of or behind it
+  // when their narrative windows have different durations.
+  for (const engagement of choreographyPlan.weaponEngagements) {
+    const launcherAssignment = assignments.get(engagement.launcherRef)
+    const weaponAssignment = assignments.get(engagement.weaponRef)
+    const launcherWindow = actorPlaybackWindows.get(engagement.launcherRef)
+    const weaponWindow = actorPlaybackWindows.get(engagement.weaponRef)
+    if (!launcherAssignment || !weaponAssignment || !launcherWindow || !weaponWindow) continue
+    const launcherAsset = exactAvailableAsset(assetRegistry, launcherAssignment.trajectoryAssetRef, 'trajectory')
+    const weaponAsset = exactAvailableAsset(assetRegistry, weaponAssignment.trajectoryAssetRef, 'trajectory')
+    if (launcherAsset.kind !== 'trajectory' || weaponAsset.kind !== 'trajectory') continue
+    const launcherOrigin = launcherAsset.trajectory.sourceTimeOriginMs
+    const weaponOrigin = weaponAsset.trajectory.sourceTimeOriginMs
+    const launcherSourceStartMs = launcherAsset.trajectory.startTimeMs
+    const launcherSourceEndMs = launcherAsset.trajectory.endTimeMs
+    let launchSourceMs = launcherOrigin !== undefined && weaponOrigin !== undefined
+      ? weaponOrigin + weaponAsset.trajectory.startTimeMs - launcherOrigin
+      : undefined
+    if (launchSourceMs === undefined) {
+      const weaponStart = weaponAsset.trajectory.points?.[0]
+      const closestLauncherPoint = weaponStart && launcherAsset.trajectory.points
+        ? launcherAsset.trajectory.points.reduce((closest, point) => {
+          const distanceM = approximateDistanceMeters(point, weaponStart)
+          return !closest || distanceM < closest.distanceM ? { point, distanceM } : closest
+        }, undefined as { point: { timeMs: number, longitude: number, latitude: number }, distanceM: number } | undefined)
+        : undefined
+      if (!closestLauncherPoint || closestLauncherPoint.distanceM > 25_000) continue
+      launchSourceMs = closestLauncherPoint.point.timeMs
+    }
+    if (launchSourceMs < launcherSourceStartMs || launchSourceMs > launcherSourceEndMs) continue
+    const launcherProgress = (launchSourceMs - launcherSourceStartMs)
+      / Math.max(1, launcherSourceEndMs - launcherSourceStartMs)
+    const anchoredFollowStartMs = Math.round(launcherWindow.followStartMs
+      + launcherProgress * (launcherWindow.followEndMs - launcherWindow.followStartMs))
+    const followStartMs = Math.max(weaponWindow.followStartMs, anchoredFollowStartMs)
+    if (followStartMs >= weaponWindow.followEndMs - capabilityManifest.minimumDurations['model.follow_path']) continue
+    actorPlaybackWindows.set(engagement.weaponRef, {
+      ...weaponWindow,
+      spawnStartMs: followStartMs - capabilityManifest.minimumDurations['model.spawn'],
+      followStartMs,
+    })
   }
   const cameraCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
@@ -804,14 +868,17 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         }))
       } else {
         const global = !isEngagementShot && subjectRefs.length >= 5
+        const interceptionTerminal = shot.phase === 'terminal' && engagement?.outcome === 'interception'
         cameraCommands.push(runtimeCommandSchema.parse({
           commandId: `cmd:${shot.shotId}:follow-group`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
           type: 'camera.follow_group', params: {
             action: 'camera.follow_group', entityIds: subjectRefs,
             framing: global ? 'global' : isEngagementShot ? 'engagement' : 'formation',
-            paddingPx: global ? 120 : 100, minZoom: global ? 4 : isEngagementShot ? 6 : 5,
-            maxZoom: global ? 7 : isEngagementShot ? 10 : 9,
-            pitch: global ? 35 : camera.pitch, bearing: camera.bearing, transitionMs: transitionDurationMs,
+            paddingPx: global ? 120 : interceptionTerminal ? 180 : 100,
+            minZoom: global ? 4 : isEngagementShot ? 6 : 5,
+            maxZoom: global ? 7 : interceptionTerminal ? 8 : isEngagementShot ? 10 : 9,
+            pitch: global ? 35 : interceptionTerminal ? Math.min(35, camera.pitch) : camera.pitch,
+            bearing: camera.bearing, transitionMs: transitionDurationMs,
           },
           startMs: followStartMs, durationMs: endMs - followStartMs,
           dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],

@@ -121,6 +121,38 @@ test('does not apply the nearest other fighter quantity to an unquantified fight
   assert.equal(decision.source, 'default')
 })
 
+test('does not treat one destroyed fighter as the full formation quantity', () => {
+  const decision = resolveQuantity({
+    entityName: '阵风',
+    platformType: 'fighter',
+    role: 'formation',
+    evidence: evidence([{
+      evidenceId: 'ev-rafale-loss', sourceRef: 'docx:p9',
+      claim: 'PL-15E命中并击毁一架印方阵风战机。', kind: 'explicit_fact',
+      entities: ['PL-15E', '阵风'], confidence: 1, ambiguities: [],
+    }]),
+  })
+
+  assert.equal(decision.value, 4)
+  assert.equal(decision.source, 'default')
+})
+
+test('does not treat one emergency-landing fighter as the full formation quantity', () => {
+  const decision = resolveQuantity({
+    entityName: '苏-30MKI',
+    platformType: 'fighter',
+    role: 'formation',
+    evidence: evidence([{
+      evidenceId: 'ev-su30-landing', sourceRef: 'docx:p10',
+      claim: '撤离过程中一架受损印方苏-30MKI实施紧急迫降。', kind: 'explicit_fact',
+      entities: ['苏-30MKI'], confidence: 1, ambiguities: [],
+    }]),
+  })
+
+  assert.equal(decision.value, 4)
+  assert.equal(decision.source, 'default')
+})
+
 test('does not partially parse unsupported compound Chinese numerals', () => {
   assert.deepEqual(resolveQuantity({
     entityName: 'JF-17',
@@ -438,14 +470,14 @@ test('every primary SceneBeat binds one existing subtitle and its EventUnit', ()
   }
 })
 
-test('derives media intents and adds a default summary image to the final beat', () => {
+test('derives media intents for each narrative template and enriches the final beat', () => {
   const fixture = planningFixture()
   const narrationPlan = buildNarrationPlan(fixture)
   const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan })
 
   assert.deepEqual(
     blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:deployment')?.mediaIntents,
-    [],
+    ['image'],
   )
   assert.deepEqual(
     blueprint.sceneBeats.find(beat => beat.eventUnitId === 'event:launch')?.mediaIntents,

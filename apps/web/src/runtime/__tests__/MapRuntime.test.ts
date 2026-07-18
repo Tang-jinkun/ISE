@@ -288,7 +288,11 @@ it('fits visible follow-group members with bounds padding and clamps zoom', asyn
   ]);
 
   runtime.applyBase(500, [snapshot('fighter-1', 76, 30), snapshot('fighter-2', 84, 31)]);
-  expect(map.cameraForBounds).toHaveBeenCalledWith([[76, 30], [84, 31]], { padding: 40 });
+  expect(map.cameraForBounds).toHaveBeenCalledWith([[76, 30], [84, 31]], {
+    padding: 40,
+    pitch: 30,
+    bearing: -10,
+  });
   expect(map.lastJump).toEqual({ center: [80, 30], zoom: 12, pitch: 30, bearing: -10 });
 
   runtime.applyBase(600, [snapshot('fighter-1', 76, 30)]);

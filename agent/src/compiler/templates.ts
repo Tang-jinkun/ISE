@@ -188,6 +188,28 @@ export const restrictedTemplates: Record<TemplateName, TemplateExpander> = {
   status_explanation: statusExplanation,
 }
 
+const preferredMediaByTemplate: Record<TemplateName, Partial<Record<'image' | 'video', readonly string[]>>> = {
+  deployment: { image: ['image:aew-illustration', 'image:airport'] },
+  attack_chain: { image: ['image:cockpit-hud'], video: ['video:ooda-chain', 'video:target-lock'] },
+  interception: { video: ['video:target-lock', 'video:ooda-chain'] },
+  electronic_warfare: {
+    image: ['image:ground-radar', 'image:cockpit-hud'],
+    video: ['video:cockpit-jamming', 'video:radar-offline'],
+  },
+  counterattack: { video: ['video:target-lock', 'video:ooda-chain'] },
+  withdrawal: { video: ['video:damage-check', 'video:runway-exit'] },
+  return_and_summary: { image: ['image:airport', 'image:aew-illustration'], video: ['video:damage-check', 'video:runway-exit'] },
+  generic_movement: {},
+  status_explanation: { image: ['image:ground-radar', 'image:aew-illustration'] },
+}
+
+export function preferredMediaAssetIds(
+  template: TemplateName,
+  kind: 'image' | 'video',
+): readonly string[] {
+  return preferredMediaByTemplate[template][kind] ?? []
+}
+
 const templateTerms: readonly [TemplateName, readonly string[]][] = [
   ['electronic_warfare', ['electronic warfare', 'jam', 'disabled']],
   ['counterattack', ['counterattack', 'counter attack']],

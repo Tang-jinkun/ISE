@@ -151,13 +151,13 @@ export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
     return value === undefined ? [] : [{ value, evidenceId: record.evidenceId, claim: record.claim }]
   })
 
-  // A singular aircraft performing an action is not a formation-size claim.
-  // Only quantities explicitly scoped to a formation/flight/squadron may
-  // override the fighter-formation default.
+  // A singular aircraft performing an action or suffering an outcome is not
+  // a formation-size claim. Explicit formation/flight/squadron wording still
+  // makes the quantity authoritative.
   const formationMatches = input.role === 'formation'
     ? exactMatches.filter(match => !(
       match.value === 1
-      && /launch|fire|发射|起飞|攻击|拦截/iu.test(match.claim)
+      && /launch|fire|attack|intercept|destroy|shoot\s*down|hit|damage|crash|emergency\s*land|发射|攻击|拦截|击毁|命中|受损|坠毁|迫降/iu.test(match.claim)
       && !/formation|flight|squadron|group|编队|机群|批次/iu.test(match.claim)
     ))
     : exactMatches

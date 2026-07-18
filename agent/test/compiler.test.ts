@@ -737,8 +737,67 @@ test('dynamic camera interception terminal and aftermath retain surviving engage
   assert.equal(terminal?.type, 'camera.follow_group')
   if (terminal?.type !== 'camera.follow_group') assert.fail('Expected interception terminal group follow')
   assert.deepEqual(terminal.params.entityIds, [engagement.weaponRef, engagement.targetRef])
+  assert.ok(terminal.params.paddingPx >= 160)
+  assert.ok(terminal.params.maxZoom <= 8)
   assert.deepEqual(aftermath.params.entityIds, [engagement.launcherRef, engagement.weaponRef])
   assert.ok(targetHide.startMs < aftermath.startMs)
+})
+
+test('missile launch follows the launcher source-clock position instead of its subtitle boundary', () => {
+  const fixture = finalInputForEngagementFixture()
+  const engagement = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const launcher = fixture.resolvedScenePlan.resolvedActors.find(item => item.actorInstanceId === engagement.launcherRef)!
+  const weapon = fixture.resolvedScenePlan.resolvedActors.find(item => item.actorInstanceId === engagement.weaponRef)!
+  const launcherAssignment = fixture.resolvedScenePlan.actorRouteAssignments.find(item => item.actorInstanceRef === launcher.actorInstanceId)!
+  const weaponAssignment = fixture.resolvedScenePlan.actorRouteAssignments.find(item => item.actorInstanceRef === weapon.actorInstanceId)!
+  let launcherSourceDurationMs = 0
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    assets: fixture.input.assetRegistry.assets.map(asset => {
+      if (asset.kind !== 'trajectory') return asset
+      if (asset.assetId === launcherAssignment.trajectoryAssetRef) {
+        const points = asset.trajectory.points!
+        const first = points[0]!
+        const last = points.at(-1)!
+        launcherSourceDurationMs = last.timeMs - first.timeMs
+        const ratio = 80_000 / launcherSourceDurationMs
+        const anchor = {
+          timeMs: 80_000,
+          longitude: first.longitude + (last.longitude - first.longitude) * ratio,
+          latitude: first.latitude + (last.latitude - first.latitude) * ratio,
+          altitudeM: first.altitudeM + (last.altitudeM - first.altitudeM) * ratio,
+        }
+        return { ...asset, trajectory: { ...asset.trajectory, points: [first, anchor, last] } }
+      }
+      if (asset.assetId === weaponAssignment.trajectoryAssetRef) {
+        const launcherAsset = fixture.input.assetRegistry.assets.find(candidate =>
+          candidate.kind === 'trajectory' && candidate.assetId === launcherAssignment.trajectoryAssetRef)!
+        if (launcherAsset.kind !== 'trajectory') return asset
+        const first = launcherAsset.trajectory.points![0]!
+        const last = launcherAsset.trajectory.points!.at(-1)!
+        const ratio = 80_000 / (last.timeMs - first.timeMs)
+        const weaponStart = asset.trajectory.points![0]!
+        return { ...asset, trajectory: { ...asset.trajectory, points: [{
+          ...weaponStart,
+          longitude: first.longitude + (last.longitude - first.longitude) * ratio,
+          latitude: first.latitude + (last.latitude - first.latitude) * ratio,
+          altitudeM: first.altitudeM + (last.altitudeM - first.altitudeM) * ratio,
+        }, ...asset.trajectory.points!.slice(1)] } }
+      }
+      return asset
+    }),
+  }
+
+  const plan = compileFinalScene(fixture.input)
+  const launcherFollow = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'model.follow_path' }> =>
+    command.type === 'model.follow_path' && command.targetId === engagement.launcherRef)!
+  const weaponFollow = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'model.follow_path' }> =>
+    command.type === 'model.follow_path' && command.targetId === engagement.weaponRef)!
+  const launcherDuration = launcherFollow.durationMs
+  const expectedLaunchMs = launcherFollow.startMs + launcherDuration * 80_000 / launcherSourceDurationMs
+
+  assert.ok(Math.abs(weaponFollow.startMs - expectedLaunchMs) < 2,
+    `weapon=${weaponFollow.startMs} launcher=${launcherFollow.startMs} expected=${expectedLaunchMs}`)
 })
 
 test('dynamic camera destroyed target hide starts when the aftermath interval ends', () => {
@@ -1046,12 +1105,29 @@ test('choreography grounds every missile data link and only same-side supported 
   }
   fixture.input.sceneBlueprint = {
     ...fixture.input.sceneBlueprint,
-    actorGroups: [...fixture.input.sceneBlueprint.actorGroups, awacsGroup],
+    actorGroups: [
+      ...fixture.input.sceneBlueprint.actorGroups.map(group => (
+        group.groupId === 'group:india-su30-adampur' || group.groupId === 'group:india-rafale-ambala'
+          ? {
+            ...group,
+            quantityDecision: {
+              value: 4,
+              constraint: 'unknown' as const,
+              source: 'default' as const,
+              evidenceRefs: [],
+              defaultPolicyId: 'fighter-formation/v1',
+              reason: 'Fixture formation default',
+            },
+          }
+          : group
+      )),
+      awacsGroup,
+    ],
     sceneBeats: fixture.input.sceneBlueprint.sceneBeats.map(beat => {
       if (beat.sceneBeatId === 'scene-beat-first-strike') {
         return {
           ...beat,
-          actorRefs: [...beat.actorRefs, awacsGroup.groupId],
+          actorRefs: [...beat.actorRefs, 'group:india-rafale-ambala', awacsGroup.groupId],
           purpose: 'Netra distributes target information by data link to the Indian strike fighters.',
           requiredFacts: [...beat.requiredFacts, 'AWACS distributes target information through a data link.'],
         }
@@ -1081,6 +1157,9 @@ test('choreography grounds every missile data link and only same-side supported 
     .find(actor => actor.actorGroupRef === groupRef)!.actorInstanceId
   const awacs = actorRef(awacsGroup.groupId)
   const su30 = actorRef('group:india-su30-adampur')
+  const indianFighters = fixture.input.resolvedScenePlan.resolvedActors.filter(actor =>
+    actor.actorGroupRef === 'group:india-su30-adampur'
+    || actor.actorGroupRef === 'group:india-rafale-ambala')
   const relations = fixture.input.choreographyPlan.relationSegments
   const fighterMissile = relations.filter(relation => relation.linkKind === 'fighter-missile')
   const awacsFighter = relations.filter(relation => relation.linkKind === 'awacs-fighter')
@@ -1096,6 +1175,13 @@ test('choreography grounds every missile data link and only same-side supported 
     ['ev-first-strike'],
     ['ev-intercept'],
   ])
+  assert.deepEqual(
+    awacsFighter
+      .filter(relation => relation.sourceRef === awacs && relation.sceneBeatRef === 'scene-beat-first-strike')
+      .map(relation => relation.targetRef)
+      .sort(),
+    indianFighters.map(actor => actor.actorInstanceId).sort(),
+  )
 
   const plan = compileFinalScene(fixture.input)
   const dataLinks = plan.commands.filter(command => command.type === 'data_link.show')
@@ -1688,6 +1774,26 @@ test('final compiler honors a blueprint image intent when the narrative template
 
   assert.equal(imageCommands.length, 1)
   assert.equal(imageCommands[0]!.params.assetId, 'image:summary')
+})
+
+test('final compiler selects the registered deployment illustration from a multi-media catalog', () => {
+  const fixture = multiActorCompilerFixture()
+  const sourceImage = fixture.assetRegistry.assets.find(asset => asset.assetId === 'image:summary')!
+  if (sourceImage.kind !== 'image') assert.fail('Expected image fixture')
+  fixture.assetRegistry.assets.push(
+    { ...sourceImage, assetId: 'image:aew-illustration', displayName: 'AWACS illustration', aliases: [] },
+    { ...sourceImage, assetId: 'image:airport', displayName: 'Airport', aliases: [] },
+  )
+  fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat =>
+    beat.sceneBeatId === 'scene-beat-deployment' ? { ...beat, mediaIntents: ['image'] } : beat)
+
+  const plan = compileFinalScene(refreshFinalChoreographyFixture(fixture))
+  const deploymentImage = plan.commands.find(command =>
+    command.type === 'image.show' && command.eventUnitId === 'unit-deployment')
+
+  assert.equal(deploymentImage?.type, 'image.show')
+  if (deploymentImage?.type !== 'image.show') assert.fail('Expected deployment image')
+  assert.equal(deploymentImage.params.assetId, 'image:aew-illustration')
 })
 
 test('all nine registered templates compile through the strict command schema', () => {

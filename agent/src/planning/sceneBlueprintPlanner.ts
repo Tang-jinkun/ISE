@@ -348,9 +348,21 @@ function sceneRequirementByEvent(narrativePlan: NarrativePlan): Map<string, Scen
 }
 
 function mediaIntentsForTemplate(template: SceneRequirement['preferredTemplate']): string[] {
-  if (template === 'attack_chain') return ['video']
-  if (template === 'return_and_summary' || template === 'status_explanation') return ['image']
-  return []
+  switch (template) {
+    case 'deployment':
+    case 'status_explanation':
+      return ['image']
+    case 'attack_chain':
+    case 'electronic_warfare':
+    case 'return_and_summary':
+      return ['video', 'image']
+    case 'interception':
+    case 'counterattack':
+    case 'withdrawal':
+      return ['video']
+    default:
+      return []
+  }
 }
 
 function assertNarrationBinding(input: BuildSceneBlueprintInput): void {

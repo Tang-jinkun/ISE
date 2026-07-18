@@ -627,7 +627,11 @@ function groupCameraTarget(
       [Math.min(...longitudes), Math.min(...latitudes)],
       [Math.max(...longitudes), Math.max(...latitudes)],
     ],
-    { padding: params.paddingPx },
+    {
+      padding: params.paddingPx,
+      pitch: params.pitch,
+      bearing: params.bearing,
+    },
   );
   if (!fitted) {
     return undefined;
