@@ -79,3 +79,17 @@ tests 57
 pass 57
 fail 0
 ```
+
+## Target-Safe Launch Extraction
+
+- Replaced the broad post-verb heuristic with a direct launch-weapon extractor. It accepts explicit weapon words or model tokens in the local syntax following the launch action.
+- Persistent discovery excludes only that direct weapon object. Launchers and later target entities remain independently grounded actors for engagement normalization.
+- Event-scoped weapon groups reuse the same extractor, preserving neutral factual identities such as `Arrow` and their evidence references.
+
+Focused verification:
+
+```text
+tests 58
+pass 58
+fail 0
+```

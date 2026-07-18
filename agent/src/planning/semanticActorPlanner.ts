@@ -65,12 +65,20 @@ function genericGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scenari
 }
 
 function actorKey(group: Pick<ActorGroupIntent, 'semanticEntityRef' | 'side' | 'locationRef'>): string { return [group.semanticEntityRef, group.side, group.locationRef].map(normalize).join('|') }
-function launchObject(entity: string, record: EvidenceRecord, unit: EventUnit): boolean {
-  const claim = `${record.claim}|${unit.worldStateChange}`
+function directLaunchWeapon(record: EvidenceRecord, unit: EventUnit): string | undefined {
+  const claim = record.claim
   const action = /\b(?:launch(?:es|ed|ing)?|fire(?:s|d|ing)?|intercept(?:s|ed|ing)?)\b|\u53d1\u5c04|\u62e6\u622a/iu.exec(claim)
-  if (action === null) return false
-  const index = claim.toLocaleLowerCase('en-US').indexOf(entity.toLocaleLowerCase('en-US'))
-  return index > (action.index ?? -1)
+  if (action === null || !completedLaunch(`${record.claim}|${unit.worldStateChange}`)) return undefined
+  const actionEnd = (action.index ?? 0) + action[0].length
+  return record.entities.find(entity => {
+    const index = claim.toLocaleLowerCase('en-US').indexOf(entity.toLocaleLowerCase('en-US'))
+    if (index < actionEnd) return false
+    const localSuffix = claim.slice(index + entity.length, index + entity.length + 32)
+    return inferredKind(entity) === 'weapon' || /\b(?:weapon|missile|rocket|bomb)\b/iu.test(localSuffix)
+  })
+}
+function launchObject(entity: string, record: EvidenceRecord, unit: EventUnit): boolean {
+  return normalize(directLaunchWeapon(record, unit) ?? '') === normalize(entity)
 }
 
 function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: ScenarioPack, occupied: ReadonlySet<string>): ActorGroupIntent[] {
@@ -114,8 +122,9 @@ function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scenario
   return eventPlan.eventUnits.flatMap(unit => {
     const records = factual(evidence.records).filter(record => unit.evidenceRefs.includes(record.evidenceId) && completedLaunch(record.claim))
     if (records.length === 0 || !completedLaunch(unit.worldStateChange)) return []
+    const directWeapon = records.map(record => directLaunchWeapon(record, unit)).find((entity): entity is string => entity !== undefined)
     const profile = pack.entityProfiles.find(candidate => candidate.platformKind === 'weapon' && records.some(record => contains(text(record), candidate.aliases)))
-    const semanticEntityRef = profile?.aliases[0] ?? records.flatMap(record => record.entities).find(entity => inferredKind(entity) === 'weapon') ?? 'missile'
+    const semanticEntityRef = directWeapon ?? profile?.aliases[0] ?? records.flatMap(record => record.entities).find(entity => inferredKind(entity) === 'weapon') ?? 'missile'
     const side = weaponFaction(unit, records, pack)
     return [{ groupId: `group:weapon-${slug(unit.eventUnitId)}`, semanticEntityRef, side, locationRef: unit.locationRefs[0] ?? records[0]?.locationExpression ?? 'location:unspecified', platformType: profile?.entityId ?? semanticEntityRef, role: 'weapon-launch', quantityDecision: resolveQuantity({ entityName: semanticEntityRef, entityAliases: profile?.aliases, platformType: 'weapon', role: 'launch', evidence: evidenceScope(evidence, records), packRoleDefault: roleDefault(pack, 'weapon-launch') }), formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: pack.weaponBehaviorProfiles.find(candidate => candidate.factionId === side && candidate.matchTerms.some(term => contains([unit.worldStateChange, ...records.map(text)].join('|'), [term])))?.behaviorProfile ?? pack.weaponBehaviorProfiles.find(candidate => candidate.factionId === side && candidate.matchTerms.length === 0)?.behaviorProfile ?? 'weapon-launch/v1', lifecycle: `event-scoped:${unit.eventUnitId}`, aliases: profile?.aliases ?? [semanticEntityRef], participantAliases: profile?.aliases ?? [semanticEntityRef], evidenceRefs: records.map(record => record.evidenceId), platformKind: 'weapon', diagnostics: [] } satisfies ActorGroupIntent]
   })

@@ -127,7 +127,16 @@ test('keeps a neutral named launch object event-scoped', () => {
   const launchPlan: EventPlan = { schemaVersion: 'event-plan/v1', planId: 'event-plan:arrow', documentId: 'doc:arrow', version: 1, omittedEvidence: [], warnings: [], eventUnits: [{ eventUnitId: 'event:launch', title: 'Launch', worldStateChange: 'Patrol launches an Arrow weapon.', participants: ['Patrol', 'Arrow'], locationRefs: [], evidenceRefs: ['ev-arrow'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'launch', importance: 'high' }] }
   const groups = planActorGroups({ eventPlan: launchPlan, evidence: launchEvidence, pack: genericScenarioPack })
   assert.equal(groups.some(group => group.semanticEntityRef === 'Arrow' && group.lifecycle === 'scene-persistent'), false)
-  assert.deepEqual(groups.filter(group => group.platformKind === 'weapon').map(group => group.lifecycle), ['event-scoped:event:launch'])
+  assert.deepEqual(groups.filter(group => group.platformKind === 'weapon').map(group => [group.lifecycle, group.semanticEntityRef, group.evidenceRefs]), [['event-scoped:event:launch', 'Arrow', ['ev-arrow']]])
+})
+
+test('keeps a target after a neutral named launch object as a persistent actor', () => {
+  const launchEvidence: EvidenceIR = { schemaVersion: 'evidence-ir/v1', documentId: 'doc:engagement', records: [{ evidenceId: 'ev-engagement', sourceRef: 'docx:p1', claim: 'Falcon launches an Arrow weapon at Hawk aircraft.', kind: 'explicit_fact', entities: ['Falcon', 'Arrow', 'Hawk aircraft'], confidence: 1, ambiguities: [] }] }
+  const launchPlan: EventPlan = { schemaVersion: 'event-plan/v1', planId: 'event-plan:engagement', documentId: 'doc:engagement', version: 1, omittedEvidence: [], warnings: [], eventUnits: [{ eventUnitId: 'event:launch', title: 'Launch', worldStateChange: 'Falcon launches an Arrow weapon at Hawk aircraft.', participants: ['Falcon', 'Arrow', 'Hawk aircraft'], locationRefs: [], evidenceRefs: ['ev-engagement'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'launch', importance: 'high' }] }
+  const groups = planActorGroups({ eventPlan: launchPlan, evidence: launchEvidence, pack: genericScenarioPack })
+  assert.equal(groups.some(group => group.semanticEntityRef === 'Arrow' && group.lifecycle === 'scene-persistent'), false)
+  assert.ok(groups.some(group => group.semanticEntityRef === 'Hawk aircraft' && group.lifecycle === 'scene-persistent'))
+  assert.equal(groups.find(group => group.platformKind === 'weapon')?.semanticEntityRef, 'Arrow')
 })
 
 test('discovers an unclaimed rescue actor alongside a resolved pack fighter', () => {
