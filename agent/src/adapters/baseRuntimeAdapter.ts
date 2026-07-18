@@ -42,6 +42,7 @@ function toModelAction(command: ModelCommand) {
       action: 'model.follow_path' as const,
       entityId: command.params.entityId,
       trajectoryAssetId: command.params.trajectoryAssetId,
+      ...(command.params.timing ? { timing: { ...command.params.timing } } : {}),
     }
     case 'model.set_state': return {
       action: 'model.set_state' as const,
