@@ -165,10 +165,26 @@ export function reduceModelFrame(
             'model.follow_path requires model.spawn',
           );
         }
-        setTrajectory(
-          item.params.trajectoryAssetId,
-          item.durationMs === 0 ? 1 : (seekTimeMs - item.startMs) / item.durationMs,
-        );
+        const timing = item.params.timing;
+        if (timing && timing.endMs > timing.startMs && timing.sourceEndMs >= timing.sourceStartMs) {
+          const narrativeProgress = clamp01((seekTimeMs - timing.startMs) / (timing.endMs - timing.startMs));
+          const sourceTimeMs = timing.sourceStartMs + narrativeProgress * (timing.sourceEndMs - timing.sourceStartMs);
+          const trajectory = trajectories.get(item.params.trajectoryAssetId);
+          if (!trajectory) {
+            throw new SceneRuntimeError(
+              'MODEL_COMMAND_INVALID',
+              `Missing trajectory ${item.params.trajectoryAssetId}`,
+              item.params.trajectoryAssetId,
+            );
+          }
+          const sourceElapsedMs = sourceTimeMs - trajectory.points[0]!.timeMs;
+          setTrajectory(item.params.trajectoryAssetId, sourceElapsedMs / Math.max(1, trajectory.durationMs));
+        } else {
+          setTrajectory(
+            item.params.trajectoryAssetId,
+            item.durationMs === 0 ? 1 : (seekTimeMs - item.startMs) / item.durationMs,
+          );
+        }
         break;
       case 'model.set_state':
         state = item.params.state;

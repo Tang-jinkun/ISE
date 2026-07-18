@@ -17,6 +17,8 @@ export const trajectoryPointSchema = z.strictObject({
 
 export const trajectorySchema = z.strictObject({
   schemaVersion: z.literal('ise-trajectory/v1'),
+  /** UTC source clock origin, retained so separate trajectories can share a clock. */
+  sourceTimeOriginMs: z.number().int().nonnegative().optional(),
   points: z.array(trajectoryPointSchema).min(2)
 }).superRefine((trajectory, context) => {
   for (let index = 1; index < trajectory.points.length; index += 1) {
@@ -82,5 +84,7 @@ export function normalizeTrajectorySamples(input: RawTrajectorySample[]): Normal
     }));
   });
 
-  return trajectorySchema.parse({ schemaVersion: 'ise-trajectory/v1', points });
+  // Preserve the absolute source clock alongside relative playback samples so
+  // independent routes can later be synchronized without reconstructing it.
+  return trajectorySchema.parse({ schemaVersion: 'ise-trajectory/v1', sourceTimeOriginMs: originMs, points });
 }

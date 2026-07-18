@@ -83,7 +83,11 @@ export async function createHydratedAssetRegistrySnapshot(
     }
     return {
       ...entry,
-      trajectory: { ...entry.trajectory, points: loaded.trajectory.points },
+      trajectory: {
+        ...entry.trajectory,
+        sourceTimeOriginMs: loaded.trajectory.sourceTimeOriginMs ?? entry.trajectory.sourceTimeOriginMs,
+        points: loaded.trajectory.points,
+      },
     }
   }))
   return assetRegistrySnapshotSchema.parse({

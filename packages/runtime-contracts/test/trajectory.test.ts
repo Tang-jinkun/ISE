@@ -16,6 +16,7 @@ test('normalizes source fields to relative milliseconds and canonical names', ()
   ]);
   assert.deepEqual(output, {
     schemaVersion: 'ise-trajectory/v1',
+    sourceTimeOriginMs: Date.UTC(2025, 4, 7, 0, 0, 8),
     points: [
       { timeMs: 0, longitude: 76.8, latitude: 30.4, altitudeM: 1000 },
       { timeMs: 1000, longitude: 76.9, latitude: 30.4, altitudeM: 1000 }

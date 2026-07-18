@@ -43,6 +43,7 @@ export const trajectoryAssetMetadataSchema = z.strictObject({
   format: z.literal('ise-trajectory/v1'),
   timeUnit: z.literal('ms'),
   coordinateOrder: z.literal('lng-lat-alt'),
+  sourceTimeOriginMs: z.number().int().nonnegative().optional(),
   startTimeMs: z.number().int().nonnegative(),
   endTimeMs: z.number().int().nonnegative(),
   monotonic: z.literal(true),

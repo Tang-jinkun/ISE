@@ -123,13 +123,24 @@ const dataLinkParamsSchema = z.strictObject({
   targetEntityId: nonEmptyId,
   linkKind: z.enum(['awacs-fighter', 'fighter-missile'])
 });
+const hybridTimingSchema = z.strictObject({
+  solver: z.literal('hybrid'),
+  sourceTimeOriginMs: milliseconds.optional(),
+  sourceStartMs: milliseconds,
+  sourceEndMs: milliseconds,
+  startMs: milliseconds,
+  endMs: milliseconds,
+  syncGroupId: nonEmptyId.optional(),
+  status: z.enum(['resolved', 'unresolved']),
+});
 
 export const modelActionSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('model.spawn'), entityId: nonEmptyId }),
   z.strictObject({
     action: z.literal('model.follow_path'),
     entityId: nonEmptyId,
-    trajectoryAssetId: assetId.regex(/^trajectory:/)
+    trajectoryAssetId: assetId.regex(/^trajectory:/),
+    timing: hybridTimingSchema.optional(),
   }),
   z.strictObject({
     action: z.literal('model.set_state'),

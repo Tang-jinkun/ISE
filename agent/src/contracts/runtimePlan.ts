@@ -112,6 +112,16 @@ export const runtimeCommandSchema = z.discriminatedUnion('type', [
   }) }),
   z.strictObject({ ...commandBase, type: z.literal('model.follow_path'), params: z.strictObject({
     action: z.literal('model.follow_path'), entityId: z.string().min(1), trajectoryAssetId: z.string().regex(/^trajectory:/),
+    timing: z.strictObject({
+      solver: z.literal('hybrid'),
+      sourceTimeOriginMs: z.number().int().nonnegative().optional(),
+      sourceStartMs: z.number().int().nonnegative(),
+      sourceEndMs: z.number().int().nonnegative(),
+      startMs: z.number().int().nonnegative(),
+      endMs: z.number().int().nonnegative(),
+      syncGroupId: z.string().min(1).optional(),
+      status: z.enum(['resolved', 'unresolved']),
+    }).optional(),
   }) }),
   z.strictObject({ ...commandBase, type: z.literal('model.set_state'), params: z.strictObject({
     action: z.literal('model.set_state'), entityId: z.string().min(1), state: z.enum(['normal', 'warning', 'disabled', 'destroyed', 'hidden']),

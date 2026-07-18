@@ -15,6 +15,7 @@ import { sceneBlueprintSchema, type SceneBlueprint } from '../contracts/sceneBlu
 import { resolvedScenePlanSchema, type ResolvedScenePlan } from '../contracts/resolvedScenePlan.ts'
 import { choreographyPlanSchema, type ChoreographyPlan } from '../contracts/choreographyPlan.ts'
 import { indoPakTrajectoryScenario } from '../config/indoPakTrajectoryScenario.ts'
+import { solveHybridTiming, solveSynchronizedHybridTiming } from './hybridTimingSolver.ts'
 import { AssetRegistry, normalizeAssetName } from '../services/assetRegistry.ts'
 import { canonicalJson, fingerprint } from '../services/fingerprint.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
@@ -522,7 +523,38 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       eventUnitId: firstUnit.eventUnitId,
       targetId: actor.actorInstanceId,
       type: 'model.follow_path',
-      params: { action: 'model.follow_path', entityId: actor.actorInstanceId, trajectoryAssetId: assignment.trajectoryAssetRef },
+      params: (() => {
+        const trajectory = exactAvailableAsset(assetRegistry, assignment.trajectoryAssetRef, 'trajectory')
+        if (trajectory.kind !== 'trajectory') fail('REQUIRED_ASSET_MISSING', assignment.trajectoryAssetRef)
+        const points = trajectory.trajectory.points
+        const sourceStartMs = points?.[0]?.timeMs ?? trajectory.trajectory.startTimeMs
+        const sourceEndMs = points?.at(-1)?.timeMs ?? trajectory.trajectory.endTimeMs
+        const engagement = choreographyPlan.weaponEngagements.find(item =>
+          item.weaponRef === actor.actorInstanceId || item.targetRef === actor.actorInstanceId)
+        const counterpartRef = engagement
+          ? engagement.weaponRef === actor.actorInstanceId ? engagement.targetRef : engagement.weaponRef
+          : undefined
+        const counterpartAssignment = counterpartRef ? assignments.get(counterpartRef) : undefined
+        const counterpartAsset = counterpartAssignment
+          ? exactAvailableAsset(assetRegistry, counterpartAssignment.trajectoryAssetRef, 'trajectory')
+          : undefined
+        const counterpartOrigin = counterpartAsset?.kind === 'trajectory' ? counterpartAsset.trajectory.sourceTimeOriginMs : undefined
+        const timingResult = solveHybridTiming(
+          { sourceStartMs, sourceEndMs, sourceTimeOriginMs: trajectory.trajectory.sourceTimeOriginMs },
+          { startMs: 0, endMs: Math.max(1, sourceEndMs - sourceStartMs) },
+        )
+        return {
+          action: 'model.follow_path' as const,
+          entityId: actor.actorInstanceId,
+          trajectoryAssetId: assignment.trajectoryAssetRef,
+          timing: {
+            ...timingResult,
+            status: counterpartOrigin !== undefined && trajectory.trajectory.sourceTimeOriginMs !== undefined
+              && counterpartOrigin !== trajectory.trajectory.sourceTimeOriginMs ? 'unresolved' : timingResult.status,
+            syncGroupId: engagement ? `engagement:${engagement.engagementId}` : undefined,
+          },
+        }
+      })(),
       dependsOn: [spawnId], onFailure: 'abort', evidenceRefs: [...firstUnit.evidenceRefs],
     }
     const hide: CommandDraft = {
@@ -608,6 +640,42 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       followEndMs: lastSubtitle.startMs + lastSubtitle.durationMs,
     }] as const
   }))
+  const engagementTimingStatus = new Map<string, 'resolved' | 'unresolved'>()
+  // Resolve engagement actors against one shared source clock when the
+  // imported trajectories carry an origin. Legacy relative-only routes retain
+  // their existing subtitle fit, while the result is still emitted below.
+  for (const engagement of choreographyPlan.weaponEngagements) {
+    const weaponAssignment = assignments.get(engagement.weaponRef)
+    const targetAssignment = assignments.get(engagement.targetRef)
+    const weaponWindow = actorPlaybackWindows.get(engagement.weaponRef)
+    const targetWindow = actorPlaybackWindows.get(engagement.targetRef)
+    if (!weaponAssignment || !targetAssignment || !weaponWindow || !targetWindow) continue
+    const weaponAsset = exactAvailableAsset(assetRegistry, weaponAssignment.trajectoryAssetRef, 'trajectory')
+    const targetAsset = exactAvailableAsset(assetRegistry, targetAssignment.trajectoryAssetRef, 'trajectory')
+    if (weaponAsset.kind !== 'trajectory' || targetAsset.kind !== 'trajectory') continue
+    if (weaponAsset.trajectory.sourceTimeOriginMs === undefined || targetAsset.trajectory.sourceTimeOriginMs === undefined) continue
+    const timing = solveSynchronizedHybridTiming([
+      {
+        sourceStartMs: weaponAsset.trajectory.startTimeMs,
+        sourceEndMs: weaponAsset.trajectory.endTimeMs,
+        sourceTimeOriginMs: weaponAsset.trajectory.sourceTimeOriginMs,
+      },
+      {
+        sourceStartMs: targetAsset.trajectory.startTimeMs,
+        sourceEndMs: targetAsset.trajectory.endTimeMs,
+        sourceTimeOriginMs: targetAsset.trajectory.sourceTimeOriginMs,
+      },
+    ], {
+      startMs: Math.max(weaponWindow.followStartMs, targetWindow.followStartMs),
+      endMs: Math.min(weaponWindow.followEndMs, targetWindow.followEndMs),
+    })
+    engagementTimingStatus.set(engagement.weaponRef, timing.status)
+    engagementTimingStatus.set(engagement.targetRef, timing.status)
+    if (timing.status === 'resolved') {
+      actorPlaybackWindows.set(engagement.weaponRef, { ...weaponWindow, followStartMs: timing.startMs, followEndMs: timing.endMs })
+      actorPlaybackWindows.set(engagement.targetRef, { ...targetWindow, followStartMs: timing.startMs, followEndMs: timing.endMs })
+    }
+  }
   const cameraCommands: CanonicalCommand[] = []
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
   const interceptedTargetHides = new Map<string, CanonicalCommand>()
@@ -808,9 +876,22 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     }
     const destroyedHide = destroyedTargetHides.get(actorInstanceRef)
     const interceptedHide = interceptedTargetHides.get(actorInstanceRef)
+    const followWithNarrativeWindow = follow.type === 'model.follow_path' && follow.params.timing
+      ? {
+        ...follow,
+        params: {
+          ...follow.params,
+          timing: {
+            ...follow.params.timing,
+            startMs: followStartMs,
+            endMs: followEndMs,
+          },
+        },
+      }
+      : follow
     return [
       scheduleActorCommand(spawn, spawnStartMs, spawnDurationMs),
-      scheduleActorCommand(follow, followStartMs, followDurationMs),
+      scheduleActorCommand(followWithNarrativeWindow, followStartMs, followDurationMs),
       ...(destroyedHide || interceptedHide ? [] : [scheduleActorCommand(hide, followEndMs, capabilityManifest.minimumDurations['model.hide'])]),
     ]
   })
