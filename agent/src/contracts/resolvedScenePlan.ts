@@ -20,6 +20,10 @@ export const resolvedScenePlanSchema = z.strictObject({
   resolvedScenePlanId: z.string().min(1),
   sourceBlueprintId: z.string().min(1),
   sourceBlueprintFingerprint: fingerprintSchema,
+  scenarioPack: z.strictObject({
+    packId: z.string().min(1),
+    version: z.string().min(1),
+  }).optional(),
   trajectoryCatalogFingerprint: fingerprintSchema,
   scenarioMappingFingerprint: fingerprintSchema,
   resolvedActors: z.array(actorInstanceSchema),

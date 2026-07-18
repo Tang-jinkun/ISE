@@ -1,4 +1,3 @@
-import { indoPakTrajectoryScenario } from '../config/indoPakTrajectoryScenario.ts'
 import {
   assetRegistrySnapshotSchema,
   type AssetRegistrySnapshot,
@@ -17,6 +16,8 @@ import { fingerprint } from '../services/fingerprint.ts'
 import { resolveFormationBundles } from '../services/formationBundleResolver.ts'
 import { diagnostic, type CompilationDiagnostic } from '../services/runtimeDiagnostics.ts'
 import { buildTrajectoryCatalog } from '../services/trajectoryCatalog.ts'
+import { scenarioPackForLineage } from '../services/scenarioPackRegistry.ts'
+import { scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
 
 export interface ResolveSceneBlueprintInput {
   blueprint: SceneBlueprint
@@ -58,17 +59,23 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   const blueprint = sceneBlueprintSchema.parse(input.blueprint)
   const assetRegistry = assetRegistrySnapshotSchema.parse(input.assetRegistry)
   const catalog = buildTrajectoryCatalog(assetRegistry)
+  const scenarioPack = scenarioPackForLineage(blueprint.scenarioPack)
+  const mapping = scenarioTrajectoryMappingSchema.parse({
+    schemaVersion: 'ise.scenario-trajectory-mapping/v1',
+    scenarioId: scenarioPack.packId,
+    bundles: scenarioPack.routeBundles,
+  })
   const resolvedActors = expandActorGroups(blueprint.actorGroups)
   const resolvedFormationBundles = resolveFormationBundles(
     blueprint.actorGroups,
     catalog,
-    indoPakTrajectoryScenario,
+    mapping,
   )
   const actorRouteAssignments = assignActorRoutes(resolvedActors, resolvedFormationBundles)
-  const scenarioBundles = new Map(indoPakTrajectoryScenario.bundles.map(bundle => [bundle.bundleId, bundle]))
+  const scenarioBundles = new Map(mapping.bundles.map(bundle => [bundle.bundleId, bundle]))
 
   const sourceBlueprintFingerprint = fingerprint(blueprint)
-  const scenarioMappingFingerprint = fingerprint(indoPakTrajectoryScenario)
+  const scenarioMappingFingerprint = fingerprint(mapping)
   const resolvedLocations = sortedUnique([
     ...blueprint.actorGroups.map(group => group.locationRef),
     ...blueprint.sceneBeats.flatMap(beat => beat.spatialConstraints),
@@ -91,6 +98,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   const content = {
     sourceBlueprintId: blueprint.blueprintId,
     sourceBlueprintFingerprint,
+    scenarioPack: blueprint.scenarioPack,
     trajectoryCatalogFingerprint: catalog.fingerprint,
     scenarioMappingFingerprint,
     resolvedActors,

@@ -7,6 +7,7 @@ import { diagnostic, type CompilationDiagnostic } from './runtimeDiagnostics.ts'
 export const genericScenarioPack: ScenarioPack = {
   schemaVersion: 'ise-scenario-pack/v1',
   packId: 'generic/v1',
+  version: '1',
   displayName: 'Generic',
   matchRules: [],
   factions: [],
@@ -14,6 +15,8 @@ export const genericScenarioPack: ScenarioPack = {
   locationProfiles: [],
   routeBundles: [],
   mediaProfiles: [],
+  actorProfiles: [],
+  weaponBehaviorProfiles: [],
 }
 
 function normalize(value: string): string {
@@ -30,10 +33,10 @@ function explicitEvidenceTokens(evidence: EvidenceIR): Set<string> {
 function score(pack: ScenarioPack, evidence: EvidenceIR): number {
   const tokens = explicitEvidenceTokens(evidence)
   return Math.max(0, ...pack.matchRules.map(rule => {
-    const matches = new Set([
-      ...rule.entityAliases,
-      ...rule.locationAliases,
-    ].map(normalize).filter(alias => tokens.has(alias))).size
+    const entityMatches = new Set(rule.entityAliases.map(normalize).filter(alias => tokens.has(alias))).size
+    const locationMatches = new Set(rule.locationAliases.map(normalize).filter(alias => tokens.has(alias))).size
+    if (entityMatches === 0 || locationMatches === 0) return 0
+    const matches = entityMatches + locationMatches
     return matches >= rule.minimumScore ? matches : 0
   }))
 }
@@ -75,4 +78,11 @@ export function selectScenarioPackFrom(
 
 export function selectScenarioPack(eventPlan: EventPlan, evidence: EvidenceIR): ScenarioPackSelection {
   return selectScenarioPackFrom([indoPakScenarioPack], eventPlan, evidence)
+}
+
+export function scenarioPackForLineage(lineage: { packId: string; version: string } | undefined): ScenarioPack {
+  if (lineage?.packId === indoPakScenarioPack.packId && lineage.version === indoPakScenarioPack.version) {
+    return indoPakScenarioPack
+  }
+  return genericScenarioPack
 }

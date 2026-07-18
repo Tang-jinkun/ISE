@@ -51,6 +51,16 @@ test('returns the empty generic pack when explicit evidence does not match a pac
   assert.deepEqual(genericScenarioPack.mediaProfiles, [])
 })
 
+test('requires both an explicit known entity and an explicit known location', () => {
+  const result = selectScenarioPack(eventPlan(), evidence([{
+    evidenceId: 'ev:test', sourceRef: 'docx:p1', claim: 'A report', kind: 'explicit_fact',
+    entities: ['Su-30MKI'], confidence: 1, ambiguities: [],
+  }]))
+
+  assert.equal(result.pack.packId, 'generic/v1')
+  assert.equal(result.diagnostics[0]?.code, 'SCENARIO_PACK_NOT_MATCHED')
+})
+
 test('returns generic and ambiguity diagnostics when packs tie', () => {
   const tiedPack: ScenarioPack = {
     ...indoPakScenarioPack,

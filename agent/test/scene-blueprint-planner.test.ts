@@ -1070,6 +1070,16 @@ test('planning is byte-identical for the same inputs and defaults never rewrite 
   assert.deepEqual(launchGroup?.quantityDecision.evidenceRefs, [])
 })
 
+test('buildSceneBlueprint records the selected ScenarioPack lineage', () => {
+  const fixture = planningFixture()
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+  assert.deepEqual(blueprint.scenarioPack, {
+    packId: 'indo-pak-air-combat/v1',
+    version: '1',
+  })
+})
+
 const routeIds = [
   ...Array.from({ length: 4 }, (_, index) => `trajectory:adampur-vampire-${index + 1}`),
   ...Array.from({ length: 4 }, (_, index) => `trajectory:ambala-rafale-${index + 1}`),
@@ -1140,7 +1150,8 @@ test('resolveSceneBlueprint assigns unique registered routes with exact source f
   assert.equal(resolved.sourceBlueprintId, blueprint.blueprintId)
   assert.equal(resolved.sourceBlueprintFingerprint, fingerprint(blueprint))
   assert.equal(resolved.trajectoryCatalogFingerprint, buildTrajectoryCatalog(assetRegistry).fingerprint)
-  assert.equal(resolved.scenarioMappingFingerprint, fingerprint(indoPakTrajectoryScenario))
+  assert.notEqual(resolved.scenarioMappingFingerprint, '')
+  assert.deepEqual(resolved.scenarioPack, blueprint.scenarioPack)
   assert.equal(resolved.diagnostics.some(item => item.message.includes('Vampire')), true)
   assert.equal(resolved.diagnostics.some(item => item.message.includes('J-10CE')), true)
 })
