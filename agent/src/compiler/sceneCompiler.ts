@@ -832,7 +832,10 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
           const interceptedHide = runtimeCommandSchema.parse({
             commandId: `cmd:${shot.shotId}:intercepted-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
             type: 'model.hide', params: { action: 'model.hide', entityId: engagement!.targetRef },
-            startMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
+            // Keep both weapons visible through the terminal interval so the
+            // shared endpoint is observable before the intercepted weapon is
+            // removed from the scene.
+            startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
             dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
           })
           const existingHide = interceptedTargetHides.get(engagement!.targetRef)
