@@ -742,7 +742,7 @@ test('turns project public compilation, artifact, and review activities without 
     runId: run.id, toolCallId: 'tool-1', toolName: 'compile_scene', summary: 'Scene compiled',
   })
   const stage = f.repositories.events.append(sessionId, run.id, 'compile.progress', {
-    runId: run.id, stage: 'schedule', message: 'Scheduling scene', progress: 60,
+    runId: run.id, stage: 'schedule', message: 'Scheduling scene', percentage: 60,
     data: { private: true }, prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
   })
   const artifact = f.repositories.events.append(sessionId, run.id, 'artifact.created', {
@@ -754,7 +754,7 @@ test('turns project public compilation, artifact, and review activities without 
     fingerprint: `sha256:${'a'.repeat(64)}`, prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
   })
   f.repositories.events.append(sessionId, run.id, 'review.resolved', {
-    runId: run.id, reviewId: 'review-1', artifactId: 'runtime-1', version: 1, status: 'approved',
+    runId: run.id, reviewId: 'review-1', artifactId: 'runtime-1', version: 1, decision: 'approved',
     prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
   })
 
@@ -778,6 +778,35 @@ test('turns project public compilation, artifact, and review activities without 
     },
   ])
   assert.equal(/private|secret|prompt|model|reasoning|hidden/i.test(JSON.stringify(activities)), false)
+  f.database.close()
+})
+
+test('turn activities use public names for every emitted compiler artifact type', async () => {
+  const f = await fixture()
+  const sessionId = await createSession(f.app)
+  const run = f.repositories.runs.createQueued(sessionId, 'generate', undefined, { kind: 'generate' })
+  f.repositories.runs.markRunning(run.id)
+  f.repositories.runs.finish(run.id, 'completed', undefined, {
+    outcome: { status: 'completed', finalAnswer: 'Scene generated' },
+  })
+  const artifactTypes = [
+    ['ise.asset-registry/v1', '素材资源表'],
+    ['ise.document-ir/v1', '文档解析结果'],
+    ['ise.evidence-ir/v1', '证据索引'],
+    ['ise.narrative-plan/v1', '叙事计划'],
+  ] as const
+  for (const [artifactType] of artifactTypes) {
+    f.repositories.events.append(sessionId, run.id, 'artifact.created', {
+      runId: run.id, artifactId: `artifact-${artifactType}`, artifactType,
+    })
+  }
+
+  const response = await f.app.inject({
+    method: 'GET', url: `/sessions/${sessionId}/turns`, headers: bearer('user-1'),
+  })
+
+  assert.deepEqual(response.json().turns[0].activities.map((item: { summary: string }) => item.summary),
+    artifactTypes.map(([, summary]) => summary))
   f.database.close()
 })
 

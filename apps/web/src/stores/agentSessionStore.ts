@@ -187,6 +187,7 @@ function sanitizeEvent(event: AgentEvent): AgentActivity {
         ['reviewId', stringField(data, 'reviewId')],
         ['artifactId', stringField(data, 'artifactId')],
         ['version', numberField(data, 'version')],
+        ['decision', stringField(data, 'decision') ?? stringField(data, 'status')],
         ['status', stringField(data, 'status')],
       ]);
       break;
@@ -195,6 +196,7 @@ function sanitizeEvent(event: AgentEvent): AgentActivity {
         ['runId', stringField(data, 'runId')],
         ['stage', stringField(data, 'stage')],
         ['message', stringField(data, 'message')],
+        ['percentage', numberField(data, 'percentage') ?? numberField(data, 'progress')],
         ['current', numberField(data, 'current')],
         ['total', numberField(data, 'total')],
         ['progress', numberField(data, 'progress')],

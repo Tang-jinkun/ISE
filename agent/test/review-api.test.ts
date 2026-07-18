@@ -78,8 +78,24 @@ async function fixture() {
 
 function bearer() { return { authorization: 'Bearer user-1' } }
 
+function associateReviewWithGenerationTurn(f: Awaited<ReturnType<typeof fixture>>) {
+  const origin = f.repositories.runs.createQueued(f.sessionId, 'generate')
+  f.repositories.runs.finish(origin.id, 'completed', undefined, {
+    outcome: { status: 'completed', finalAnswer: 'Event plan drafted' },
+  })
+  f.repositories.events.append(f.sessionId, origin.id, 'review.requested', {
+    runId: origin.id,
+    reviewId: f.review.id,
+    artifactId: f.review.artifactId,
+    version: f.review.artifactVersion,
+    fingerprint: f.review.fingerprint,
+  })
+  return origin
+}
+
 test('approve invokes accept_event_plan with a trusted exact binding', async () => {
   const f = await fixture()
+  const origin = associateReviewWithGenerationTurn(f)
   const response = await f.app.inject({
     method: 'POST', url: `/sessions/${f.sessionId}/reviews/${f.review.id}/approve`, headers: bearer(),
     payload: { artifactId: f.draft.id, version: 1, fingerprint: f.review.fingerprint },
@@ -93,6 +109,15 @@ test('approve invokes accept_event_plan with a trusted exact binding', async () 
   assert.deepEqual(reviewEvents.map(event => event.type), ['artifact.created', 'review.resolved'])
   assert.deepEqual(Object.keys((reviewEvents[0]!.data.metadata ?? {}) as Record<string, unknown>).sort(),
     ['documentId', 'fingerprint', 'planId', 'version'])
+  assert.deepEqual(reviewEvents.map(event => ({ runId: f.repositories.events.after(f.sessionId, '0')
+    .find(record => record.id === event.id)?.runId, dataRunId: event.data.runId })), [
+    { runId: origin.id, dataRunId: origin.id },
+    { runId: origin.id, dataRunId: origin.id },
+  ])
+  const turns = await f.app.inject({ method: 'GET', url: `/sessions/${f.sessionId}/turns`, headers: bearer() })
+  assert.equal(turns.json().turns.some((turn: { id: string }) => turn.id.startsWith('approval-')), false)
+  assert.equal(turns.json().turns.find((turn: { id: string; activities: Array<{ type: string; summary: string }> }) => turn.id === origin.id)
+    ?.activities.find(activity => activity.type === 'review')?.summary, '审核已通过')
   await f.app.close()
   f.database.close()
 })
@@ -130,6 +155,7 @@ test('revision creates version two and supersedes but does not mutate version on
 
 test('reject resolves only the exact tuple and preserves the draft', async () => {
   const f = await fixture()
+  const origin = associateReviewWithGenerationTurn(f)
   const response = await f.app.inject({
     method: 'POST', url: `/sessions/${f.sessionId}/reviews/${f.review.id}/reject`, headers: bearer(),
     payload: { artifactId: f.draft.id, version: 1, fingerprint: f.review.fingerprint, reason: 'needs changes' },
@@ -137,6 +163,12 @@ test('reject resolves only the exact tuple and preserves the draft', async () =>
   assert.deepEqual(response.json(), { reviewId: f.review.id, status: 'rejected' })
   assert.equal(f.repositories.artifacts.get(f.sessionId, f.draft.id)?.superseded, false)
   assert.equal(f.repositories.sessions.get(f.sessionId)?.status, 'completed')
+  const resolved = f.repositories.events.after(f.sessionId, '0').find(event => event.type === 'review.resolved')!
+  assert.equal(resolved.runId, origin.id)
+  assert.equal(resolved.data.runId, origin.id)
+  const turns = await f.app.inject({ method: 'GET', url: `/sessions/${f.sessionId}/turns`, headers: bearer() })
+  assert.equal(turns.json().turns.some((turn: { id: string }) => turn.id.startsWith('approval-')), false)
+  assert.equal(turns.json().turns.find((turn: { id: string; activities: Array<{ summary: string }> }) => turn.id === origin.id)?.activities.at(-1)?.summary, '审核已拒绝')
   await f.app.close()
   f.database.close()
 })

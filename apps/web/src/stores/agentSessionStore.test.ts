@@ -129,7 +129,7 @@ describe('useAgentSessionStore', () => {
     store.open('session-1');
     store.applyEvent('session-1', event('1', 'run.started', { runId: 'run-1' }));
     store.applyEvent('session-1', event('2', 'compile.progress', {
-      runId: 'run-1', stage: 'schedule', progress: 60, prompt: 'secret', hiddenReasoning: 'secret',
+      runId: 'run-1', stage: 'schedule', percentage: 60, prompt: 'secret', hiddenReasoning: 'secret',
     }));
     store.applyEvent('session-1', event('3', 'artifact.created', {
       runId: 'run-1', artifactId: 'runtime-1', artifactType: 'ise.canonical-runtime-plan/v1', data: { secret: true },
@@ -138,7 +138,7 @@ describe('useAgentSessionStore', () => {
       runId: 'run-1', reviewId: 'review-1', artifactId: 'runtime-1', version: 1, fingerprint,
     }));
     store.applyEvent('session-1', event('5', 'review.resolved', {
-      runId: 'run-1', reviewId: 'review-1', artifactId: 'runtime-1', version: 1, status: 'approved',
+      runId: 'run-1', reviewId: 'review-1', artifactId: 'runtime-1', version: 1, decision: 'approved',
     }));
 
     expect(useAgentSessionStore.getState().turns[0]?.activities).toEqual([

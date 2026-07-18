@@ -95,6 +95,7 @@ export class ReviewService {
     return this.serialized(input.sessionId, async () => {
       this.repositories.sessions.requireOwned(input.sessionId, input.subject)
       const review = this.requireExactPending(input)
+      const originRunId = this.originRunId(input.sessionId, review)
       const artifacts = this.temporaryArtifacts(input.sessionId)
       const existingIds = new Set(artifacts.list(undefined, { includeSuperseded: true }).map(artifact => artifact.id))
       const execution = await executeToolCall({
@@ -132,8 +133,8 @@ export class ReviewService {
           subject: input.subject,
           acceptedArtifactId: accepted.id,
         })
-        this.appendArtifactAfterCommit(input.sessionId, `approval-${review.id}`, accepted)
-        this.appendAfterCommit(input.sessionId, `approval-${review.id}`, 'review.resolved', {
+        this.appendArtifactAfterCommit(input.sessionId, originRunId, accepted)
+        this.appendAfterCommit(input.sessionId, originRunId, 'review.resolved', {
           ...tuple(review), decision: 'approved',
         })
         return created
@@ -155,6 +156,7 @@ export class ReviewService {
     return this.serialized(input.sessionId, async () => {
       this.repositories.sessions.requireOwned(input.sessionId, input.subject)
       const review = this.requireExactPending(input)
+      const originRunId = this.originRunId(input.sessionId, review)
       this.repositories.transaction(() => {
         this.repositories.reviews.resolve({
           sessionId: input.sessionId,
@@ -166,7 +168,7 @@ export class ReviewService {
           reason: input.reason,
         })
         this.repositories.sessions.transition(input.sessionId, ['awaiting_review'], 'completed')
-        this.appendAfterCommit(input.sessionId, undefined, 'review.resolved', {
+        this.appendAfterCommit(input.sessionId, originRunId, 'review.resolved', {
           ...tuple(review), decision: 'rejected', ...(input.reason ? { reason: input.reason } : {}),
         })
       })
@@ -271,14 +273,17 @@ export class ReviewService {
     type: 'review.requested' | 'review.resolved',
     data: Record<string, unknown>,
   ): void {
-    const event = this.events.record(sessionId, runId, type, data)
+    const event = this.events.record(sessionId, runId, type, {
+      ...(runId ? { runId } : {}),
+      ...data,
+    })
     this.repositories.afterCommit(() => this.events.publish(sessionId, event))
   }
 
-  private appendArtifactAfterCommit(sessionId: string, runId: string, artifact: Artifact): void {
+  private appendArtifactAfterCommit(sessionId: string, runId: string | undefined, artifact: Artifact): void {
     const metadata = publicArtifactMetadata(artifact.metadata)
     const event = this.events.record(sessionId, runId, 'artifact.created', {
-      runId,
+      ...(runId ? { runId } : {}),
       artifactId: artifact.id,
       artifactType: artifact.type,
       ...(artifact.logicalKey ? { logicalKey: artifact.logicalKey } : {}),
@@ -300,5 +305,17 @@ export class ReviewService {
       release()
       if (this.#sessionTails.get(sessionId) === tail) this.#sessionTails.delete(sessionId)
     }
+  }
+
+  private originRunId(sessionId: string, review: ReviewRecord): string | undefined {
+    const requested = this.repositories.events.after(sessionId, '0').reverse().find(event =>
+      event.type === 'review.requested'
+      && event.data.reviewId === review.id
+      && event.data.artifactId === review.artifactId
+      && event.data.version === review.artifactVersion
+      && event.data.fingerprint === review.fingerprint,
+    )
+    return requested?.runId
+      ?? (typeof requested?.data.runId === 'string' && requested.data.runId.length > 0 ? requested.data.runId : undefined)
   }
 }

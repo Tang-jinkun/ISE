@@ -30,9 +30,13 @@ const STAGE_SUMMARIES: Record<string, string> = {
 };
 
 const ARTIFACT_SUMMARIES: Record<string, string> = {
+  'ise.asset-registry/v1': '素材资源表',
+  'ise.document-ir/v1': '文档解析结果',
+  'ise.evidence-ir/v1': '证据索引',
   'ise.event-plan-draft/v1': '事件计划草案',
   'ise.event-plan-accepted/v1': '事件计划',
   'ise.narration-plan/v1': '叙事计划',
+  'ise.narrative-plan/v1': '叙事计划',
   'ise.scene-blueprint/v1': '场景蓝图',
   'ise.resolved-scene-plan/v1': '场景解析',
   'ise.choreography-plan/v1': '动作编排',
@@ -108,7 +112,7 @@ function applyActivity(activities: AgentTurnActivity[], event: AgentEvent) {
   if (event.type === 'compile.progress') {
     settleThinking(activities);
     const stage = stringField(event.data, 'stage');
-    const percentage = numberField(event.data, 'progress');
+    const percentage = numberField(event.data, 'percentage') ?? numberField(event.data, 'progress');
     activities.push({
       id: `stage-${event.id}`,
       type: 'stage',
@@ -150,13 +154,13 @@ function applyActivity(activities: AgentTurnActivity[], event: AgentEvent) {
     const review = activities.find((item) => item.type === 'review' && item.id === `review-${reviewId}`);
     if (review) {
       review.status = 'completed';
-      review.summary = reviewSummary(stringField(event.data, 'status'));
+      review.summary = reviewSummary(stringField(event.data, 'decision') ?? stringField(event.data, 'status'));
     } else {
       activities.push({
         id: `review-${reviewId ?? event.id}`,
         type: 'review',
         status: 'completed',
-        summary: reviewSummary(stringField(event.data, 'status')),
+        summary: reviewSummary(stringField(event.data, 'decision') ?? stringField(event.data, 'status')),
       });
     }
     return;
