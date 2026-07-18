@@ -425,6 +425,31 @@ function routePointAtPlaybackTime(
   ]
 }
 
+function routeSampleAtPlaybackTime(
+  assetRegistry: AssetRegistrySnapshot,
+  trajectoryAssetId: string,
+  playbackTimeMs: number,
+  followStartMs: number,
+  followEndMs: number,
+): { longitude: number, latitude: number, altitudeM: number } {
+  const asset = exactAvailableAsset(assetRegistry, trajectoryAssetId, 'trajectory')
+  if (asset.kind !== 'trajectory' || !asset.trajectory.points?.length) {
+    fail('REQUIRED_ASSET_MISSING', `trajectory geometry: ${trajectoryAssetId}`)
+  }
+  const progress = followEndMs <= followStartMs
+    ? 1
+    : Math.max(0, Math.min(1, (playbackTimeMs - followStartMs) / (followEndMs - followStartMs)))
+  const points = asset.trajectory.points
+  const first = points[0]!
+  const last = points.at(-1)!
+  const [longitude, latitude] = routePointAtPlaybackTime(assetRegistry, trajectoryAssetId, playbackTimeMs, followStartMs, followEndMs)
+  return {
+    longitude,
+    latitude,
+    altitudeM: first.altitudeM + (last.altitudeM - first.altitudeM) * progress,
+  }
+}
+
 function approximateDistanceMeters(
   left: { longitude: number, latitude: number },
   right: { longitude: number, latitude: number },
@@ -788,6 +813,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     }
   }
   const cameraCommands: CanonicalCommand[] = []
+  const interactionEndMs = new Map<string, number>()
   const destroyedTargetHides = new Map<string, CanonicalCommand>()
   const interceptedTargetHides = new Map<string, CanonicalCommand>()
   const engagementForShot = (shot: ChoreographyPlan['shotPlan'][number]) =>
@@ -837,6 +863,9 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     for (const shot of phaseShots) {
       const engagement = engagementForShot(shot)
       const interval = shotIntervals.get(shot.shotId)
+      if (shot.phase === 'terminal' && engagement && interval) {
+        interactionEndMs.set(engagement.engagementId, interval[1])
+      }
       if (shot.phase !== 'terminal' || engagement?.outcome !== 'destroyed' || !interval) continue
       const weaponPlayback = actorPlaybackWindows.get(engagement.weaponRef)
       if (!weaponPlayback) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
@@ -981,6 +1010,51 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   ): CanonicalCommand => {
     const { desiredDurationMs: _desiredDurationMs, ...command } = draft
     return runtimeCommandSchema.parse({ ...command, startMs, durationMs })
+  }
+  // Close each engagement at the terminal shot boundary. This makes the two
+  // routes and their target state share the same observable interaction time.
+  for (const engagement of choreographyPlan.weaponEngagements) {
+    const interactionEnd = interactionEndMs.get(engagement.engagementId)
+    if (interactionEnd === undefined) continue
+    const weaponWindow = actorPlaybackWindows.get(engagement.weaponRef)
+    const targetWindow = actorPlaybackWindows.get(engagement.targetRef)
+    const weaponDraft = actorCommandDrafts.find(item => item.actorInstanceRef === engagement.weaponRef)?.follow
+    const targetAssignment = assignments.get(engagement.targetRef)
+    const weaponAssignment = assignments.get(engagement.weaponRef)
+    if (!weaponWindow || !targetWindow || !weaponDraft || weaponDraft.type !== 'model.follow_path'
+      || !weaponDraft.params.timing || !targetAssignment || !weaponAssignment) continue
+    const interactionStart = Math.max(weaponWindow.followStartMs, targetWindow.followStartMs)
+    if (interactionEnd <= interactionStart) continue
+    actorPlaybackWindows.set(engagement.weaponRef, { ...weaponWindow, followEndMs: interactionEnd })
+    actorPlaybackWindows.set(engagement.targetRef, { ...targetWindow, followEndMs: interactionEnd })
+    const targetPoint = routeSampleAtPlaybackTime(
+      assetRegistry,
+      targetAssignment.trajectoryAssetRef,
+      interactionEnd,
+      targetWindow.followStartMs,
+      targetWindow.followEndMs,
+    )
+    const launcherAssignment = assignments.get(engagement.launcherRef)
+    const launcherWindow = actorPlaybackWindows.get(engagement.launcherRef)
+    const launchPoint = launcherAssignment && launcherWindow
+      ? routeSampleAtPlaybackTime(assetRegistry, launcherAssignment.trajectoryAssetRef, weaponWindow.followStartMs,
+        launcherWindow.followStartMs, launcherWindow.followEndMs)
+      : undefined
+    const binding = weaponDraft.params.timing.spatialBinding
+    if (binding && targetPoint && launchPoint) {
+      weaponDraft.params.timing = {
+        ...weaponDraft.params.timing,
+        spatialBinding: {
+          ...binding,
+          anchorLongitudeDeg: launchPoint.longitude,
+          anchorLatitudeDeg: launchPoint.latitude,
+          anchorAltitudeM: launchPoint.altitudeM,
+          terminalLongitudeDeg: targetPoint.longitude,
+          terminalLatitudeDeg: targetPoint.latitude,
+          terminalAltitudeM: targetPoint.altitudeM,
+        },
+      }
+    }
   }
   const actorCommands = actorCommandDrafts.flatMap(({ actorInstanceRef, spawn, follow, hide }) => {
     const playbackWindow = actorPlaybackWindows.get(actorInstanceRef)
