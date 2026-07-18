@@ -1,4 +1,12 @@
 import { WarDataDisplay } from './WarDataDisplay';
+import MarkdownIt from 'markdown-it';
+
+const markdown = new MarkdownIt({
+  html: false,
+  breaks: true,
+  linkify: true,
+  typographer: true,
+});
 
 // Helper functions for parsing payload
 const isJsonString = (text: string) => {
@@ -101,10 +109,14 @@ export const ChatContent = ({
     }
   }
 
-  // Regular text rendering
+  // Render ordinary agent output as safe Markdown while keeping structured
+  // WarData/JSON payloads on their existing rendering path above.
+  const rendered = markdown.render(content);
+
   return (
-    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
-      {content}
-    </div>
+    <div
+      className="chat-markdown text-sm leading-relaxed text-foreground/90"
+      dangerouslySetInnerHTML={{ __html: rendered }}
+    />
   );
 };
