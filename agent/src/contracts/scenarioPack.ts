@@ -60,6 +60,12 @@ export interface WeaponBehaviorProfile {
   matchTerms: readonly string[]
 }
 
+export interface ScenarioQuantityDefault {
+  role: string
+  value: number
+  policyId: string
+}
+
 export interface ScenarioPack {
   schemaVersion: 'ise-scenario-pack/v1'
   packId: string
@@ -73,4 +79,5 @@ export interface ScenarioPack {
   mediaProfiles: readonly MediaProfile[]
   actorProfiles: readonly ScenarioActorProfile[]
   weaponBehaviorProfiles: readonly WeaponBehaviorProfile[]
+  quantityDefaults?: readonly ScenarioQuantityDefault[]
 }

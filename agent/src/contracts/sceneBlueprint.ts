@@ -71,6 +71,14 @@ export type QuantitySource = z.infer<typeof quantitySourceSchema>
 export type QuantityConstraint = z.infer<typeof quantityConstraintSchema>
 export type QuantityDecision = z.infer<typeof quantityDecisionSchema>
 export type ActorGroup = z.infer<typeof actorGroupSchema>
+
+/** Semantic planning metadata is deliberately omitted from the runtime blueprint. */
+export interface ActorGroupIntent extends ActorGroup {
+  aliases: readonly string[]
+  participantAliases: readonly string[]
+  evidenceRefs: readonly string[]
+  platformKind: 'aircraft' | 'weapon' | 'sensor' | 'vehicle' | 'unknown'
+}
 export type ActorInstance = z.infer<typeof actorInstanceSchema>
 export type SceneBeat = z.infer<typeof sceneBeatSchema>
 export type SceneBlueprint = z.infer<typeof sceneBlueprintSchema>

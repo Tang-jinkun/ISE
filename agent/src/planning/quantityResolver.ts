@@ -17,6 +17,7 @@ export interface ResolveQuantityInput {
   role: string
   evidence: EvidenceIR
   userValue?: number
+  packRoleDefault?: { value: number; policyId: string }
 }
 
 const chineseIntegers: Readonly<Record<string, number>> = {
@@ -187,6 +188,17 @@ export function resolveQuantity(input: ResolveQuantityInput): QuantityDecision {
       source: 'user',
       evidenceRefs: [],
       reason: 'User quantity overrides default policy',
+    })
+  }
+
+  if (input.packRoleDefault !== undefined) {
+    return quantityDecisionSchema.parse({
+      value: input.packRoleDefault.value,
+      constraint: 'unknown',
+      source: 'default',
+      evidenceRefs: [],
+      defaultPolicyId: input.packRoleDefault.policyId,
+      reason: `No explicit quantity; applied ${input.packRoleDefault.policyId}`,
     })
   }
 
