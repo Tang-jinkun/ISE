@@ -1192,6 +1192,33 @@ test('resolveSceneBlueprint propagates route capacity exhaustion instead of synt
   )
 })
 
+test('resolveSceneBlueprint preserves a grounded actor as a static binding when its exact routes are unavailable', () => {
+  const fixture = resolvedFixture()
+  const assetRegistry = {
+    ...fixture.assetRegistry,
+    assets: [
+      ...fixture.assetRegistry.assets.filter(asset => !asset.assetId.startsWith('trajectory:ambala-rafale-')),
+      { assetId: 'model:rafale', kind: 'model' as const, displayName: 'Rafale', aliases: [], fingerprint: registryHash,
+        size: 1, mediaType: 'model/gltf-binary' as const, availability: 'available' as const, criticality: 'required' as const,
+        fallbackAssetIds: [], allowFallback: false, model: { scale: 1, rotationOffsetDeg: [0, 0, 0] as [number, number, number], altitudeOffsetM: 0, entityTypes: ['aircraft' as const] } },
+    ],
+  }
+
+  const resolved = resolveSceneBlueprint({ blueprint: fixture.blueprint, assetRegistry }) as typeof fixture.resolved & {
+    staticActorBindings?: Array<{ actorInstanceRef: string; coordinates: [number, number]; modelAssetRef?: string }>
+  }
+
+  assert.equal(resolved.staticActorBindings?.length, 4)
+  assert.deepEqual(resolved.staticActorBindings?.map(binding => binding.actorInstanceRef), [
+    'actor:india-rafale-ambala:leader',
+    'actor:india-rafale-ambala:wingman-1',
+    'actor:india-rafale-ambala:wingman-2',
+    'actor:india-rafale-ambala:wingman-3',
+  ])
+  assert.equal(resolved.actorRouteAssignments.some(item => item.actorInstanceRef.includes('india-rafale-ambala')), false)
+  assert.equal(resolved.diagnostics.some(item => item.code === 'ACTOR_TRAJECTORY_STATIC_FALLBACK'), true)
+})
+
 test('resolveSceneBlueprint rejects unknown ScenarioPack lineage and supports legacy blueprints without lineage', () => {
   const fixture = resolvedFixture()
   assert.throws(

@@ -58,12 +58,14 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     assignment.actorInstanceRef,
     assignment,
   ]))
+  const staticActors = new Set(resolvedScenePlan.staticActorBindings.map(binding => binding.actorInstanceRef))
+  const movingActors = resolvedScenePlan.resolvedActors.filter(actor => !staticActors.has(actor.actorInstanceId))
   if (
-    assignments.size !== resolvedScenePlan.resolvedActors.length
+    assignments.size !== movingActors.length
     || new Set(resolvedScenePlan.actorRouteAssignments.map(item => item.trajectoryAssetRef)).size !== assignments.size
   ) fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', resolvedScenePlan.resolvedScenePlanId)
 
-  const motionSegments = resolvedScenePlan.resolvedActors.map(actor => {
+  const motionSegments = movingActors.map(actor => {
     const assignment = assignments.get(actor.actorInstanceId)
     if (!assignment || assignment.sourceKind !== 'catalog' || !routeAssets.has(assignment.trajectoryAssetRef)) {
       fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', actor.actorInstanceId)
@@ -139,7 +141,8 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       .filter((group): group is SceneBlueprint['actorGroups'][number] => group?.role === 'weapon-launch'
         && equivalentEventId(group.lifecycle.replace(/^event-scoped:/u, ''), sceneBeat.eventUnitId))
       .sort((left, right) => left.groupId.localeCompare(right.groupId))
-    return weaponGroups.flatMap(weaponGroup => actorsForGroup(weaponGroup.groupId).flatMap(weaponActor => {
+    return weaponGroups.flatMap(weaponGroup => actorsForGroup(weaponGroup.groupId)
+      .filter(weaponActor => !staticActors.has(weaponActor.actorInstanceId)).flatMap(weaponActor => {
       const weaponRef = weaponActor.actorInstanceId
       const fighter = (side: string, platform: 'su30' | 'jf17' | 'rafale') => actorForCurrentBeat(sceneBeat, group => {
         if (group.role !== 'fighter-formation' || group.side !== side) return false

@@ -510,6 +510,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   const formationBundles = new Map(resolvedScenePlan.resolvedFormationBundles.map(bundle => [bundle.actorGroupRef, bundle]))
   const scenarioBundles = new Map(indoPakTrajectoryScenario.bundles.map(bundle => [bundle.bundleId, bundle]))
   const assignments = new Map(resolvedScenePlan.actorRouteAssignments.map(assignment => [assignment.actorInstanceRef, assignment]))
+  const staticBindings = new Map(resolvedScenePlan.staticActorBindings.map(binding => [binding.actorInstanceRef, binding]))
   const lifecycles = new Map(choreographyPlan.actorLifecycles.map(lifecycle => [lifecycle.actorInstanceRef, lifecycle]))
   const motions = new Map(choreographyPlan.motionSegments.map(segment => [segment.actorInstanceRef, segment]))
   const entities = resolvedScenePlan.resolvedActors.map(actor => {
@@ -517,27 +518,43 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const formation = formationBundles.get(actor.actorGroupRef)
     const scenario = formation ? scenarioBundles.get(formation.bundleId) : undefined
     const assignment = assignments.get(actor.actorInstanceId)
-    if (!group || !formation || !scenario || !assignment || assignment.sourceKind !== 'catalog') {
+    const staticBinding = staticBindings.get(actor.actorInstanceId)
+    if (staticBinding) {
+      if (staticBinding.modelAssetRef) exactAvailableAsset(assetRegistry, staticBinding.modelAssetRef, 'model')
+      return {
+        entityId: actor.actorInstanceId,
+        displayName: `${group?.semanticEntityRef ?? actor.actorGroupRef} ${actor.role}`,
+        kind: group?.role.includes('weapon') ? 'missile' as const : 'aircraft' as const,
+        ...(staticBinding.modelAssetRef ? { modelAssetId: staticBinding.modelAssetRef } : {}),
+        initialState: 'normal' as const,
+      }
+    }
+    if (!group || !formation || !assignment || assignment.sourceKind !== 'catalog') {
       fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', actor.actorInstanceId)
     }
     if (motions.get(actor.actorInstanceId)?.routeAssignmentRef !== assignment.segmentId) {
       fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', actor.actorInstanceId)
     }
-    exactAvailableAsset(assetRegistry, scenario.modelAssetRef, 'model')
+    const compatibleModels = assetRegistry.assets.filter((asset): asset is Extract<AssetRegistryEntry, { kind: 'model' }> =>
+      asset.kind === 'model' && asset.availability === 'available'
+      && asset.model.entityTypes.includes(group.role.includes('weapon') ? 'missile' : 'aircraft'))
+    const modelAssetRef = scenario?.modelAssetRef ?? (compatibleModels.length === 1 ? compatibleModels[0]!.assetId : undefined)
+    if (!modelAssetRef) fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', actor.actorInstanceId)
+    exactAvailableAsset(assetRegistry, modelAssetRef, 'model')
     exactAvailableAsset(assetRegistry, assignment.trajectoryAssetRef, 'trajectory')
     return {
       entityId: actor.actorInstanceId,
       displayName: `${group.semanticEntityRef} ${actor.role === 'leader' ? 'leader' : `wingman ${actor.ordinal}`}`,
       kind: group.role.includes('weapon') ? 'missile' as const : 'aircraft' as const,
-      modelAssetId: scenario.modelAssetRef,
+      modelAssetId: modelAssetRef,
       defaultTrajectoryAssetId: assignment.trajectoryAssetRef,
       initialState: 'normal' as const,
     }
   })
   if (
-    assignments.size !== entities.length
+    assignments.size + staticBindings.size !== entities.length
     || lifecycles.size !== entities.length
-    || new Set([...assignments.values()].map(assignment => assignment.trajectoryAssetRef)).size !== entities.length
+    || new Set([...assignments.values()].map(assignment => assignment.trajectoryAssetRef)).size !== assignments.size
   ) fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', choreographyPlan.choreographyPlanId)
 
   const commands: CommandDraft[] = []
@@ -548,9 +565,11 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     hide: CommandDraft
   }> = []
   const informationCards: InformationCardDraft[] = []
+  const staticMarkerDrafts: CommandDraft[] = []
   for (const actor of resolvedScenePlan.resolvedActors) {
     const entity = entities.find(candidate => candidate.entityId === actor.actorInstanceId)!
     const assignment = assignments.get(actor.actorInstanceId)!
+    const staticBinding = staticBindings.get(actor.actorInstanceId)
     const lifecycle = lifecycles.get(actor.actorInstanceId)
     const firstBeat = lifecycle ? sceneBeats.get(lifecycle.firstSceneBeatRef) : undefined
     const lastBeat = lifecycle ? sceneBeats.get(lifecycle.lastSceneBeatRef) : undefined
@@ -558,6 +577,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const lastUnit = lastBeat ? eventUnits.get(lastBeat.eventUnitId) : undefined
     if (!lifecycle || !firstBeat || !lastBeat || !firstUnit || !lastUnit) {
       fail('ACTOR_SCENE_BEAT_UNBOUND', actor.actorInstanceId)
+    }
+    if (staticBinding) {
+      staticMarkerDrafts.push({
+        commandId: `cmd:${actor.actorInstanceId}:marker`, eventUnitId: firstUnit.eventUnitId, targetId: actor.actorInstanceId,
+        type: 'marker.show', params: { coordinates: staticBinding.coordinates, label: entity.displayName, color: '#4d7cff' },
+        dependsOn: [], onFailure: 'warn', evidenceRefs: [...firstUnit.evidenceRefs], desiredDurationMs: 500,
+      })
+      continue
     }
     const spawnId = `cmd:${actor.actorInstanceId}:spawn`
     const followId = `cmd:${actor.actorInstanceId}:follow-1`
@@ -1145,6 +1172,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     ...destroyedTargetHides.values(),
     ...interceptedTargetHides.values(),
   ].filter((command): command is Extract<CanonicalCommand, { type: 'model.hide' }> => command.type === 'model.hide')
+  const staticMarkerCommands = staticMarkerDrafts.map(draft => {
+    const playbackWindow = actorPlaybackWindows.get(draft.targetId)
+    if (!playbackWindow) fail('ACTOR_SCENE_BEAT_UNBOUND', draft.targetId)
+    return scheduleActorCommand(draft, playbackWindow.spawnStartMs, Math.max(
+      capabilityManifest.minimumDurations['model.spawn'],
+      playbackWindow.followEndMs - playbackWindow.spawnStartMs,
+    ))
+  })
   const dataLinkCommands = choreographyPlan.relationSegments.map(relation => {
     const sceneBeat = sceneBeats.get(relation.sceneBeatRef)
     const subtitle = sceneBeat?.subtitleId ? subtitles.get(sceneBeat.subtitleId) : undefined
@@ -1169,6 +1204,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     ...scheduled.commands,
     ...dataLinkCommands,
     ...cameraCommands,
+    ...staticMarkerCommands,
     ...actorCommands,
     ...destroyedTargetHides.values(),
     ...interceptedTargetHides.values(),

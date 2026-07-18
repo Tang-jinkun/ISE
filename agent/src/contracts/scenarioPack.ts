@@ -23,6 +23,7 @@ export interface EntityProfile {
 export interface LocationProfile {
   locationId: string
   aliases: readonly string[]
+  coordinates?: readonly [number, number]
 }
 
 export interface MediaProfile {

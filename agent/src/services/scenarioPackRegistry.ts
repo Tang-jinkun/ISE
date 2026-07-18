@@ -81,6 +81,9 @@ export function selectScenarioPack(eventPlan: EventPlan, evidence: EvidenceIR): 
 }
 
 export function scenarioPackForLineage(lineage: { packId: string; version: string } | undefined): ScenarioPack | undefined {
+  if (lineage?.packId === genericScenarioPack.packId && lineage.version === genericScenarioPack.version) {
+    return genericScenarioPack
+  }
   if (lineage?.packId === indoPakScenarioPack.packId && lineage.version === indoPakScenarioPack.version) {
     return indoPakScenarioPack
   }

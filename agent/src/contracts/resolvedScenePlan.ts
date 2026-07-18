@@ -15,6 +15,15 @@ export const fallbackTrajectoryRecipeSchema = z.strictObject({
   lineage: z.array(z.string().min(1)),
 })
 
+export const staticActorBindingSchema = z.strictObject({
+  actorInstanceRef: z.string().min(1),
+  actorGroupRef: z.string().min(1),
+  modelAssetRef: z.string().regex(/^model:[a-z0-9][a-z0-9._-]*$/).optional(),
+  coordinates: z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]),
+  locationRef: z.string().min(1),
+  lineage: z.array(z.string().min(1)).min(1),
+})
+
 export const resolvedScenePlanSchema = z.strictObject({
   schemaVersion: z.literal('ise.resolved-scene-plan/v1'),
   resolvedScenePlanId: z.string().min(1),
@@ -31,6 +40,7 @@ export const resolvedScenePlanSchema = z.strictObject({
   resolvedAssets: z.array(z.string().min(1)),
   resolvedFormationBundles: z.array(formationBundleSchema),
   actorRouteAssignments: z.array(actorRouteAssignmentSchema),
+  staticActorBindings: z.array(staticActorBindingSchema).default([]),
   fallbackTrajectoryRecipes: z.array(fallbackTrajectoryRecipeSchema),
   resolvedBehaviors: z.array(z.string().min(1)),
   resolvedMedia: z.array(z.string().min(1)),
@@ -39,4 +49,5 @@ export const resolvedScenePlanSchema = z.strictObject({
 })
 
 export type FallbackTrajectoryRecipe = z.infer<typeof fallbackTrajectoryRecipeSchema>
+export type StaticActorBinding = z.infer<typeof staticActorBindingSchema>
 export type ResolvedScenePlan = z.infer<typeof resolvedScenePlanSchema>

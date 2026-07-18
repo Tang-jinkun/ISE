@@ -68,11 +68,15 @@ test('reports ambiguity rather than guessing between compatible assets', () => {
 })
 
 test('falls back to a static grounded marker when no trajectory is reliable', () => {
-  const result = resolveActorAssets(actor(), genericPack, registry([model('model:generic-fighter', 'Generic Fighter')]))
+  const result = resolveActorAssets(actor(), {
+    ...genericPack,
+    locationProfiles: [{ locationId: 'location:north-base', aliases: [], coordinates: [70, 30] }],
+  }, registry([model('model:generic-fighter', 'Generic Fighter')]))
 
   assert.equal(result.status, 'static-fallback')
   assert.equal(result.modelAssetId, 'model:generic-fighter')
   assert.deepEqual(result.trajectoryAssetIds, [])
+  assert.deepEqual(result.staticPosition?.coordinates, [70, 30])
   assert.equal(result.diagnostics[0]?.code, 'ACTOR_TRAJECTORY_STATIC_FALLBACK')
 })
 

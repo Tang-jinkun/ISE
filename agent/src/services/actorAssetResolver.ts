@@ -13,6 +13,7 @@ export interface ActorAssetResolution {
   mediaAssetIds: string[]
   status: ActorAssetResolutionStatus
   diagnostics: CompilationDiagnostic[]
+  staticPosition?: { coordinates: [number, number]; locationRef: string; lineage: string }
 }
 
 function modelId(assetId: string): `model:${string}` {
@@ -47,9 +48,17 @@ function exactBundle(actor: ActorGroup, pack: ScenarioPack) {
   return candidates.length === 1 ? candidates[0] : undefined
 }
 
-function grounded(locationRef: string): boolean {
-  const value = comparable(locationRef)
-  return value.length > 0 && value !== 'unknown' && value !== 'locationunknown' && value !== 'unresolved'
+function staticPosition(actor: ActorGroup, pack: ScenarioPack): ActorAssetResolution['staticPosition'] | undefined {
+  const location = comparable(actor.locationRef)
+  const profile = pack.locationProfiles.find(candidate =>
+    comparable(candidate.locationId) === location || candidate.aliases.some(alias => comparable(alias) === location))
+  if (profile?.coordinates) return { coordinates: [...profile.coordinates] as [number, number], locationRef: actor.locationRef, lineage: `location-profile:${profile.locationId}` }
+  const match = /^coordinates:([-+]?\d+(?:\.\d+)?),\s*([-+]?\d+(?:\.\d+)?)$/u.exec(actor.locationRef)
+  if (!match) return undefined
+  const coordinates: [number, number] = [Number(match[1]), Number(match[2])]
+  return coordinates[0] >= -180 && coordinates[0] <= 180 && coordinates[1] >= -90 && coordinates[1] <= 90
+    ? { coordinates, locationRef: actor.locationRef, lineage: 'evidence-coordinate:location-ref' }
+    : undefined
 }
 
 function compatibleModel(actor: ActorGroup, registry: AssetRegistrySnapshot) {
@@ -65,13 +74,18 @@ export function resolveActorAssets(
   registry: AssetRegistrySnapshot,
 ): ActorAssetResolution {
   const bundle = exactBundle(actor, pack)
+  const position = staticPosition(actor, pack)
   const models = available(registry, 'model')
   const routes = available(registry, 'trajectory')
   if (bundle) {
     const model = models.find(entry => entry.assetId === bundle.modelAssetRef)
     const trajectoryAssetIds = bundle.routeAssetRefs.filter(id => routes.some(route => route.assetId === id))
-    if (model && trajectoryAssetIds.length === bundle.routeAssetRefs.length) {
-      return { actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: trajectoryAssetIds.map(trajectoryId), mediaAssetIds: [], status: 'exact', diagnostics: [] }
+    if (trajectoryAssetIds.length === bundle.routeAssetRefs.length) {
+      return { actorGroupId: actor.groupId, ...(model ? { modelAssetId: modelId(model.assetId) } : {}), trajectoryAssetIds: trajectoryAssetIds.map(trajectoryId), mediaAssetIds: [], status: 'exact', diagnostics: [] }
+    }
+    if (model && position) return {
+      actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback', staticPosition: position,
+      diagnostics: [diagnostic('ACTOR_TRAJECTORY_STATIC_FALLBACK', `${actor.groupId}: exact model retained without a reliable route`, 'warning')],
     }
   }
 
@@ -87,8 +101,8 @@ export function resolveActorAssets(
   if (routes.length === 1) return {
     actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [trajectoryId(routes[0]!.assetId)], mediaAssetIds: [], status: 'compatible', diagnostics: [],
   }
-  if (grounded(actor.locationRef)) return {
-    actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback',
+  if (position) return {
+    actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback', staticPosition: position,
     diagnostics: [diagnostic('ACTOR_TRAJECTORY_STATIC_FALLBACK', `${actor.groupId}: no reliable trajectory; using grounded static fallback`, 'warning')],
   }
   return {

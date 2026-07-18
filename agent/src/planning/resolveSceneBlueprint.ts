@@ -17,7 +17,7 @@ import { resolveFormationBundles } from '../services/formationBundleResolver.ts'
 import { CompilationError, diagnostic, type CompilationDiagnostic } from '../services/runtimeDiagnostics.ts'
 import { buildTrajectoryCatalog } from '../services/trajectoryCatalog.ts'
 import { legacyCompatibilityPackForBlueprint, scenarioPackForLineage } from '../services/scenarioPackRegistry.ts'
-import { scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
+import { formationBundleSchema, scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
 import { resolveActorAssets } from '../services/actorAssetResolver.ts'
 
 export interface ResolveSceneBlueprintInput {
@@ -78,12 +78,41 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   // catalog assignment remains the only source of movement paths.
   const assetResolutions = blueprint.actorGroups.map(group =>
     resolveActorAssets(group, scenarioPack, assetRegistry))
-  const resolvedFormationBundles = resolveFormationBundles(
-    blueprint.actorGroups,
-    catalog,
-    mapping,
-  )
-  const actorRouteAssignments = assignActorRoutes(resolvedActors, resolvedFormationBundles)
+  const resolutionByGroup = new Map(assetResolutions.map(resolution => [resolution.actorGroupId, resolution]))
+  const movingGroups = blueprint.actorGroups.filter(group =>
+    (resolutionByGroup.get(group.groupId)?.trajectoryAssetIds.length ?? 0) > 0)
+  const resolvedFormationBundles = scenarioPack.packId === 'generic/v1'
+    ? movingGroups.map(group => {
+      const resolution = resolutionByGroup.get(group.groupId)!
+      return formationBundleSchema.parse({
+        bundleId: `catalog:${group.groupId}`,
+        actorGroupRef: group.groupId,
+        routeAssetRefs: resolution.trajectoryAssetIds,
+        recommendedActorCount: resolution.trajectoryAssetIds.length,
+        role: group.role,
+        side: group.side,
+        semanticTags: [group.semanticEntityRef],
+        scenarioBindings: ['generic/v1'],
+        mappingAuthority: 'catalog_hint',
+        diagnostics: [],
+      })
+    })
+    : resolveFormationBundles(movingGroups, catalog, mapping)
+  const movingActors = resolvedActors.filter(actor =>
+    (resolutionByGroup.get(actor.actorGroupRef)?.trajectoryAssetIds.length ?? 0) > 0)
+  const actorRouteAssignments = assignActorRoutes(movingActors, resolvedFormationBundles)
+  const staticActorBindings = resolvedActors.flatMap(actor => {
+    const resolution = resolutionByGroup.get(actor.actorGroupRef)
+    if (resolution?.status !== 'static-fallback' || !resolution.staticPosition) return []
+    return [{
+      actorInstanceRef: actor.actorInstanceId,
+      actorGroupRef: actor.actorGroupRef,
+      ...(resolution.modelAssetId ? { modelAssetRef: resolution.modelAssetId } : {}),
+      coordinates: resolution.staticPosition.coordinates,
+      locationRef: resolution.staticPosition.locationRef,
+      lineage: [resolution.staticPosition.lineage, `actor-resolution:${resolution.status}`],
+    }]
+  })
   const scenarioBundles = new Map(mapping.bundles.map(bundle => [bundle.bundleId, bundle]))
 
   const sourceBlueprintFingerprint = fingerprint(blueprint)
@@ -96,6 +125,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     ...resolvedFormationBundles.flatMap(bundle => bundle.routeAssetRefs),
     ...resolvedFormationBundles.flatMap(bundle => scenarioBundles.get(bundle.bundleId)?.modelAssetRef ?? []),
     ...actorRouteAssignments.map(assignment => assignment.trajectoryAssetRef),
+    ...staticActorBindings.flatMap(binding => binding.modelAssetRef ? [binding.modelAssetRef] : []),
   ])
   const resolvedBehaviors = sortedUnique([
     ...blueprint.actorGroups.flatMap(group => [group.behaviorProfile, group.formationPattern]),
@@ -122,6 +152,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     resolvedAssets,
     resolvedFormationBundles,
     actorRouteAssignments,
+    staticActorBindings,
     fallbackTrajectoryRecipes: [],
     resolvedBehaviors,
     resolvedMedia,
