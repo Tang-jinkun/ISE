@@ -131,7 +131,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     }
     return undefined
   }
-  const weaponEngagements = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
+  const rawWeaponEngagements = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
     const narrationBeat = narrationPlan.beats.find(beat => beat.subtitleId === sceneBeat.subtitleId)
     if (!narrationBeat) return []
     const weaponGroups = sceneBeat.actorRefs
@@ -187,6 +187,19 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       }]
     }))
   })
+  // A single weapon actor has one runtime lifecycle. Models may describe the
+  // same interaction across multiple adjacent scene beats; collapse those
+  // repeated projections before generating commands and shot plans.
+  const engagementByWeapon = new Map<string, (typeof rawWeaponEngagements)[number]>()
+  for (const engagement of rawWeaponEngagements) {
+    const existing = engagementByWeapon.get(engagement.weaponRef)
+    if (!existing) {
+      engagementByWeapon.set(engagement.weaponRef, engagement)
+      continue
+    }
+    existing.evidenceRefs = [...new Set([...existing.evidenceRefs, ...engagement.evidenceRefs])]
+  }
+  const weaponEngagements = [...engagementByWeapon.values()]
   const engagementsBySceneBeat = new Map<string, typeof weaponEngagements>()
   for (const engagement of weaponEngagements) {
     const entries = engagementsBySceneBeat.get(engagement.sceneBeatRef) ?? []
