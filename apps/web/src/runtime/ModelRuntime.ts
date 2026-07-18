@@ -398,7 +398,9 @@ export class ModelRuntime {
       }
       instance.transform.mercatorRoot.visible = frame.visible;
       instance.frame = frame;
-      if (frame.visible && frame.trail.coordinates.length > 0) {
+      // Aircraft keep moving along their source routes, but only weapons
+      // expose the yellow tactical trail overlay.
+      if (instance.entity.kind === 'missile' && frame.visible && frame.trail.coordinates.length > 0) {
         trails.push(frame.trail);
       }
     }
