@@ -1070,6 +1070,26 @@ test('planning is byte-identical for the same inputs and defaults never rewrite 
   assert.deepEqual(launchGroup?.quantityDecision.evidenceRefs, [])
 })
 
+test('resolves shared entity quantities within each grounded location', () => {
+  const fixture = planningFixture()
+  fixture.evidence = evidence([
+    {
+      evidenceId: 'ev-jf17-minhas', sourceRef: 'docx:p1', claim: '2架JF-17 fighters depart from Minhas.',
+      kind: 'explicit_fact', entities: ['JF-17', 'Minhas'], locationExpression: 'Minhas', confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-jf17-rafiki', sourceRef: 'docx:p2', claim: '4架JF-17 fighters depart from Rafiki.',
+      kind: 'explicit_fact', entities: ['JF-17', 'Rafiki'], locationExpression: 'Rafiki', confidence: 1, ambiguities: [],
+    },
+  ])
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+
+  assert.deepEqual(blueprint.actorGroups.filter(group => group.groupId.includes('jf17')).map(group => [group.groupId, group.quantityDecision.value]), [
+    ['group:pakistan-jf17-minhas', 2],
+    ['group:pakistan-jf17-rafiki', 4],
+  ])
+})
+
 test('buildSceneBlueprint records the selected ScenarioPack lineage', () => {
   const fixture = planningFixture()
   const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
@@ -1167,6 +1187,17 @@ test('resolveSceneBlueprint propagates route capacity exhaustion instead of synt
     (error: unknown) => error instanceof CompilationError
       && error.diagnostics.some(item => item.code === 'TRAJECTORY_BUNDLE_CAPACITY_EXCEEDED'),
   )
+})
+
+test('resolveSceneBlueprint rejects unknown ScenarioPack lineage and supports legacy blueprints without lineage', () => {
+  const fixture = resolvedFixture()
+  assert.throws(
+    () => resolveSceneBlueprint({ blueprint: { ...fixture.blueprint, scenarioPack: { packId: 'missing/v1', version: '1' } }, assetRegistry: fixture.assetRegistry }),
+    (error: unknown) => error instanceof CompilationError && error.diagnostics.some(item => item.code === 'SCENARIO_PACK_UNAVAILABLE'),
+  )
+  const legacy = resolveSceneBlueprint({ blueprint: { ...fixture.blueprint, scenarioPack: undefined }, assetRegistry: fixture.assetRegistry })
+  assert.equal(legacy.scenarioPack, undefined)
+  assert.equal(legacy.resolvedActors.length, fixture.resolved.resolvedActors.length)
 })
 
 test('compileChoreography preserves every resolved actor with stable beat-bounded lifecycles', () => {

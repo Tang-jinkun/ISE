@@ -35,10 +35,13 @@ function persistentGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scen
     const records = profileRecords(profile, linkedIds, evidence)
     const locationRef = profileLocation(profile, records)
     if (records.length === 0 || locationRef === undefined) return []
+    const locationRecords = profile.locationAliases.length === 0
+      ? records
+      : records.filter(record => includesAlias(recordText(record), profile.locationAliases))
     return [{
       groupId: profile.groupId, semanticEntityRef: profile.semanticEntityRef, side: profile.factionId, locationRef,
       platformType: profile.platformType, role: profile.role,
-      quantityDecision: resolveQuantity({ entityName: profile.semanticEntityRef, entityAliases: profile.aliases, platformType: profile.role === 'fighter-formation' ? 'fighter' : profile.platformType, role: profile.role, evidence: scopedEvidence(evidence, records) }),
+      quantityDecision: resolveQuantity({ entityName: profile.semanticEntityRef, entityAliases: profile.aliases, platformType: profile.role === 'fighter-formation' ? 'fighter' : profile.platformType, role: profile.role, evidence: scopedEvidence(evidence, locationRecords) }),
       formationPattern: profile.formationPattern, leaderPolicy: profile.leaderPolicy, behaviorProfile: profile.behaviorProfile, lifecycle: 'scene-persistent',
     } satisfies ActorGroup]
   })
