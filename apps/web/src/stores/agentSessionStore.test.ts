@@ -124,6 +124,34 @@ describe('useAgentSessionStore', () => {
     expect(JSON.stringify(useAgentSessionStore.getState().turns)).not.toContain('secret');
   });
 
+  it('projects public compilation, artifact, and review events into the live turn timeline', () => {
+    const store = useAgentSessionStore.getState();
+    store.open('session-1');
+    store.applyEvent('session-1', event('1', 'run.started', { runId: 'run-1' }));
+    store.applyEvent('session-1', event('2', 'compile.progress', {
+      runId: 'run-1', stage: 'schedule', progress: 60, prompt: 'secret', hiddenReasoning: 'secret',
+    }));
+    store.applyEvent('session-1', event('3', 'artifact.created', {
+      runId: 'run-1', artifactId: 'runtime-1', artifactType: 'ise.canonical-runtime-plan/v1', data: { secret: true },
+    }));
+    store.applyEvent('session-1', event('4', 'review.requested', {
+      runId: 'run-1', reviewId: 'review-1', artifactId: 'runtime-1', version: 1, fingerprint,
+    }));
+    store.applyEvent('session-1', event('5', 'review.resolved', {
+      runId: 'run-1', reviewId: 'review-1', artifactId: 'runtime-1', version: 1, status: 'approved',
+    }));
+
+    expect(useAgentSessionStore.getState().turns[0]?.activities).toEqual([
+      { id: 'stage-2', type: 'stage', status: 'completed', stage: 'schedule', summary: '编排场景时间', percentage: 60 },
+      {
+        id: 'artifact-3', type: 'artifact', status: 'completed', artifactType: 'ise.canonical-runtime-plan/v1',
+        artifactId: 'runtime-1', summary: '运行时计划',
+      },
+      { id: 'review-review-1', type: 'review', status: 'completed', summary: '审核已通过' },
+    ]);
+    expect(JSON.stringify(useAgentSessionStore.getState().turns)).not.toContain('secret');
+  });
+
   it('adds public run failure diagnostics to the failed turn', () => {
     const store = useAgentSessionStore.getState();
     store.open('session-1');

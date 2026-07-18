@@ -6,7 +6,10 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  FileCheck2,
   LoaderCircle,
+  Route,
+  ShieldCheck,
   Wrench,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -14,6 +17,9 @@ import { ChatContent } from './ChatContent';
 
 function activityLabel(activity: AgentTurnActivity): string {
   if (activity.type === 'thinking') return activity.text ?? '正在分析当前请求';
+  if (activity.type === 'stage' || activity.type === 'artifact' || activity.type === 'review') {
+    return activity.summary ?? '场景生成状态已更新';
+  }
   if (activity.type === 'diagnostic') {
     if (activity.code === 'MODEL_NOT_CONFIGURED') {
       return '尚未配置模型，请先在顶部完成模型配置';
@@ -27,6 +33,9 @@ function ActivityIcon({ activity }: { activity: AgentTurnActivity }) {
   if (activity.status === 'failed') return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
   if (activity.status === 'running') return <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-600 dark:text-cyan-300" />;
   if (activity.type === 'tool') return <Wrench className="h-3.5 w-3.5 text-muted-foreground" />;
+  if (activity.type === 'stage') return <Route className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" />;
+  if (activity.type === 'artifact') return <FileCheck2 className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" />;
+  if (activity.type === 'review') return <ShieldCheck className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" />;
   return <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />;
 }
 
@@ -50,16 +59,16 @@ function turnStatusLabel(turn: AgentTurnView): string {
   return `已完成 ${stepCount} 步`;
 }
 
-export function AgentTurn({ turn }: { turn: AgentTurnView }) {
+export function AgentTurn({ turn, isLatest = false }: { turn: AgentTurnView; isLatest?: boolean }) {
   const isRunning = isActiveStatus(turn.status);
-  const [expanded, setExpanded] = useState(isRunning || turn.status === 'failed');
+  const [expanded, setExpanded] = useState(isRunning || turn.status === 'failed' || isLatest);
   const stepCount = turn.activities.length;
   const activityName = turnActivitySummary(turn);
   const answer = turn.assistantMessage?.content ?? turn.outcome?.finalAnswer ?? '';
 
   useEffect(() => {
-    setExpanded(isActiveStatus(turn.status) || turn.status === 'failed');
-  }, [turn.status]);
+    if (isActiveStatus(turn.status) || turn.status === 'failed' || isLatest) setExpanded(true);
+  }, [turn.status, isLatest]);
 
   return (
     <div className="flex gap-3" data-agent-turn={turn.id}>
@@ -95,6 +104,20 @@ export function AgentTurn({ turn }: { turn: AgentTurnView }) {
                         {activity.type === 'tool' && activity.name && (
                           <div className="mt-0.5 truncate font-mono text-[10px] text-cyan-700 dark:text-cyan-300">
                             {activity.name}
+                          </div>
+                        )}
+                        {activity.type === 'stage' && activity.percentage !== undefined && (
+                          <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <div
+                              aria-label={`${activity.percentage}%`}
+                              className="h-1 flex-1 overflow-hidden rounded-sm bg-border"
+                            >
+                              <div
+                                className="h-full bg-cyan-600 dark:bg-cyan-300"
+                                style={{ width: `${Math.min(100, Math.max(0, activity.percentage))}%` }}
+                              />
+                            </div>
+                            <span>{activity.percentage}%</span>
                           </div>
                         )}
                       </div>

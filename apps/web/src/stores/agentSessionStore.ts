@@ -175,11 +175,15 @@ function sanitizeEvent(event: AgentEvent): AgentActivity {
       break;
     case 'review.requested': {
       const tuple = reviewTuple(data);
-      publicData = tuple ? { ...tuple } : {};
+      publicData = definedFields([
+        ['runId', stringField(data, 'runId')],
+        ...(tuple ? Object.entries(tuple) : []),
+      ]);
       break;
     }
     case 'review.resolved':
       publicData = definedFields([
+        ['runId', stringField(data, 'runId')],
         ['reviewId', stringField(data, 'reviewId')],
         ['artifactId', stringField(data, 'artifactId')],
         ['version', numberField(data, 'version')],

@@ -906,7 +906,7 @@ export default function Script() {
 
             {/* Chat Messages Area */}
             <div className="flex-1 space-y-4 overflow-y-auto px-2 py-2 thin-scrollbar">
-              {turns.map((turn) => (
+              {turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-4">
                   {turn.userMessage && (
                     <UserMessageBubble
@@ -914,7 +914,7 @@ export default function Script() {
                       time={messageTime(turn.userMessage.createdAt)}
                     />
                   )}
-                  <AgentTurn turn={turn} />
+                  <AgentTurn turn={turn} isLatest={index === turns.length - 1} />
                 </div>
               ))}
               {pendingMessages.map((item) => (

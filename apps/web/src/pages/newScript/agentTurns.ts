@@ -21,6 +21,38 @@ function settleThinking(activities: AgentTurnActivity[]) {
   if (last?.type === 'thinking' && last.status === 'running') last.status = 'completed';
 }
 
+const STAGE_SUMMARIES: Record<string, string> = {
+  narrative: '梳理叙事结构',
+  assets: '匹配场景素材',
+  schedule: '编排场景时间',
+  validate: '校验场景约束',
+  adapt: '生成播放配置',
+};
+
+const ARTIFACT_SUMMARIES: Record<string, string> = {
+  'ise.event-plan-draft/v1': '事件计划草案',
+  'ise.event-plan-accepted/v1': '事件计划',
+  'ise.narration-plan/v1': '叙事计划',
+  'ise.scene-blueprint/v1': '场景蓝图',
+  'ise.resolved-scene-plan/v1': '场景解析',
+  'ise.choreography-plan/v1': '动作编排',
+  'ise.canonical-runtime-plan/v1': '运行时计划',
+};
+
+function stageSummary(stage: string | undefined): string {
+  return stage ? STAGE_SUMMARIES[stage] ?? '处理场景生成' : '处理场景生成';
+}
+
+function artifactSummary(artifactType: string | undefined): string {
+  return artifactType ? ARTIFACT_SUMMARIES[artifactType] ?? '场景产物' : '场景产物';
+}
+
+function reviewSummary(status: string | undefined): string {
+  if (status === 'approved') return '审核已通过';
+  if (status === 'rejected') return '审核已拒绝';
+  return '等待审核确认';
+}
+
 function applyActivity(activities: AgentTurnActivity[], event: AgentEvent) {
   if (event.type === 'model.streaming') {
     const text = stringField(event.data, 'text');
@@ -71,6 +103,62 @@ function applyActivity(activities: AgentTurnActivity[], event: AgentEvent) {
       status: stringField(event.data, 'severity') === 'error' ? 'failed' : 'completed',
       summary: stringField(event.data, 'summary') ?? '智能体执行状态已更新',
     });
+    return;
+  }
+  if (event.type === 'compile.progress') {
+    settleThinking(activities);
+    const stage = stringField(event.data, 'stage');
+    const percentage = numberField(event.data, 'progress');
+    activities.push({
+      id: `stage-${event.id}`,
+      type: 'stage',
+      status: 'completed',
+      ...(stage ? { stage } : {}),
+      summary: stageSummary(stage),
+      ...(percentage !== undefined ? { percentage } : {}),
+    });
+    return;
+  }
+  if (event.type === 'artifact.created') {
+    settleThinking(activities);
+    const artifactType = stringField(event.data, 'artifactType') ?? stringField(event.data, 'type');
+    const artifactId = stringField(event.data, 'artifactId');
+    activities.push({
+      id: `artifact-${event.id}`,
+      type: 'artifact',
+      status: 'completed',
+      ...(artifactType ? { artifactType } : {}),
+      ...(artifactId ? { artifactId } : {}),
+      summary: artifactSummary(artifactType),
+    });
+    return;
+  }
+  if (event.type === 'review.requested') {
+    settleThinking(activities);
+    const reviewId = stringField(event.data, 'reviewId');
+    activities.push({
+      id: `review-${reviewId ?? event.id}`,
+      type: 'review',
+      status: 'running',
+      summary: reviewSummary(undefined),
+    });
+    return;
+  }
+  if (event.type === 'review.resolved') {
+    settleThinking(activities);
+    const reviewId = stringField(event.data, 'reviewId');
+    const review = activities.find((item) => item.type === 'review' && item.id === `review-${reviewId}`);
+    if (review) {
+      review.status = 'completed';
+      review.summary = reviewSummary(stringField(event.data, 'status'));
+    } else {
+      activities.push({
+        id: `review-${reviewId ?? event.id}`,
+        type: 'review',
+        status: 'completed',
+        summary: reviewSummary(stringField(event.data, 'status')),
+      });
+    }
     return;
   }
   if (event.type === 'run.failed') {

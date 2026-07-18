@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { AgentTurnView } from '@/api/agent';
 import { AgentTurn } from './AgentTurn';
@@ -60,6 +60,52 @@ describe('AgentTurn', () => {
     expect(screen.queryByText(/已完成/)).not.toBeInTheDocument();
   });
 
+  it('renders generation stages, artifacts, and review state for the latest completed turn', () => {
+    render(
+      <AgentTurn
+        isLatest
+        turn={{
+          ...baseTurn,
+          activities: [
+            {
+              id: 'stage-1', type: 'stage', status: 'completed', stage: 'schedule',
+              summary: '编排场景时间', percentage: 60,
+            },
+            {
+              id: 'artifact-1', type: 'artifact', status: 'completed',
+              artifactType: 'ise.canonical-runtime-plan/v1', artifactId: 'runtime-1', summary: '运行时计划',
+            },
+            { id: 'review-1', type: 'review', status: 'completed', summary: '审核已通过' },
+          ],
+        }}
+      />,
+    );
+
+    const toggle = screen.getByRole('button', { name: '执行过程，已完成 3 步' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('编排场景时间')).toBeInTheDocument();
+    expect(screen.getByText('60%')).toBeInTheDocument();
+    expect(screen.getByText('运行时计划')).toBeInTheDocument();
+    expect(screen.getByText('审核已通过')).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps a running turn expanded', () => {
+    render(
+      <AgentTurn
+        turn={{
+          ...baseTurn,
+          status: 'running',
+          activities: [{ id: 'stage-1', type: 'stage', status: 'completed', summary: '编排场景时间', percentage: 60 }],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '执行过程，正在执行 1 步' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('shows an actionable message when the model is not configured', () => {
     render(
       <AgentTurn
@@ -112,7 +158,7 @@ describe('AgentTurn', () => {
     );
     expect(
       screen.getByRole('button', { name: '执行过程，已完成 1 步' })
-    ).toHaveAttribute('aria-expanded', 'false');
+    ).toHaveAttribute('aria-expanded', 'true');
 
     rerender(
       <AgentTurn

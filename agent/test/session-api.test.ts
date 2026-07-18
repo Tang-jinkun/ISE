@@ -727,6 +727,60 @@ test('turns endpoint returns linked public messages and persisted outcome', asyn
   f.database.close()
 })
 
+test('turns project public compilation, artifact, and review activities without private event data', async () => {
+  const f = await fixture()
+  const sessionId = await createSession(f.app)
+  const run = f.repositories.runs.createQueued(sessionId, 'generate', undefined, { kind: 'generate' })
+  f.repositories.runs.markRunning(run.id)
+  f.repositories.runs.finish(run.id, 'completed', undefined, {
+    outcome: { status: 'completed', finalAnswer: 'Scene generated' },
+  })
+  f.repositories.events.append(sessionId, run.id, 'tool.started', {
+    runId: run.id, toolCallId: 'tool-1', toolName: 'compile_scene', summary: 'Compiling scene',
+  })
+  f.repositories.events.append(sessionId, run.id, 'tool.completed', {
+    runId: run.id, toolCallId: 'tool-1', toolName: 'compile_scene', summary: 'Scene compiled',
+  })
+  const stage = f.repositories.events.append(sessionId, run.id, 'compile.progress', {
+    runId: run.id, stage: 'schedule', message: 'Scheduling scene', progress: 60,
+    data: { private: true }, prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
+  })
+  const artifact = f.repositories.events.append(sessionId, run.id, 'artifact.created', {
+    runId: run.id, artifactId: 'runtime-1', artifactType: 'ise.canonical-runtime-plan/v1',
+    data: { private: true }, prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
+  })
+  const requested = f.repositories.events.append(sessionId, run.id, 'review.requested', {
+    runId: run.id, reviewId: 'review-1', artifactId: 'runtime-1', version: 1,
+    fingerprint: `sha256:${'a'.repeat(64)}`, prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
+  })
+  f.repositories.events.append(sessionId, run.id, 'review.resolved', {
+    runId: run.id, reviewId: 'review-1', artifactId: 'runtime-1', version: 1, status: 'approved',
+    prompt: 'secret prompt', model: 'private-model', hiddenReasoning: 'secret reasoning',
+  })
+
+  const response = await f.app.inject({
+    method: 'GET', url: `/sessions/${sessionId}/turns`, headers: bearer('user-1'),
+  })
+
+  assert.equal(response.statusCode, 200)
+  const activities = response.json().turns[0].activities
+  assert.deepEqual(activities.filter((item: { type: string }) => ['stage', 'artifact', 'review'].includes(item.type)), [
+    {
+      id: `stage-${stage.id}`, type: 'stage', status: 'completed', stage: 'schedule',
+      summary: '编排场景时间', percentage: 60,
+    },
+    {
+      id: `artifact-${artifact.id}`, type: 'artifact', status: 'completed',
+      artifactType: 'ise.canonical-runtime-plan/v1', artifactId: 'runtime-1', summary: '运行时计划',
+    },
+    {
+      id: 'review-review-1', type: 'review', status: 'completed', summary: '审核已通过',
+    },
+  ])
+  assert.equal(/private|secret|prompt|model|reasoning|hidden/i.test(JSON.stringify(activities)), false)
+  f.database.close()
+})
+
 test('attachment is validated remotely before its stable metadata is persisted', async () => {
   const { app, database } = await fixture()
   const sessionId = await createSession(app)

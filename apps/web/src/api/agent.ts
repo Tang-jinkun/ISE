@@ -135,13 +135,16 @@ export type AgentMessageView = {
 
 export type AgentTurnActivity = {
   id: string;
-  type: 'thinking' | 'tool' | 'diagnostic';
+  type: 'thinking' | 'tool' | 'stage' | 'artifact' | 'review' | 'diagnostic';
   status: 'running' | 'completed' | 'failed';
   text?: string;
   name?: string;
   code?: string;
   summary?: string;
   percentage?: number;
+  stage?: string;
+  artifactType?: string;
+  artifactId?: string;
 };
 
 export type AgentTurnView = {
