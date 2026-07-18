@@ -28,12 +28,12 @@ describe('AuthService token purpose', () => {
   };
   const originalEnv = process.env;
 
-  let prisma: { user: { findUnique: jest.Mock; create: jest.Mock } };
+  let prisma: { user: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock } };
   let service: AuthService;
 
   beforeEach(() => {
     process.env = { ...originalEnv, JWT_SECRET: secret };
-    prisma = { user: { findUnique: jest.fn(), create: jest.fn() } };
+    prisma = { user: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() } };
     service = new AuthService(new JwtService(), prisma as any);
   });
 
@@ -136,6 +136,26 @@ describe('AuthService token purpose', () => {
       username: body.username,
       tokenType: 'refresh',
     });
+  });
+
+  it('creates a one-time reset request without revealing whether the email exists', async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...user });
+    const result = await service.requestPasswordReset(user.email);
+    expect(result).toMatchObject({ accepted: true, resetUrl: expect.stringContaining('token=') });
+    expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: user.id },
+      data: expect.objectContaining({ resetTokenHash: expect.any(String), resetTokenExpiresAt: expect.any(Date) }),
+    }));
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.requestPasswordReset('missing@example.com')).resolves.toEqual({ accepted: true });
+  });
+
+  it('resets a local account password directly and rejects unknown email', async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...user });
+    await expect(service.resetPassword(user.email, 'new-password')).resolves.toEqual({ accepted: true });
+    expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: user.id } }));
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.resetPassword('missing@example.com', 'new-password')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects an access token used as a refresh token without exposing it', () => {

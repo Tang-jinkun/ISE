@@ -19,4 +19,12 @@ export class EmailService {
     });
     return { success: true };
   }
+
+  async sendPasswordResetEmail(email: string, resetUrl: string) {
+    await this.mailerService.sendMail({
+      to: email,
+      subject: '场景编辑器 - 重置密码',
+      text: `请使用以下链接重置密码：${resetUrl}`,
+    });
+  }
 }

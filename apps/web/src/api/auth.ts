@@ -30,6 +30,9 @@ export const login = async (params: {
   return res;
 };
 
+export const resetPassword = (params: { email: string; password: string }) =>
+  http.post<{ accepted: boolean }>('auth/reset-password', params);
+
 export const refresh = async (refresh_token: string) =>
   http.post<Tokens>('auth/refresh', { refresh_token });
 

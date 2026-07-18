@@ -23,7 +23,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { message } from '@/components/ui/message';
-import { login as apiLogin, register as apiRegister } from '@/api/auth';
+import { login as apiLogin, register as apiRegister, resetPassword as apiResetPassword } from '@/api/auth';
 import { tokenStorage } from '@/api/http';
 import { Globe, Layers, Bot, Users } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
@@ -32,6 +32,9 @@ export default function Login() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('login');
+  const [resetMode, setResetMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
   const fetchUser = useUserStore((s) => s.fetchUser);
 
   useEffect(() => {
@@ -89,6 +92,7 @@ export default function Login() {
   });
 
   async function onLoginSubmit(values: z.infer<typeof loginSchema>) {
+    try {
     const res = await apiLogin({
       email: values.email,
       password: values.password
@@ -99,6 +103,22 @@ export default function Login() {
       navigate('/user/homepage');
     } else {
       message.error(res?.message || '登录失败');
+    }
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || '邮箱或密码错误');
+    }
+  }
+
+  async function onResetSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await apiResetPassword({ email: resetEmail, password: resetPassword });
+      message.success('密码已重置，请使用新密码登录');
+      setResetMode(false);
+      loginForm.setValue('email', resetEmail);
+      loginForm.setValue('password', '');
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || '密码重置失败');
     }
   }
 
@@ -247,6 +267,16 @@ export default function Login() {
                     >
                       {t('auth.submitLogin')}
                     </Button>
+                    <button type="button" className="w-full text-center text-xs text-cyan-300 hover:text-cyan-200" onClick={() => setResetMode((value) => !value)}>
+                      {resetMode ? '返回登录' : '忘记密码？本地重置'}
+                    </button>
+                    {resetMode && (
+                      <form onSubmit={onResetSubmit} className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                        <Input type="email" required placeholder="账号邮箱" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} />
+                        <Input type="password" required minLength={6} placeholder="新密码（至少 6 位）" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} />
+                        <Button type="submit" className="w-full" variant="outline">确认重置密码</Button>
+                      </form>
+                    )}
                   </form>
                 </Form>
               </TabsContent>

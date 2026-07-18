@@ -21,3 +21,17 @@ export class RegisterParamsDto {
   @Length(6, 64)
   password: string;
 }
+
+export class PasswordResetRequestDto {
+  @IsEmail()
+  email: string;
+}
+
+export class PasswordResetDto {
+  @IsEmail()
+  email: string;
+
+  @IsNotEmpty()
+  @Length(6, 64)
+  password: string;
+}

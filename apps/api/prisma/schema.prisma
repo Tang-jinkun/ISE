@@ -36,6 +36,8 @@ model User {
   password String
   username String
   role     Role
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
   logs     Log[]
   folders  Folder[]
   files    File[]

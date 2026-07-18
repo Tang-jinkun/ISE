@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginParamsDto, RegisterParamsDto } from './dto/params-auth.dto';
+import { LoginParamsDto, PasswordResetDto, PasswordResetRequestDto, RegisterParamsDto } from './dto/params-auth.dto';
 import { responseMessage } from '@/utils';
 import { Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
@@ -33,6 +33,16 @@ export class AuthController {
   async login(@Body() body: LoginParamsDto) {
     const tokens = await this.authService.login(body.email, body.password);
     return responseMessage(tokens, '登录成功');
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: PasswordResetRequestDto) {
+    return responseMessage(await this.authService.requestPasswordReset(body.email));
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() body: PasswordResetDto) {
+    return responseMessage(await this.authService.resetPassword(body.email, body.password));
   }
 
   @Post('refresh')
