@@ -255,3 +255,29 @@ interactionTime + aftermathHold -> hide/state
 4. Runtime 增加 interaction-aware playback 和最小 3D effect 生命周期。
 5. 使用真实 DOCX 重新导出，进行一次定向链路验收。
 
+## 11. Review Decisions and First Implementation Boundary
+
+The architecture review confirms the interaction-first direction, with the
+following boundaries made explicit:
+
+- `SceneBlueprint` remains the first stable semantic scene artifact. The
+  compiler then normalizes `InteractionIntent` into a dependency graph. This
+  keeps authored quantities and actor groups traceable to the source document
+  while preventing the runtime compiler from inventing entities.
+- The first solver domain is weapon launch, weapon interception, target hit,
+  and destruction. Tracking and data-link interactions continue to use the
+  same registry contract but are not required to block this vertical slice.
+- Imported source timestamps are preserved when they share a source clock;
+  otherwise they are soft constraints. A subtitle window may shape the
+  presentation schedule but cannot move a resolved interaction point.
+- Dependency cycles, ambiguous producers, missing geometry, and incompatible
+  clocks produce `unresolved`. They never produce a synthetic impact or
+  collision.
+- The initial runtime implementation may retain existing actor identifiers.
+  A new global entity-id namespace is deferred until the interaction registry
+  has stabilized across the DOCX and editor contracts.
+
+The first implementation therefore has one shared `InteractionSolver`, one
+runtime interaction registry, and one presentation scheduler. Internal timing
+strategies remain implementation details; callers do not select mutually
+exclusive timing modes.

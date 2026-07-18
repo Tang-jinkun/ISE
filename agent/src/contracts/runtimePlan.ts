@@ -40,6 +40,23 @@ export const lineageSchema = z.strictObject({
   evidenceRefs: z.array(z.string().min(1)),
 })
 
+export const runtimeInteractionSchema = z.strictObject({
+  interactionId: z.string().min(1),
+  engagementId: z.string().min(1),
+  interactionTimeMs: z.number().int().nonnegative(),
+  interactionPoint: z.strictObject({
+    longitudeDeg: z.number().finite(),
+    latitudeDeg: z.number().finite(),
+    altitudeM: z.number().finite(),
+  }).optional(),
+  spatialToleranceM: z.number().finite().nonnegative(),
+  temporalToleranceMs: z.number().int().nonnegative(),
+  status: z.enum(['resolved', 'unresolved']),
+  propagatedFromInteractionId: z.string().min(1).optional(),
+  diagnostics: z.array(z.string().min(1)),
+})
+export type RuntimeInteraction = z.infer<typeof runtimeInteractionSchema>
+
 export const runtimeCommandTypeSchema = z.enum([
   'image.show', 'video.play', 'marker.show', 'geojson.show', 'camera.transition',
   'camera.follow_actor', 'camera.follow_group',
@@ -161,6 +178,7 @@ export const canonicalRuntimePlanSchema = z.strictObject({
   subtitles: z.array(scheduledSubtitleSchema),
   commands: z.array(runtimeCommandSchema),
   informationCards: z.array(informationCardSchema),
+  interactions: z.array(runtimeInteractionSchema).default([]),
   lineage: z.array(lineageSchema),
   diagnostics: z.array(compilationDiagnosticSchema),
 })

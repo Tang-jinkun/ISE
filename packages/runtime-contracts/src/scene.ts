@@ -180,6 +180,23 @@ const cameraItemSchema = z.strictObject({ ...baseItemShape, params: cameraParams
 const modelItemSchema = z.strictObject({ ...baseItemShape, params: modelActionSchema });
 const dataLinkItemSchema = z.strictObject({ ...baseItemShape, params: dataLinkParamsSchema });
 
+export const sceneInteractionSchema = z.strictObject({
+  interactionId: nonEmptyId,
+  engagementId: nonEmptyId,
+  interactionTimeMs: milliseconds,
+  interactionPoint: z.strictObject({
+    longitudeDeg: z.number().finite(),
+    latitudeDeg: z.number().finite(),
+    altitudeM: z.number().finite(),
+  }).optional(),
+  spatialToleranceM: z.number().finite().nonnegative(),
+  temporalToleranceMs: milliseconds,
+  status: z.enum(['resolved', 'unresolved']),
+  propagatedFromInteractionId: nonEmptyId.optional(),
+  diagnostics: z.array(canonicalNonBlankString),
+});
+export type SceneInteraction = z.infer<typeof sceneInteractionSchema>;
+
 export const sceneTrackItemSchema = z.union([
   subtitleItemSchema,
   imageItemSchema,
@@ -217,6 +234,7 @@ const baseSceneProjectConfigSchema = z.strictObject({
   totalDurationMs: milliseconds,
   entities: z.array(sceneEntitySchema),
   tracks: z.array(sceneTrackSchema),
+  interactions: z.array(sceneInteractionSchema).default([]),
   diagnostics: z.array(diagnosticSchema)
 });
 

@@ -839,6 +839,25 @@ test('destroyed engagement ends the missile path when the target enters destroye
   assert.equal(missileHide.startMs, destroyed.startMs)
 })
 
+test('chained interception propagates the downstream interaction point to the upstream missile', () => {
+  const fixture = finalInputForEngagementFixture()
+  const plan = compileFinalScene(fixture.input)
+  const interception = fixture.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
+  const upstream = fixture.choreographyPlan.weaponEngagements.find(item => item.weaponRef === interception.targetRef)!
+  const interceptionFollow = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'model.follow_path' }> =>
+    command.type === 'model.follow_path' && command.targetId === interception.weaponRef)!
+  const upstreamFollow = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'model.follow_path' }> =>
+    command.type === 'model.follow_path' && command.targetId === upstream.weaponRef)!
+
+  const interceptionBinding = interceptionFollow.params.timing?.spatialBinding
+  const upstreamBinding = upstreamFollow.params.timing?.spatialBinding
+  assert.ok(interceptionBinding, 'interceptor should have a spatial binding')
+  assert.ok(upstreamBinding, 'upstream missile should have a spatial binding')
+  assert.ok(Math.abs(interceptionBinding!.terminalLongitudeDeg - upstreamBinding!.terminalLongitudeDeg) < 1e-6)
+  assert.ok(Math.abs(interceptionBinding!.terminalLatitudeDeg - upstreamBinding!.terminalLatitudeDeg) < 1e-6)
+  assert.ok(Math.abs(interceptionBinding!.terminalAltitudeM - upstreamBinding!.terminalAltitudeM) < 1e-3)
+})
+
 test('destroyed engagement impact video covers the stable terminal follow', () => {
   const fixture = finalInputForEngagementFixture()
   const plan = compileFinalScene(fixture.input)
@@ -1229,7 +1248,7 @@ test('fighter missile data link extends through a later cross-beat interception'
   assert.equal(dataLink.startMs + dataLink.durationMs, targetHide.startMs)
 })
 
-test('final compiler rejects an engagement subtitle too short for its four phase cameras', () => {
+test('final compiler lets an interaction presentation outlive a short subtitle', () => {
   const fixture = finalInputForEngagementFixture()
   fixture.input.narrationPlan = {
     ...fixture.input.narrationPlan,
@@ -1252,9 +1271,14 @@ test('final compiler rejects an engagement subtitle too short for its four phase
     assetRegistry: fixture.input.assetRegistry,
   })
 
-  assert.throws(() => compileFinalScene(fixture.input), (error: unknown) =>
-    error instanceof CompilationError
-    && error.diagnostics.some(item => item.code === 'NARRATION_VISUAL_DURATION_CONFLICT'))
+  const plan = compileFinalScene(fixture.input)
+  const subtitle = plan.subtitles.find(item => item.subtitleId === 'subtitle-first-strike')!
+  const cameraTail = plan.commands
+    .filter(command => command.commandId.includes('scene-beat-first-strike')
+      && (command.type === 'camera.transition' || command.type === 'camera.follow_actor' || command.type === 'camera.follow_group'))
+    .reduce((latest, command) => Math.max(latest, command.startMs + command.durationMs), 0)
+
+  assert.ok(cameraTail > subtitle.startMs + subtitle.durationMs)
 })
 
 test('compiles grounded missile engagements with establishing and supported phase shots', () => {

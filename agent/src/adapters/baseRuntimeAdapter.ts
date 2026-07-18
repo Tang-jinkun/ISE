@@ -222,6 +222,7 @@ export class BaseRuntimeAdapter {
         initialState: source.initialState,
       })),
       tracks,
+      interactions: plan.interactions,
       diagnostics: plan.diagnostics,
     })
   }

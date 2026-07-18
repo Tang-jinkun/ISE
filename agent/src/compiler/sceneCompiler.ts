@@ -8,6 +8,7 @@ import {
   type CanonicalCommand,
   type CanonicalRuntimePlan,
   type CommandDraft,
+  type RuntimeInteraction,
   type RuntimeEntity,
 } from '../contracts/runtimePlan.ts'
 import { narrationPlanSchema, type NarrationPlan } from '../contracts/narrationPlan.ts'
@@ -16,6 +17,7 @@ import { resolvedScenePlanSchema, type ResolvedScenePlan } from '../contracts/re
 import { choreographyPlanSchema, type ChoreographyPlan } from '../contracts/choreographyPlan.ts'
 import { indoPakTrajectoryScenario } from '../config/indoPakTrajectoryScenario.ts'
 import { solveHybridTiming, solveSynchronizedHybridTiming } from './hybridTimingSolver.ts'
+import { solveInteractionGeometry, type InteractionIntent, type InteractionPoint } from './interactionSolver.ts'
 import { AssetRegistry, normalizeAssetName } from '../services/assetRegistry.ts'
 import { canonicalJson, fingerprint } from '../services/fingerprint.ts'
 import { CompilationError, diagnostic } from '../services/runtimeDiagnostics.ts'
@@ -822,6 +824,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   const impactEngagements = choreographyPlan.weaponEngagements.filter(engagement =>
     engagement.outcome === 'interception' || engagement.outcome === 'destroyed')
   if (impactEngagements.length > 0) exactAvailableAsset(assetRegistry, 'video:missile-impact', 'video')
+  let cameraPresentationCursorMs = 0
   for (const narrationBeat of narrationPlan.beats) {
     const subtitle = subtitles.get(narrationBeat.subtitleId)
     if (!subtitle) fail('NARRATION_SCENE_BEAT_UNBOUND', narrationBeat.subtitleId)
@@ -829,15 +832,19 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     if (subtitleShots.length === 0) continue
     const phaseShots = subtitleShots.filter(shot => shot.phase)
     const shotIntervals = new Map<string, readonly [number, number]>()
-    const visualStartMs = subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS
-    const visualEndMs = subtitle.startMs + subtitle.durationMs
     const transitionDurationMs = capabilityManifest.minimumDurations['camera.transition']
     const followMinimumMs = capabilityManifest.minimumDurations['camera.follow_group']
     const intervalMinimumMs = transitionDurationMs + followMinimumMs
+    const visualStartMs = Math.max(subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS, cameraPresentationCursorMs)
+    const intervalCount = phaseShots.length > 0 ? subtitleShots.length : 1
+    const visualEndMs = Math.max(
+      subtitle.startMs + subtitle.durationMs,
+      visualStartMs + intervalCount * intervalMinimumMs,
+    )
+    cameraPresentationCursorMs = visualEndMs
     if (phaseShots.length > 0) {
       const establishing = subtitleShots.find(shot => !shot.phase)
-      if (!establishing || subtitleShots.length !== phaseShots.length + 1
-        || visualEndMs - visualStartMs < subtitleShots.length * intervalMinimumMs) {
+      if (!establishing || subtitleShots.length !== phaseShots.length + 1) {
         fail('NARRATION_VISUAL_DURATION_CONFLICT', narrationBeat.subtitleId)
       }
       const establishingEndMs = visualStartMs + intervalMinimumMs
@@ -854,9 +861,6 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       }
     } else {
       for (const shot of subtitleShots) {
-        if (visualEndMs - visualStartMs < intervalMinimumMs) {
-          fail('NARRATION_VISUAL_DURATION_CONFLICT', narrationBeat.subtitleId)
-        }
         shotIntervals.set(shot.shotId, [visualStartMs, visualEndMs])
       }
     }
@@ -1011,29 +1015,78 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const { desiredDurationMs: _desiredDurationMs, ...command } = draft
     return runtimeCommandSchema.parse({ ...command, startMs, durationMs })
   }
+
+  // Resolve interaction geometry once for the whole engagement graph. A
+  // weapon that is later intercepted still contributes its prospective
+  // terminal point; a downstream weapon targeting it inherits that point.
+  const interactionIntents: InteractionIntent[] = []
+  const directInteractionPoints = new Map<string, InteractionPoint | undefined>()
+  for (const engagement of choreographyPlan.weaponEngagements) {
+    const targetWindow = actorPlaybackWindows.get(engagement.targetRef)
+    const targetAssignment = assignments.get(engagement.targetRef)
+    if (!targetWindow || !targetAssignment) continue
+    const terminalShotEndMs = interactionEndMs.get(engagement.engagementId)
+    const interactionTimeMs = terminalShotEndMs ?? targetWindow.followEndMs
+    const targetFollowEndMs = terminalShotEndMs ?? targetWindow.followEndMs
+    interactionIntents.push({
+      interactionId: `interaction:${engagement.engagementId}`,
+      weaponRef: engagement.weaponRef,
+      targetRef: engagement.targetRef,
+      interactionTimeMs,
+    })
+    const directPoint = routeSampleAtPlaybackTime(
+      assetRegistry,
+      targetAssignment.trajectoryAssetRef,
+      interactionTimeMs,
+      targetWindow.followStartMs,
+      targetFollowEndMs,
+    )
+    directInteractionPoints.set(`interaction:${engagement.engagementId}`, {
+      longitudeDeg: directPoint.longitude,
+      latitudeDeg: directPoint.latitude,
+      altitudeM: directPoint.altitudeM,
+    })
+  }
+  const interactionGeometry = solveInteractionGeometry({
+    intents: interactionIntents,
+    directPoints: directInteractionPoints,
+  })
+  const interactions: RuntimeInteraction[] = interactionIntents.map(intent => {
+    const result = interactionGeometry.get(intent.interactionId)
+    return {
+      interactionId: intent.interactionId,
+      engagementId: intent.interactionId.replace(/^interaction:/u, ''),
+      interactionTimeMs: intent.interactionTimeMs,
+      ...(result?.interactionPoint ? { interactionPoint: result.interactionPoint } : {}),
+      spatialToleranceM: 500,
+      temporalToleranceMs: 250,
+      status: result?.status ?? 'unresolved',
+      ...(result?.propagatedFromInteractionId
+        ? { propagatedFromInteractionId: result.propagatedFromInteractionId }
+        : {}),
+      diagnostics: result?.reason ? [`INTERACTION_${result.reason.replaceAll('-', '_').toUpperCase()}`] : [],
+    }
+  })
+
   // Close each engagement at the terminal shot boundary. This makes the two
   // routes and their target state share the same observable interaction time.
   for (const engagement of choreographyPlan.weaponEngagements) {
     const interactionEnd = interactionEndMs.get(engagement.engagementId)
-    if (interactionEnd === undefined) continue
     const weaponWindow = actorPlaybackWindows.get(engagement.weaponRef)
     const targetWindow = actorPlaybackWindows.get(engagement.targetRef)
     const weaponDraft = actorCommandDrafts.find(item => item.actorInstanceRef === engagement.weaponRef)?.follow
-    const targetAssignment = assignments.get(engagement.targetRef)
     const weaponAssignment = assignments.get(engagement.weaponRef)
     if (!weaponWindow || !targetWindow || !weaponDraft || weaponDraft.type !== 'model.follow_path'
-      || !weaponDraft.params.timing || !targetAssignment || !weaponAssignment) continue
-    const interactionStart = Math.max(weaponWindow.followStartMs, targetWindow.followStartMs)
-    if (interactionEnd <= interactionStart) continue
-    actorPlaybackWindows.set(engagement.weaponRef, { ...weaponWindow, followEndMs: interactionEnd })
-    actorPlaybackWindows.set(engagement.targetRef, { ...targetWindow, followEndMs: interactionEnd })
-    const targetPoint = routeSampleAtPlaybackTime(
-      assetRegistry,
-      targetAssignment.trajectoryAssetRef,
-      interactionEnd,
-      targetWindow.followStartMs,
-      targetWindow.followEndMs,
-    )
+      || !weaponDraft.params.timing || !weaponAssignment) continue
+    if (interactionEnd !== undefined) {
+      const interactionStart = Math.max(weaponWindow.followStartMs, targetWindow.followStartMs)
+      if (interactionEnd <= interactionStart) continue
+      actorPlaybackWindows.set(engagement.weaponRef, { ...weaponWindow, followEndMs: interactionEnd })
+      actorPlaybackWindows.set(engagement.targetRef, { ...targetWindow, followEndMs: interactionEnd })
+    }
+    const interactionId = `interaction:${engagement.engagementId}`
+    const interactionResult = interactionGeometry.get(interactionId)
+    const targetPoint = interactionResult?.interactionPoint
     const launcherAssignment = assignments.get(engagement.launcherRef)
     const launcherWindow = actorPlaybackWindows.get(engagement.launcherRef)
     const launchPoint = launcherAssignment && launcherWindow
@@ -1044,13 +1097,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     if (binding && targetPoint && launchPoint) {
       weaponDraft.params.timing = {
         ...weaponDraft.params.timing,
+        status: interactionResult?.status ?? weaponDraft.params.timing.status,
         spatialBinding: {
           ...binding,
           anchorLongitudeDeg: launchPoint.longitude,
           anchorLatitudeDeg: launchPoint.latitude,
           anchorAltitudeM: launchPoint.altitudeM,
-          terminalLongitudeDeg: targetPoint.longitude,
-          terminalLatitudeDeg: targetPoint.latitude,
+          terminalLongitudeDeg: targetPoint.longitudeDeg,
+          terminalLatitudeDeg: targetPoint.latitudeDeg,
           terminalAltitudeM: targetPoint.altitudeM,
         },
       }
@@ -1155,6 +1209,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     subtitles: [...scheduled.subtitles].sort((left, right) => left.subtitleId.localeCompare(right.subtitleId)),
     commands: [...finalCommands].sort((left, right) => left.commandId.localeCompare(right.commandId)),
     informationCards: [...scheduled.informationCards].sort((left, right) => left.cardId.localeCompare(right.cardId)),
+    interactions: interactions.sort((left, right) => left.interactionId.localeCompare(right.interactionId)),
     lineage: outputIds.map(([outputId, evidenceRefs]) => ({ outputId, sourceArtifactIds, evidenceRefs }))
       .sort((left, right) => left.outputId.localeCompare(right.outputId)),
     diagnostics,
