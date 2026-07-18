@@ -52,3 +52,17 @@ tests 54
 pass 54
 fail 0
 ```
+
+## Re-review Fixes
+
+- Discovery now excludes explicit weapon entities and inferred weapon models. `weaponGroups()` is the sole creator of weapon actors, and every weapon remains event-scoped.
+- Discovery now runs alongside resolved pack actors. It skips known pack aliases and deduplicates normalized entity, faction, and location identities, allowing factual support/rescue entities to coexist with a pack-resolved fighter.
+- Pack faction aliases are removed from candidate actor entities. Ownership is derived into `side`; a faction label such as `Aurora` cannot become an aircraft actor.
+
+Focused verification after re-review:
+
+```text
+tests 56
+pass 56
+fail 0
+```

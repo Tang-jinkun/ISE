@@ -39,7 +39,7 @@ function completedLaunch(value: string): boolean {
   if (/\b(?:pre[-\s]?launch|fire[-\s]?control|prepare(?:d|s|ing)?|plan(?:ned|s|ning)?|authori[sz](?:e|ed|es|ing|ation)?)\b|\u53d1\u5c04\u51c6\u5907|\u51c6\u5907\u53d1\u5c04|\u8ba1\u5212\u53d1\u5c04|\u706b\u63a7\u5f00\u542f/iu.test(value)) return false
   return /\b(?:launch(?:es|ed|ing)?|fire(?:s|d|ing)?)\b|\u53d1\u5c04/iu.test(value)
 }
-function inferredKind(value: string): ActorGroupIntent['platformKind'] { if (/\b(?:missile|weapon|rocket|bomb)\b/iu.test(value)) return 'weapon'; if (/\b(?:sensor|radar|aew|awacs|sentinel)\b/iu.test(value)) return 'sensor'; if (/\b(?:truck|vehicle|rescue|transport)\b/iu.test(value)) return 'vehicle'; return 'aircraft' }
+function inferredKind(value: string): ActorGroupIntent['platformKind'] { if (/\b(?:(?:pl|aim|r)-?\d+[a-z0-9-]*|missile|weapon|rocket|bomb)\b/iu.test(value)) return 'weapon'; if (/\b(?:sensor|radar|aew|awacs|sentinel)\b/iu.test(value)) return 'sensor'; if (/\b(?:truck|vehicle|rescue|transport)\b/iu.test(value)) return 'vehicle'; return 'aircraft' }
 function inferredRole(kind: ActorGroupIntent['platformKind'], value: string): string { if (kind === 'weapon') return 'weapon-launch'; if (kind === 'sensor') return 'sensor-support'; if (kind === 'vehicle') return /rescue|evacuat/iu.test(value) ? 'rescue-support' : 'vehicle-support'; return /formation|flight|squadron|deploy|aircraft|fighter/iu.test(value) ? 'fighter-formation' : 'aircraft-support' }
 function faction(value: string, pack: ScenarioPack): string { return pack.factions.find(candidate => contains(value, candidate.aliases))?.factionId ?? 'faction:unknown' }
 function location(record: EvidenceRecord, unit: EventUnit, pack: ScenarioPack): string { const found = pack.locationProfiles.find(profile => contains([text(record), ...unit.locationRefs].join('|'), profile.aliases)); return found?.locationId ?? unit.locationRefs[0] ?? record.locationExpression ?? 'location:unspecified' }
@@ -64,21 +64,31 @@ function genericGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scenari
   return [...groups.values()]
 }
 
-function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR): ActorGroupIntent[] {
+function actorKey(group: Pick<ActorGroupIntent, 'semanticEntityRef' | 'side' | 'locationRef'>): string { return [group.semanticEntityRef, group.side, group.locationRef].map(normalize).join('|') }
+
+function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: ScenarioPack, occupied: ReadonlySet<string>): ActorGroupIntent[] {
   const groups = new Map<string, ActorGroupIntent>()
+  const knownAliases = new Set([
+    ...pack.actorProfiles.flatMap(profile => profile.aliases),
+    ...pack.entityProfiles.flatMap(profile => profile.aliases),
+  ].map(normalize))
   for (const unit of eventPlan.eventUnits) {
     const records = factual(evidence.records).filter(record => unit.evidenceRefs.includes(record.evidenceId))
     for (const record of records) {
       const locations = [record.locationExpression, ...unit.locationRefs].filter((value): value is string => value !== undefined && value.length > 0)
       const locationRef = locations[0] ?? 'location:unspecified'
       const locationTokens = new Set(locations.map(normalize))
-      const entities = record.entities.filter(entity => !locationTokens.has(normalize(entity)))
+      const factionTokens = new Set(pack.factions.flatMap(profile => profile.aliases).map(normalize))
+      const entities = record.entities.filter(entity => !locationTokens.has(normalize(entity)) && !factionTokens.has(normalize(entity)))
       const candidates = entities.length > 0 ? entities : unit.participants.filter(participant => contains(record.claim, [participant]))
       for (const entity of candidates) {
+        if (knownAliases.has(normalize(entity))) continue
         const source = `${record.claim}|${unit.worldStateChange}|${unit.participants.join('|')}`
-        const platformKind = inferredKind(`${entity}|${source}`); const role = inferredRole(platformKind, source)
-        const side = 'faction:unknown'; const groupId = `group:${slug(`${side}-${entity}-${locationRef}`)}`
-        if (groups.has(groupId)) continue
+        const platformKind = inferredKind(entity)
+        if (platformKind === 'weapon') continue
+        const role = inferredRole(platformKind, source); const side = faction(source, pack); const groupId = `group:${slug(`${side}-${entity}-${locationRef}`)}`
+        const key = actorKey({ semanticEntityRef: entity, side, locationRef })
+        if (groups.has(groupId) || occupied.has(key)) continue
         const diagnostics = [
           diagnostic('ACTOR_FACTION_UNRESOLVED', `Actor ${entity} has no grounded faction.`, 'warning'),
           ...(locations.length === 0 ? [diagnostic('ACTOR_LOCATION_UNRESOLVED', `Actor ${entity} has no grounded location.`, 'warning')] : []),
@@ -124,5 +134,6 @@ function weaponFaction(unit: EventUnit, records: EvidenceRecord[], pack: Scenari
 
 export function planActorGroups(input: { eventPlan: EventPlan; evidence: EvidenceIR; pack: ScenarioPack }): ActorGroupIntent[] {
   const profileGroups = [...legacyGroups(input.eventPlan, input.evidence, input.pack), ...genericGroups(input.eventPlan, input.evidence, input.pack)]
-  return [...profileGroups, ...(profileGroups.length === 0 ? discoveredGroups(input.eventPlan, input.evidence) : []), ...weaponGroups(input.eventPlan, input.evidence, input.pack)]
+  const occupied = new Set(profileGroups.map(actorKey))
+  return [...profileGroups, ...discoveredGroups(input.eventPlan, input.evidence, input.pack, occupied), ...weaponGroups(input.eventPlan, input.evidence, input.pack)]
 }

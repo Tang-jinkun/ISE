@@ -8,6 +8,7 @@ import { fingerprint } from '../src/services/fingerprint.ts'
 import { buildNarrationPlan } from '../src/planning/narrationPlanner.ts'
 import { planActorGroups } from '../src/planning/semanticActorPlanner.ts'
 import { buildSceneBlueprint } from '../src/planning/sceneBlueprintPlanner.ts'
+import { genericScenarioPack } from '../src/services/scenarioPackRegistry.ts'
 
 const pack: ScenarioPack = {
   schemaVersion: 'ise-scenario-pack/v1', packId: 'aurora-borealis/v1', version: '1', displayName: 'Aurora and Borealis',
@@ -59,6 +60,7 @@ test('plans generic grounded semantic actors with exact and pack default quantit
     value: 5, constraint: 'exact', source: 'evidence', evidenceRefs: ['ev-falcon'], reason: 'Explicit quantity adjacent to entity',
   })
   assert.equal(groups[0]?.side, 'aurora')
+  assert.equal(groups.some(group => group.semanticEntityRef === 'Aurora'), false)
   assert.equal(groups[0]?.role, 'fighter-formation')
   assert.equal(groups[1]?.quantityDecision.value, 1)
   assert.equal(groups[2]?.platformKind, 'vehicle')
@@ -109,4 +111,21 @@ test('keeps a profile formation default when one fighter is destroyed', () => {
   const destructionEvidence: EvidenceIR = { ...evidence, records: [{ evidenceId: 'ev-loss', sourceRef: 'docx:p5', claim: 'One Falcon aircraft is destroyed near Delta Base.', kind: 'explicit_fact', entities: ['Falcon', 'Delta Base'], locationExpression: 'Delta Base', confidence: 1, ambiguities: [] }] }
   const groups = planActorGroups({ eventPlan, evidence: destructionEvidence, pack: formationPack })
   assert.equal(groups.find(group => group.groupId === 'group:aurora-falcon-delta')?.quantityDecision.value, 3)
+})
+
+test('creates only an event-scoped weapon for an unmatched missile launch', () => {
+  const launchEvidence: EvidenceIR = { schemaVersion: 'evidence-ir/v1', documentId: 'doc:launch', records: [{ evidenceId: 'ev-launch', sourceRef: 'docx:p1', claim: 'Patrol launches a PL-99 missile.', kind: 'explicit_fact', entities: ['Patrol', 'PL-99 missile'], confidence: 1, ambiguities: [] }] }
+  const launchPlan: EventPlan = { schemaVersion: 'event-plan/v1', planId: 'event-plan:launch', documentId: 'doc:launch', version: 1, omittedEvidence: [], warnings: [], eventUnits: [{ eventUnitId: 'event:launch', title: 'Launch', worldStateChange: 'Patrol launches a PL-99 missile.', participants: ['Patrol', 'PL-99 missile'], locationRefs: [], evidenceRefs: ['ev-launch'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'launch', importance: 'high' }] }
+  const groups = planActorGroups({ eventPlan: launchPlan, evidence: launchEvidence, pack: genericScenarioPack })
+  const weapons = groups.filter(group => group.platformKind === 'weapon')
+  assert.equal(weapons.length, 1)
+  assert.equal(weapons[0]?.lifecycle, 'event-scoped:event:launch')
+})
+
+test('discovers an unclaimed rescue actor alongside a resolved pack fighter', () => {
+  const partialPack: ScenarioPack = { ...pack, entityProfiles: [], actorProfiles: [{ groupId: 'group:aurora-falcon-delta', semanticEntityRef: 'Falcon', aliases: ['Falcon'], factionId: 'aurora', locationAliases: ['Delta Base'], locationRef: 'location:delta', platformType: 'Falcon', role: 'fighter-formation', formationPattern: 'formation', leaderPolicy: 'stable-first-member', behaviorProfile: 'fighter-formation/v1', linkedEvidenceOnly: false, participantAliases: ['Falcon'], sharedEvidenceAliases: [], diagnostics: [] }] }
+  const groups = planActorGroups({ eventPlan, evidence, pack: partialPack })
+  assert.ok(groups.some(group => group.groupId === 'group:aurora-falcon-delta'))
+  assert.ok(groups.some(group => group.semanticEntityRef === 'Rescue Truck'))
+  assert.equal(groups.some(group => group.semanticEntityRef === 'Aurora' || group.semanticEntityRef === 'Borealis'), false)
 })
