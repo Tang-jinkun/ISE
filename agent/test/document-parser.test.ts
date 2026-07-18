@@ -72,7 +72,7 @@ test('parser evidence quotes every paragraph without inventing claims', async ()
   }
 })
 
-test('parser extracts only fixed-domain entities and the first matching time expression', async () => {
+test('parser preserves known-domain entities and the first matching time expression', async () => {
   const parsed = await parseBattleReport(await readFile(fixture))
   const dated = parsed.evidence.records.find(record => record.claim.startsWith('行动日期'))
   const overview = parsed.evidence.records.find(record => record.claim.startsWith('2025年5月7日，印巴边境地区'))
@@ -107,4 +107,18 @@ test('parser warns on missing headings without dropping paragraphs, lists, or em
   assert.ok(parsed.document.paragraphs.every(item => item.sectionPath.length === 0))
   assert.deepEqual(parsed.document.tables[0]?.rows, [['A', '', 'C']])
   assert.equal(parsed.evidence.records.length, 4)
+})
+
+test('parser extracts unknown factual entities and explicit coordinate grounding', async t => {
+  t.mock.method(mammoth, 'convertToHtml', async () => ({
+    value: '<p>Coastal Air Rescue Exercise Review</p><h1>Overview</h1><p>08:10 - Blue Coast Guard dispatched a four-aircraft Falcon formation from North Bay at coordinates: 10.125, 20.250.</p>',
+    messages: [],
+  }))
+
+  const parsed = await parseBattleReport(Buffer.from('synthetic-cross-document'))
+  const record = parsed.evidence.records.find(item => item.claim.includes('Blue Coast Guard'))!
+
+  assert.ok(record.entities.includes('Blue Coast Guard'))
+  assert.ok(record.entities.includes('Falcon'))
+  assert.equal(record.locationExpression, 'coordinates:10.125,20.250')
 })

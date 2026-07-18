@@ -27,8 +27,8 @@ function model(assetId: `model:${string}`, displayName: string, entityTypes: Arr
     fallbackAssetIds: [], allowFallback: false, model: { scale: 1, rotationOffsetDeg: [0, 0, 0] as [number, number, number], altitudeOffsetM: 0, entityTypes } }
 }
 
-function route(assetId: `trajectory:${string}`, displayName: string) {
-  return { assetId, kind: 'trajectory' as const, displayName, aliases: [], fingerprint: hash, size: 1,
+function route(assetId: `trajectory:${string}`, displayName: string, aliases: string[] = []) {
+  return { assetId, kind: 'trajectory' as const, displayName, aliases, fingerprint: hash, size: 1,
     mediaType: 'application/vnd.ise.trajectory+json' as const, availability: 'available' as const, criticality: 'required' as const,
     fallbackAssetIds: [], allowFallback: false, trajectory: { format: 'ise-trajectory/v1' as const, timeUnit: 'ms' as const, coordinateOrder: 'lng-lat-alt' as const, startTimeMs: 0, endTimeMs: 1, monotonic: true as const, bounds: [[10, 10], [11, 11]] as [[number, number], [number, number]] } }
 }
@@ -54,6 +54,19 @@ test('resolves one compatible model and route from explicit asset metadata', () 
   assert.equal(result.status, 'compatible')
   assert.equal(result.modelAssetId, 'model:generic-fighter')
   assert.deepEqual(result.trajectoryAssetIds, ['trajectory:generic-fighter'])
+})
+
+test('does not treat the registry only route as compatible when its semantic metadata is unrelated', () => {
+  const result = resolveActorAssets(actor(), {
+    ...genericPack,
+    locationProfiles: [{ locationId: 'location:north-base', aliases: [], coordinates: [70, 30] }],
+  }, registry([
+    model('model:generic-fighter', 'Generic Fighter', ['aircraft']),
+    route('trajectory:red-convoy', 'Red Convoy Route', ['ground convoy']),
+  ]))
+
+  assert.equal(result.status, 'static-fallback')
+  assert.deepEqual(result.trajectoryAssetIds, [])
 })
 
 test('reports ambiguity rather than guessing between compatible assets', () => {

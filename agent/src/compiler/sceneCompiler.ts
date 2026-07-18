@@ -935,8 +935,11 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       if (subjectRefs.length === 0) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', shot.shotId)
       const subjectBounds = subjectRefs.map(actorId => {
         const assignment = assignments.get(actorId)
+        const staticBinding = staticBindings.get(actorId)
         const playbackWindow = actorPlaybackWindows.get(actorId)
-        if (!assignment || !playbackWindow) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
+        if (!playbackWindow) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
+        if (staticBinding) return [staticBinding.coordinates, staticBinding.coordinates] as [[number, number], [number, number]]
+        if (!assignment) fail('CHOREOGRAPHY_SHOT_BINDING_INVALID', `${shot.shotId}: ${actorId}`)
         if (!shot.phase) return routeBounds(assetRegistry, assignment.trajectoryAssetRef)
         const point = routePointAtPlaybackTime(
           assetRegistry,
@@ -958,7 +961,8 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         params: camera,
         startMs, durationMs: transitionDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
       }))
-      if (subjectRefs.length === 1) {
+      const allSubjectsMoving = subjectRefs.every(actorId => assignments.has(actorId))
+      if (allSubjectsMoving && subjectRefs.length === 1) {
         cameraCommands.push(runtimeCommandSchema.parse({
           commandId: `cmd:${shot.shotId}:follow-actor`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
           type: 'camera.follow_actor', params: {
@@ -970,7 +974,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
           startMs: followStartMs, durationMs: endMs - followStartMs,
           dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
         }))
-      } else {
+      } else if (allSubjectsMoving) {
         const global = !isEngagementShot && subjectRefs.length >= 5
         const interceptionTerminal = shot.phase === 'terminal' && engagement?.outcome === 'interception'
         cameraCommands.push(runtimeCommandSchema.parse({

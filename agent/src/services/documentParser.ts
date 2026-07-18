@@ -19,8 +19,15 @@ const ENTITY_DICTIONARY = [
   '印度',
   '巴方',
   '印方',
-] as const
+ ] as const
 const TIME_EXPRESSION = /\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}:\d{2}/
+
+const COORDINATE_EXPRESSION = /\bcoordinates?\s*:\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)/iu
+const GENERIC_ENTITY_EXPRESSION = /\b[A-Z][A-Za-z0-9&'-]*(?:\s+[A-Z][A-Za-z0-9&'-]*)*/g
+const GENERIC_ENTITY_STOPWORDS = new Set([
+  'A', 'An', 'And', 'At', 'Blue', 'Coast', 'Civilian', 'East', 'Exercise', 'From', 'No',
+  'North', 'Red', 'Rescue', 'Review', 'South', 'The', 'This', 'Toward', 'West',
+])
 
 export interface ParsedBattleReport {
   document: DocumentIR
@@ -132,17 +139,37 @@ export async function parseBattleReport(buffer: Buffer): Promise<ParsedBattleRep
 function createEvidenceRecord(paragraph: DocumentIR['paragraphs'][number]): EvidenceRecord {
   const { sourceRef, text } = paragraph
   const timeExpression = text.match(TIME_EXPRESSION)?.[0]
+  const coordinateMatch = COORDINATE_EXPRESSION.exec(text)
+  const knownEntities = ENTITY_DICTIONARY.filter(entity => text.includes(entity))
+  const genericEntities = extractGenericEntities(text).filter(entity =>
+    !knownEntities.some(known => known.toLocaleLowerCase('en-US') === entity.toLocaleLowerCase('en-US')))
 
   return {
     evidenceId: `ev-${hashSuffix(sha256(`${sourceRef}\n${text}`))}`,
     sourceRef,
     claim: text,
     kind: 'explicit_fact',
-    entities: ENTITY_DICTIONARY.filter(entity => text.includes(entity)),
+    entities: [...new Set([...knownEntities, ...genericEntities])],
+    ...(coordinateMatch === null ? {} : {
+      locationExpression: `coordinates:${coordinateMatch[1]},${coordinateMatch[2]}`,
+    }),
     ...(timeExpression === undefined ? {} : { timeExpression }),
     confidence: 1,
     ambiguities: [],
   }
+}
+
+function extractGenericEntities(value: string): string[] {
+  return [...value.matchAll(GENERIC_ENTITY_EXPRESSION)]
+    .map(match => match[0]?.trim())
+    .filter((candidate): candidate is string => candidate !== undefined)
+    .map(candidate => candidate.replace(/^(?:A|An|The|This)\s+/u, ''))
+    .filter(candidate => {
+      const words = candidate.split(/\s+/u)
+      if (words.length > 1) return true
+      if (candidate.length < 3 || GENERIC_ENTITY_STOPWORDS.has(candidate)) return false
+      return !/^\d/.test(candidate)
+    })
 }
 
 function hashSuffix(hash: string): string {

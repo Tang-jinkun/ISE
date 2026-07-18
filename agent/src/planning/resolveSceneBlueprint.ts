@@ -73,14 +73,17 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     scenarioId: scenarioPack.packId,
     bundles: scenarioPack.routeBundles,
   })
-  const expandedActors = expandActorGroups(blueprint.actorGroups)
+  const activeGroupIds = new Set(blueprint.sceneBeats.flatMap(beat => beat.actorRefs))
+  const activeGroups = blueprint.actorGroups.filter(group => activeGroupIds.has(group.groupId))
+  const expandedActors = expandActorGroups(activeGroups)
   // Keep asset selection explicit and auditable before route assignment. The
   // catalog assignment remains the only source of movement paths.
-  const assetResolutions = blueprint.actorGroups.map(group =>
+  const allAssetResolutions = blueprint.actorGroups.map(group =>
     resolveActorAssets(group, scenarioPack, assetRegistry))
+  const assetResolutions = allAssetResolutions.filter(resolution => activeGroupIds.has(resolution.actorGroupId))
   const resolutionByGroup = new Map(assetResolutions.map(resolution => [resolution.actorGroupId, resolution]))
   const scenarioBundles = new Map(mapping.bundles.map(bundle => [bundle.bundleId, bundle]))
-  const movingGroups = blueprint.actorGroups.filter(group =>
+  const movingGroups = activeGroups.filter(group =>
     (resolutionByGroup.get(group.groupId)?.trajectoryAssetIds.length ?? 0) > 0)
   const resolvedFormationBundles = (scenarioPack.packId === 'generic/v1'
     ? movingGroups.map(group => {
@@ -149,7 +152,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     blueprint.diagnostics,
     resolvedFormationBundles.flatMap(bundle => bundle.diagnostics),
     ),
-    ...assetResolutions.flatMap(resolution => resolution.diagnostics),
+    ...allAssetResolutions.flatMap(resolution => resolution.diagnostics),
   ].filter((item, index, values) => values.findIndex(candidate =>
     candidate.code === item.code && candidate.message === item.message) === index)
   const content = {

@@ -3,6 +3,7 @@ import type { ActorGroup } from '../contracts/sceneBlueprint.ts'
 import type { ScenarioPack } from '../contracts/scenarioPack.ts'
 import { normalizeAssetName } from './assetRegistry.ts'
 import { diagnostic, type CompilationDiagnostic } from './runtimeDiagnostics.ts'
+import { buildTrajectoryCatalog } from './trajectoryCatalog.ts'
 
 export type ActorAssetResolutionStatus = 'exact' | 'compatible' | 'static-fallback' | 'unresolved'
 
@@ -67,6 +68,24 @@ function compatibleModel(actor: ActorGroup, registry: AssetRegistrySnapshot) {
   return candidates.length === 1 ? candidates[0] : candidates.length === 0 ? undefined : null
 }
 
+function compatibleRoutes(actor: ActorGroup, registry: AssetRegistrySnapshot): Array<`trajectory:${string}`> {
+  const actorTags = [
+    actor.semanticEntityRef,
+    actor.platformType,
+    actor.role,
+    actor.behaviorProfile,
+    actor.side,
+    actor.locationRef,
+  ].map(comparable).filter(tag => tag.length >= 4)
+  return buildTrajectoryCatalog(registry).entries
+    .filter(entry => entry.validationStatus !== 'invalid')
+    .filter(entry => entry.semanticTags.some(candidate => {
+      const routeTag = comparable(candidate)
+      return actorTags.some(actorTag => routeTag === actorTag || routeTag.includes(actorTag))
+    }))
+    .map(entry => entry.trajectoryAssetId)
+}
+
 /** Resolves existing assets only; it never invents a trajectory or an interaction. */
 export function resolveActorAssets(
   actor: ActorGroup,
@@ -98,8 +117,13 @@ export function resolveActorAssets(
     actorGroupId: actor.groupId, trajectoryAssetIds: [], mediaAssetIds: [], status: 'unresolved',
     diagnostics: [diagnostic('ACTOR_MODEL_UNRESOLVED', `${actor.groupId}: no compatible model`, 'warning')],
   }
-  if (routes.length === 1) return {
-    actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [trajectoryId(routes[0]!.assetId)], mediaAssetIds: [], status: 'compatible', diagnostics: [],
+  const compatibleTrajectoryIds = compatibleRoutes(actor, registry)
+  if (compatibleTrajectoryIds.length === 1) return {
+    actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [trajectoryId(compatibleTrajectoryIds[0]!)], mediaAssetIds: [], status: 'compatible', diagnostics: [],
+  }
+  if (compatibleTrajectoryIds.length > 1) return {
+    actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [], mediaAssetIds: [], status: 'unresolved',
+    diagnostics: [diagnostic('ACTOR_TRAJECTORY_AMBIGUOUS', `${actor.groupId}: multiple semantically compatible trajectories`, 'warning')],
   }
   if (position) return {
     actorGroupId: actor.groupId, modelAssetId: modelId(model.assetId), trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback', staticPosition: position,
