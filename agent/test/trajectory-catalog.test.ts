@@ -220,6 +220,12 @@ test('builds a deterministic catalog for all aircraft, missile, and stationary A
   assert.equal(first.entries.every(entry => entry.validationStatus !== 'invalid'), true)
 })
 
+test('does not infer trajectory faction metadata from a filename prefix', () => {
+  const catalog = buildTrajectoryCatalog(snapshot(['trajectory:india-awacs-1']))
+
+  assert.equal(catalog.entries[0]?.side, undefined)
+})
+
 test('catalogs both AWACS routes as exact stationary 99000ms paths', () => {
   const catalog = buildTrajectoryCatalog(snapshot())
 

@@ -18,6 +18,7 @@ import { CompilationError, diagnostic, type CompilationDiagnostic } from '../ser
 import { buildTrajectoryCatalog } from '../services/trajectoryCatalog.ts'
 import { legacyCompatibilityPackForBlueprint, scenarioPackForLineage } from '../services/scenarioPackRegistry.ts'
 import { scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
+import { resolveActorAssets } from '../services/actorAssetResolver.ts'
 
 export interface ResolveSceneBlueprintInput {
   blueprint: SceneBlueprint
@@ -73,6 +74,10 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     bundles: scenarioPack.routeBundles,
   })
   const resolvedActors = expandActorGroups(blueprint.actorGroups)
+  // Keep asset selection explicit and auditable before route assignment. The
+  // catalog assignment remains the only source of movement paths.
+  const assetResolutions = blueprint.actorGroups.map(group =>
+    resolveActorAssets(group, scenarioPack, assetRegistry))
   const resolvedFormationBundles = resolveFormationBundles(
     blueprint.actorGroups,
     catalog,
@@ -98,10 +103,14 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     ...blueprint.sceneBeats.flatMap(beat => [...beat.behaviorIntents, ...beat.stateTransitions]),
   ])
   const resolvedMedia = sortedUnique(blueprint.sceneBeats.flatMap(beat => beat.mediaIntents))
-  const diagnostics = mappingDiagnostics(
+  const diagnostics = [
+    ...mappingDiagnostics(
     blueprint.diagnostics,
     resolvedFormationBundles.flatMap(bundle => bundle.diagnostics),
-  )
+    ),
+    ...assetResolutions.flatMap(resolution => resolution.diagnostics),
+  ].filter((item, index, values) => values.findIndex(candidate =>
+    candidate.code === item.code && candidate.message === item.message) === index)
   const content = {
     sourceBlueprintId: blueprint.blueprintId,
     sourceBlueprintFingerprint,

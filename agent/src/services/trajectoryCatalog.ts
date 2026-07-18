@@ -15,13 +15,6 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-function sideFor(entry: CatalogTrajectoryEntry): string | undefined {
-  const stableName = entry.assetId.slice('trajectory:'.length)
-  if (/^(?:adampur|ambala|india)-/.test(stableName)) return 'india'
-  if (/^(?:minhas|pakistan|rafiki)-/.test(stableName)) return 'pakistan'
-  return undefined
-}
-
 function catalogEntry(entry: CatalogTrajectoryEntry): TrajectoryCatalogEntry {
   const trajectory = entry.trajectory
   const hasCuration = trajectory.curation !== undefined
@@ -39,7 +32,6 @@ function catalogEntry(entry: CatalogTrajectoryEntry): TrajectoryCatalogEntry {
     trajectoryAssetId: entry.assetId,
     fingerprint: entry.fingerprint,
     routeLabel: entry.displayName,
-    side: sideFor(entry),
     semanticTags: [...new Set(
       [entry.displayName, ...entry.aliases].map(normalizeAssetName),
     )],
