@@ -1268,8 +1268,11 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       }
     }),
   ].filter((assetId): assetId is string => assetId !== undefined))
-  const relevantRegistryDiagnostics = assetRegistry.diagnostics.filter(item =>
-    [...referencedAssetIds].some(assetId => item.message.includes(assetId)))
+  const relevantRegistryDiagnostics = assetRegistry.diagnostics.filter(item => {
+    if (item.assetId !== undefined) return referencedAssetIds.has(item.assetId)
+    return item.code === 'ASSET_ALIAS_CONFLICT'
+      && [...referencedAssetIds].some(assetId => item.message.includes(assetId))
+  })
   const diagnostics = [...relevantRegistryDiagnostics, ...resolvedScenePlan.diagnostics]
     .sort((left, right) => `${left.code}:${left.message}`.localeCompare(`${right.code}:${right.message}`))
   const plan = canonicalRuntimePlanSchema.parse({

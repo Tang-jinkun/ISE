@@ -1854,18 +1854,35 @@ test('canonical runtime duration expands beyond narration for required interacti
   assert.ok(plan.totalDurationMs > fixture.input.narrativePlan.targetDurationMs)
 })
 
-test('final compiler omits registry diagnostics for assets outside the compiled scene', () => {
+test('final compiler scopes registry diagnostics by structured asset id before alias-conflict messages', () => {
   const fixture = finalInputForEngagementFixture()
   fixture.input.assetRegistry = {
     ...fixture.input.assetRegistry,
-    diagnostics: [{
-      code: 'ASSET_ALIAS_CONFLICT', severity: 'warning', recoverable: true,
-      message: 'Alias unrelated-route maps to trajectory:unrelated-one, trajectory:unrelated-two',
-    }],
+    diagnostics: [
+      {
+        code: 'USED_ASSET_WARNING', severity: 'warning', recoverable: true,
+        message: 'Opaque registry warning', assetId: 'video:missile-impact',
+      },
+      {
+        code: 'UNRELATED_ASSET_WARNING', severity: 'warning', recoverable: true,
+        message: 'Misleading text mentions video:missile-impact', assetId: 'trajectory:unrelated-one',
+      },
+      {
+        code: 'ASSET_ALIAS_CONFLICT', severity: 'warning', recoverable: true,
+        message: 'Alias impact maps to video:missile-impact, video:other',
+      },
+      {
+        code: 'ASSET_ALIAS_CONFLICT', severity: 'warning', recoverable: true,
+        message: 'Alias unrelated-route maps to trajectory:unrelated-one, trajectory:unrelated-two',
+      },
+    ],
   }
 
   const plan = compileFinalScene(fixture.input)
 
+  assert.equal(plan.diagnostics.some(item => item.code === 'USED_ASSET_WARNING'), true)
+  assert.equal(plan.diagnostics.some(item => item.code === 'UNRELATED_ASSET_WARNING'), false)
+  assert.equal(plan.diagnostics.some(item => item.message.includes('Alias impact maps')), true)
   assert.equal(plan.diagnostics.some(item => item.message.includes('trajectory:unrelated-one')), false)
 })
 

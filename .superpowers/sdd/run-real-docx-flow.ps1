@@ -86,6 +86,11 @@ function Test-OrdinalContains {
   return $false
 }
 
+function Test-SceneDataLinkTrackType {
+  param($Value)
+  return (Test-OrdinalEqual $Value 'data-link') -or (Test-OrdinalEqual $Value 'data_link')
+}
+
 function Require-OpaqueId {
   param($Value, [string]$Code, [string]$Field)
   $id = Require-String $Value $Code $Field
@@ -827,7 +832,7 @@ function Assert-FinalDomainInvariants {
     }
 
     $dataLinkItems = @(@(Get-PropertyValue $scene 'tracks') | Where-Object {
-      (Get-PropertyValue $_ 'type') -eq 'data_link'
+      Test-SceneDataLinkTrackType (Get-PropertyValue $_ 'type')
     } | ForEach-Object { @(Get-PropertyValue $_ 'items') })
     $sceneLinkKinds = @($dataLinkItems | ForEach-Object {
       Get-PropertyValue (Get-PropertyValue $_ 'params') 'linkKind'
@@ -835,7 +840,7 @@ function Assert-FinalDomainInvariants {
     if ($dataLinkItems.Count -lt 1 -or
         -not (Test-OrdinalContains $sceneLinkKinds 'awacs-fighter') -or
         -not (Test-OrdinalContains $sceneLinkKinds 'fighter-missile')) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig data_link items must include both supported link kinds.'
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig data-link items must include both supported link kinds.'
     }
 
     $impactVideos = @($commands | Where-Object {

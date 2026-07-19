@@ -65,6 +65,7 @@ foreach ($name in @(
   'Test-OrdinalUnique',
   'Test-OrdinalSetEqual',
   'Test-OrdinalContains',
+  'Test-SceneDataLinkTrackType',
   'Require-EnvelopeData',
   'ConvertTo-JsonText',
   'Copy-EventUnits',
@@ -84,6 +85,16 @@ foreach ($name in @(
   }, $true)
   if ($null -eq $functionAst) { throw "Missing function under test: $name" }
   Invoke-Expression $functionAst.Extent.Text
+}
+
+if (-not (Test-SceneDataLinkTrackType 'data-link')) {
+  throw 'Expected the real export validator to accept the canonical data-link SceneProject track.'
+}
+if (-not (Test-SceneDataLinkTrackType 'data_link')) {
+  throw 'Expected the real export validator to accept legacy persisted data_link SceneProject tracks.'
+}
+if (Test-SceneDataLinkTrackType 'data_link.show') {
+  throw 'SceneProject track validation must not confuse canonical runtime commands with track discriminators.'
 }
 
 $requiredEngagements = @(
