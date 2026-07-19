@@ -73,14 +73,25 @@ function launchRecord(group: ActorGroupIntent, unit: EventUnit, evidence: Eviden
   )
 }
 
-function outcomeScope(start: EvidenceRecord, evidence: EvidenceIR, unit: EventUnit): EvidenceRecord[] {
+function outcomeScope(
+  start: EvidenceRecord,
+  evidence: EvidenceIR,
+  eventPlan: EventPlan,
+  unit: EventUnit,
+  weaponLaunchEvidenceIds: ReadonlySet<string>,
+): EvidenceRecord[] {
   const startIndex = evidence.records.findIndex(record => record.evidenceId === start.evidenceId)
   if (startIndex < 0) return [start]
+  const eventUnitIndex = eventPlan.eventUnits.findIndex(candidate => candidate.eventUnitId === unit.eventUnitId)
+  if (eventUnitIndex < 0) return [start]
   const tail = evidence.records.slice(startIndex + 1)
-  const nextLaunch = tail.findIndex(record => completedLaunch(record.claim))
+  const nextLaunch = tail.findIndex(record => weaponLaunchEvidenceIds.has(record.evidenceId))
+  const linkedOutcomeEvidence = new Set(eventPlan.eventUnits
+    .slice(eventUnitIndex + 1)
+    .flatMap(candidate => candidate.evidenceRefs))
   return evidence.records
     .slice(startIndex, nextLaunch < 0 ? evidence.records.length : startIndex + 1 + nextLaunch)
-    .filter(record => unit.evidenceRefs.includes(record.evidenceId)
+    .filter(record => (unit.evidenceRefs.includes(record.evidenceId) || linkedOutcomeEvidence.has(record.evidenceId))
       && (record.kind === 'explicit_fact' || record.kind === 'deterministic_derivation'))
 }
 
@@ -115,6 +126,12 @@ export function planEngagementIntents(input: PlanEngagementIntentsInput): Engage
   const intents: EngagementIntent[] = []
   const diagnostics: CompilationDiagnostic[] = []
   const weaponGroups = input.actorGroups.filter(group => group.platformKind === 'weapon' && group.lifecycle.startsWith('event-scoped:'))
+  const weaponLaunchEvidenceIds = new Set(weaponGroups.flatMap(group => {
+    const eventUnitId = group.lifecycle.slice('event-scoped:'.length)
+    const unit = input.eventPlan.eventUnits.find(candidate => candidate.eventUnitId === eventUnitId)
+    const launch = unit === undefined ? undefined : launchRecord(group, unit, input.evidence)
+    return launch === undefined ? [] : [launch.evidenceId]
+  }))
 
   for (const unit of input.eventPlan.eventUnits) {
     const resolvedWeapons = weaponGroups
@@ -134,7 +151,7 @@ export function planEngagementIntents(input: PlanEngagementIntentsInput): Engage
       continue
     }
     const weapon = resolvedWeapons[0]!.weapon
-    const scopedOutcome = outcome(outcomeScope(launch, input.evidence, unit), launch)
+    const scopedOutcome = outcome(outcomeScope(launch, input.evidence, input.eventPlan, unit, weaponLaunchEvidenceIds), launch)
     intents.push({
       engagementIntentId: intentId(unit.eventUnitId, weapon.groupId),
       eventUnitId: unit.eventUnitId,

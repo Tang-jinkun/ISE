@@ -1105,66 +1105,92 @@ test('buildSceneBlueprint records the selected ScenarioPack lineage', () => {
   })
 })
 
-test('generic northern-sea planning preserves both evidence-backed engagement intents', () => {
-  const northernEvidence: EvidenceIR = evidence([
+test('generic planning chains split weapon outcomes and scopes shared weapon aliases to their evidence chain', () => {
+  const chainEvidence: EvidenceIR = evidence([
     {
-      evidenceId: 'ev-northern-forces', sourceRef: 'docx:p1',
-      claim: 'One Blue E-3A AWACS and four Blue Rafale aircraft patrol while four Red J-10 aircraft approach.',
-      kind: 'explicit_fact', entities: ['Blue E-3A AWACS', 'Blue Rafale', 'Red J-10'],
-      locationExpression: 'Northern Sea', confidence: 1, ambiguities: [],
+      evidenceId: 'ev-cirrus-forces', sourceRef: 'docx:p1',
+      claim: 'Four Aster Wing aircraft patrol while four Beryl Flight aircraft approach.',
+      kind: 'explicit_fact', entities: ['Aster Wing', 'Beryl Flight'],
+      locationExpression: 'Cirrus Reach', confidence: 1, ambiguities: [],
     },
     {
-      evidenceId: 'ev-northern-launch-1', sourceRef: 'docx:p2',
-      claim: 'Blue Rafale launched one PL-15E missile at Red J-10.',
-      kind: 'explicit_fact', entities: ['Blue Rafale', 'PL-15E', 'Red J-10'],
-      locationExpression: 'Northern Sea', confidence: 1, ambiguities: [],
+      evidenceId: 'ev-cirrus-launch-a', sourceRef: 'docx:p2',
+      claim: 'Aster Wing launched 1 PL-77Q missile at Beryl Flight.',
+      kind: 'explicit_fact', entities: ['Aster Wing', 'PL-77Q', 'Beryl Flight'],
+      locationExpression: 'Cirrus Reach', confidence: 1, ambiguities: [],
     },
     {
-      evidenceId: 'ev-northern-outcome-1', sourceRef: 'docx:p3',
-      claim: 'The Red J-10 was destroyed.', kind: 'explicit_fact', entities: ['Red J-10'],
+      evidenceId: 'ev-cirrus-outcome-a', sourceRef: 'docx:p3',
+      claim: 'The first PL-77Q and its target reached the same intercept point; the target was destroyed.',
+      kind: 'explicit_fact', entities: ['PL-77Q'],
       confidence: 1, ambiguities: [],
     },
     {
-      evidenceId: 'ev-northern-launch-2', sourceRef: 'docx:p4',
-      claim: 'Red J-10 fired one PL-15E missile toward Blue Rafale.',
-      kind: 'explicit_fact', entities: ['Red J-10', 'PL-15E', 'Blue Rafale'],
-      locationExpression: 'Northern Sea', confidence: 1, ambiguities: [],
+      evidenceId: 'ev-cirrus-link-a', sourceRef: 'docx:p4',
+      claim: 'Aster Wing supplies terminal guidance to the first PL-77Q until impact.',
+      kind: 'explicit_fact', entities: ['PL-77Q'], confidence: 1, ambiguities: [],
     },
     {
-      evidenceId: 'ev-northern-outcome-2', sourceRef: 'docx:p5',
-      claim: 'The second engagement remained unconfirmed.', kind: 'explicit_fact', entities: ['Blue Rafale'],
+      evidenceId: 'ev-cirrus-launch-b', sourceRef: 'docx:p5',
+      claim: 'Beryl Flight launched 1 PL-77Q missile toward Aster Wing.',
+      kind: 'explicit_fact', entities: ['Beryl Flight', 'PL-77Q', 'Aster Wing'],
+      locationExpression: 'Cirrus Reach', confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-cirrus-outcome-b', sourceRef: 'docx:p6',
+      claim: 'The second PL-77Q arrived without a confirmed intersection; the outcome remained unconfirmed.',
+      kind: 'explicit_fact', entities: ['PL-77Q'], confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-cirrus-link-b', sourceRef: 'docx:p7',
+      claim: 'Beryl Flight sends weapon status to the second PL-77Q.',
+      kind: 'explicit_fact', entities: ['PL-77Q'],
       confidence: 1, ambiguities: [],
     },
   ])
   const eventPlan: EventPlan = {
-    schemaVersion: 'event-plan/v1', planId: 'event-plan:northern-sea', documentId: northernEvidence.documentId,
+    schemaVersion: 'event-plan/v1', planId: 'event-plan:cirrus-chain', documentId: chainEvidence.documentId,
     version: 1, omittedEvidence: [], warnings: [], eventUnits: [
       {
-        eventUnitId: 'event:northern-forces', title: 'Forces', worldStateChange: 'Opposing aircraft enter the area.',
-        participants: ['Blue E-3A AWACS', 'Blue Rafale', 'Red J-10'], locationRefs: ['Northern Sea'],
-        evidenceRefs: ['ev-northern-forces'], inferenceRefs: [], uncertainties: [],
+        eventUnitId: 'event:cirrus-forces', title: 'Forces', worldStateChange: 'Opposing aircraft enter the area.',
+        participants: ['Aster Wing', 'Beryl Flight'], locationRefs: ['Cirrus Reach'],
+        evidenceRefs: ['ev-cirrus-forces'], inferenceRefs: [], uncertainties: [],
         narrativePurpose: 'Establish the forces', importance: 'high',
       },
       {
-        eventUnitId: 'event:northern-launch-1', title: 'First launch',
-        worldStateChange: 'Blue Rafale launches a missile at Red J-10.',
-        participants: ['Blue Rafale', 'PL-15E', 'Red J-10'], locationRefs: ['Northern Sea'],
-        evidenceRefs: ['ev-northern-launch-1', 'ev-northern-outcome-1'], inferenceRefs: [], uncertainties: [],
+        eventUnitId: 'event:cirrus-launch-a', title: 'First launch',
+        worldStateChange: 'Aster Wing launches 1 PL-77Q missile at Beryl Flight.',
+        participants: ['Aster Wing', 'PL-77Q', 'Beryl Flight'], locationRefs: ['Cirrus Reach'],
+        evidenceRefs: ['ev-cirrus-launch-a'], inferenceRefs: [], uncertainties: [],
         narrativePurpose: 'Show the first engagement', importance: 'high',
       },
       {
-        eventUnitId: 'event:northern-launch-2', title: 'Second launch',
-        worldStateChange: 'Red J-10 fires a missile toward Blue Rafale.',
-        participants: ['Red J-10', 'PL-15E', 'Blue Rafale'], locationRefs: ['Northern Sea'],
-        evidenceRefs: ['ev-northern-launch-2', 'ev-northern-outcome-2'], inferenceRefs: [], uncertainties: [],
+        eventUnitId: 'event:cirrus-outcome-a', title: 'First outcome',
+        worldStateChange: 'The first PL-77Q intersects its target and destroys it.',
+        participants: ['Aster Wing', 'PL-77Q', 'Beryl Flight'], locationRefs: ['Cirrus Reach'],
+        evidenceRefs: ['ev-cirrus-outcome-a', 'ev-cirrus-link-a'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Show the first engagement outcome', importance: 'high',
+      },
+      {
+        eventUnitId: 'event:cirrus-launch-b', title: 'Second launch',
+        worldStateChange: 'Beryl Flight launches 1 PL-77Q missile at Aster Wing.',
+        participants: ['Beryl Flight', 'PL-77Q', 'Aster Wing'], locationRefs: ['Cirrus Reach'],
+        evidenceRefs: ['ev-cirrus-launch-b'], inferenceRefs: [], uncertainties: [],
         narrativePurpose: 'Show the counter-engagement', importance: 'high',
+      },
+      {
+        eventUnitId: 'event:cirrus-outcome-b', title: 'Second outcome',
+        worldStateChange: 'The second PL-77Q has no confirmed outcome.',
+        participants: ['Beryl Flight', 'PL-77Q', 'Aster Wing'], locationRefs: ['Cirrus Reach'],
+        evidenceRefs: ['ev-cirrus-outcome-b', 'ev-cirrus-link-b'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Show the counter-engagement outcome', importance: 'high',
       },
     ],
   }
   const narrativePlan: NarrativePlan = {
-    schemaVersion: 'narrative-plan/v1', narrativePlanId: 'narrative:northern-sea', targetDurationMs: 30_000,
+    schemaVersion: 'narrative-plan/v1', narrativePlanId: 'narrative:cirrus-chain', targetDurationMs: 30_000,
     sourceEventPlan: {
-      artifactId: 'accepted:event-plan:northern-sea:v1', planId: eventPlan.planId,
+      artifactId: 'accepted:event-plan:cirrus-chain:v1', planId: eventPlan.planId,
       version: eventPlan.version, fingerprint: fingerprint(eventPlan),
     },
     subtitles: eventPlan.eventUnits.map((unit, index) => ({
@@ -1178,11 +1204,28 @@ test('generic northern-sea planning preserves both evidence-backed engagement in
       preferredTemplate: index === 0 ? 'deployment' as const : 'attack_chain' as const,
     })),
   }
-  const planning = { eventPlan, narrativePlan, evidence: northernEvidence }
+  const planning = { eventPlan, narrativePlan, evidence: chainEvidence }
   const blueprint = buildSceneBlueprint({ ...planning, narrationPlan: buildNarrationPlan(planning) })
+  const weaponByLaunchEvidence = (evidenceRef: string): string => {
+    const weapon = blueprint.actorGroups.find(group => group.role === 'weapon-launch' && group.evidenceRefs.includes(evidenceRef))
+    assert.ok(weapon, JSON.stringify(blueprint.actorGroups))
+    return weapon.groupId
+  }
+  const firstWeapon = weaponByLaunchEvidence('ev-cirrus-launch-a')
+  const secondWeapon = weaponByLaunchEvidence('ev-cirrus-launch-b')
+  const scopedWeaponRefs = (eventUnitId: string): string[] => blueprint.sceneBeats
+    .find(beat => beat.eventUnitId === eventUnitId)!.actorRefs
+    .filter(ref => ref === firstWeapon || ref === secondWeapon)
 
   assert.equal(blueprint.scenarioPack?.packId, 'generic/v1')
   assert.deepEqual(blueprint.engagementIntents.map(intent => intent.assertedOutcome), ['destroyed', 'unconfirmed'])
+  assert.deepEqual(blueprint.engagementIntents.map(intent => intent.evidenceRefs), [
+    ['ev-cirrus-launch-a', 'ev-cirrus-outcome-a'],
+    ['ev-cirrus-launch-b', 'ev-cirrus-outcome-b'],
+  ])
+  assert.deepEqual(scopedWeaponRefs('event:cirrus-outcome-a'), [firstWeapon])
+  assert.deepEqual(scopedWeaponRefs('event:cirrus-launch-b'), [secondWeapon])
+  assert.deepEqual(scopedWeaponRefs('event:cirrus-outcome-b'), [secondWeapon])
   assert.equal(blueprint.engagementIntents.length, 2)
 })
 

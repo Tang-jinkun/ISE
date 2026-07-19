@@ -2,7 +2,7 @@ import type { EvidenceIR } from '../contracts/evidence.ts'
 import type { EventPlan, EventUnit } from '../contracts/eventPlan.ts'
 import type { NarrationPlan } from '../contracts/narrationPlan.ts'
 import type { NarrativePlan, SceneRequirement } from '../contracts/narrativePlan.ts'
-import { sceneBlueprintSchema, type ActorGroup, type ActorGroupIntent, type SceneBlueprint } from '../contracts/sceneBlueprint.ts'
+import { sceneBlueprintSchema, type ActorGroup, type ActorGroupIntent, type EngagementIntent, type SceneBlueprint } from '../contracts/sceneBlueprint.ts'
 import { fingerprint } from '../services/fingerprint.ts'
 import { selectScenarioPack } from '../services/scenarioPackRegistry.ts'
 import { diagnostic } from '../services/runtimeDiagnostics.ts'
@@ -14,7 +14,15 @@ export interface BuildSceneBlueprintInput { eventPlan: EventPlan; narrativePlan:
 function normalized(value: string): string { return value.normalize('NFKC').replace(/[\s\-_]+/g, '').toLocaleLowerCase('en-US') }
 function includesAlias(value: string, aliases: readonly string[]): boolean { const text = normalized(value); return aliases.some(alias => text.includes(normalized(alias))) }
 function slug(value: string): string { const ascii = value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); return ascii || fingerprint(value).slice(7, 19) }
-function actorRefsForUnit(unit: EventUnit, groups: ActorGroupIntent[]): string[] { return groups.filter(group => group.lifecycle === `event-scoped:${unit.eventUnitId}` || unit.participants.some(participant => includesAlias(participant, group.participantAliases))).map(group => group.groupId) }
+function actorRefsForUnit(unit: EventUnit, groups: ActorGroupIntent[], engagements: readonly EngagementIntent[]): string[] {
+  const chainedWeapons = new Set(engagements
+    .filter(engagement => unit.evidenceRefs.some(evidenceRef => engagement.evidenceRefs.includes(evidenceRef)))
+    .map(engagement => engagement.weaponGroupRef))
+  return groups.filter(group => group.lifecycle.startsWith('event-scoped:')
+    ? group.lifecycle === `event-scoped:${unit.eventUnitId}` || chainedWeapons.has(group.groupId)
+    : unit.participants.some(participant => includesAlias(participant, group.participantAliases)))
+    .map(group => group.groupId)
+}
 function fidelity(actorRefs: string[], groups: ActorGroup[]): 'evidence' | 'deterministic' | 'default' | 'user' { const sources = actorRefs.map(ref => groups.find(group => group.groupId === ref)?.quantityDecision.source); return sources.includes('user') ? 'user' : sources.includes('default') ? 'default' : sources.length > 0 ? 'evidence' : 'deterministic' }
 function requirements(plan: NarrativePlan): Map<string, SceneRequirement> { return new Map(plan.sceneRequirements.map(requirement => [requirement.eventUnitId, requirement])) }
 function media(template: SceneRequirement['preferredTemplate'] | undefined): string[] { return template === 'deployment' || template === 'status_explanation' ? ['image'] : template === 'attack_chain' || template === 'electronic_warfare' || template === 'return_and_summary' ? ['video', 'image'] : ['interception', 'counterattack', 'withdrawal'].includes(template ?? '') ? ['video'] : [] }
@@ -33,7 +41,7 @@ export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBluep
     const unit = units.get(beat.eventUnitId); if (!unit) throw new Error(`UNKNOWN_EVENT_UNIT: ${beat.eventUnitId}`)
     const requirement = byEvent.get(beat.eventUnitId); const mediaIntents = media(requirement?.preferredTemplate)
     if (!hasImage && index === input.narrationPlan.beats.length - 1) mediaIntents.push('image')
-    const actorRefs = actorRefsForUnit(unit, intents)
+    const actorRefs = actorRefsForUnit(unit, intents, engagementIntents)
     return { sceneBeatId: `scene-beat:${slug(beat.subtitleId)}`, subtitleId: beat.subtitleId, eventUnitId: beat.eventUnitId, purpose: unit.narrativePurpose, actorRefs, behaviorIntents: [...(requirement?.motionRequirements ?? [])], spatialConstraints: [...(requirement?.spatialRelations ?? [])], stateTransitions: [...(requirement?.stateChanges ?? [])], cameraIntent: requirement?.attentionRequirements[0] ?? `focus:${beat.attentionTarget}`, mediaIntents, requiredFacts: [...(requirement?.requiredFacts ?? [])], forbiddenClaims: [...(requirement?.forbiddenClaims ?? [])], fidelity: fidelity(actorRefs, groups), priority: beat.importance }
   })
   const diagnostics = [...selection.diagnostics, ...intents.flatMap(intent => intent.diagnostics), ...engagementPlanning.diagnostics, ...groups.flatMap(group => pack.actorProfiles.find(profile => profile.groupId === group.groupId)?.diagnostics.map(item => diagnostic(item.code, item.message, 'warning')) ?? [])].filter((item, index, items) => items.findIndex(candidate => candidate.code === item.code && candidate.message === item.message) === index)
