@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { ArtifactStore, DomainStateStore, type AgentContext } from '@ise/agent-core'
 import type { EventPlan } from '../src/contracts/eventPlan.ts'
@@ -293,6 +294,7 @@ function multiActorCompilerFixture() {
   ].map(([groupId, semanticEntityRef, side, locationRef, quantity, role, formationPattern]) => ({
     groupId: groupId as string,
     semanticEntityRef: semanticEntityRef as string,
+    evidenceRefs: [role === 'weapon-launch' ? 'ev-launch' : 'ev-deployment'],
     side: side as string,
     locationRef: locationRef as string,
     platformType: semanticEntityRef as string,
@@ -480,6 +482,23 @@ function multiEngagementChoreographyFixture() {
     ...fixture.sceneBlueprint,
     sourceNarrationFingerprint: fingerprint(fixture.narrationPlan),
     actorGroups: [...fighters, ...weapons],
+    engagementIntents: [
+      {
+        engagementIntentId: 'intent:first-strike', eventUnitId: 'unit-first-strike',
+        launcherGroupRef: 'group:india-su30-adampur', weaponGroupRef: 'group:weapon-first-strike',
+        targetGroupRef: 'group:pakistan-jf17-minhas', assertedOutcome: 'intercepted', evidenceRefs: ['ev-first-strike'],
+      },
+      {
+        engagementIntentId: 'intent:intercept', eventUnitId: 'unit-intercept',
+        launcherGroupRef: 'group:pakistan-jf17-minhas', weaponGroupRef: 'group:weapon-intercept',
+        targetGroupRef: 'group:weapon-first-strike', assertedOutcome: 'interception', evidenceRefs: ['ev-intercept'],
+      },
+      {
+        engagementIntentId: 'intent:counterattack', eventUnitId: 'unit-counterattack',
+        launcherGroupRef: 'group:pakistan-jf17-minhas', weaponGroupRef: 'group:weapon-counterattack',
+        targetGroupRef: 'group:india-rafale-ambala', assertedOutcome: 'destroyed', evidenceRefs: ['ev-counterattack'],
+      },
+    ],
     sceneBeats: [
       fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-deployment')!,
       engagementSceneBeat(
@@ -519,6 +538,121 @@ function multiEngagementChoreographyFixture() {
   })
   return { ...fixture, resolvedScenePlan, choreographyPlan }
 }
+
+function genericEngagementIntentFixture() {
+  const fixture = multiEngagementChoreographyFixture()
+  const groupIds = new Map([
+    ['group:india-rafale-ambala', 'blue-rafale'],
+    ['group:pakistan-jf17-minhas', 'red-j10'],
+    ['group:weapon-first-strike', 'missile-1'],
+    ['group:weapon-counterattack', 'missile-2'],
+  ])
+  const actorIds = new Map<string, string>()
+  for (const actor of fixture.resolvedScenePlan.resolvedActors) {
+    const groupId = groupIds.get(actor.actorGroupRef)
+    if (groupId) actorIds.set(actor.actorInstanceId, `actor:${groupId}:${actor.ordinal}`)
+  }
+  const remapGroup = (groupRef: string) => groupIds.get(groupRef) ?? groupRef
+  const remapActor = (actorRef: string) => actorIds.get(actorRef) ?? actorRef
+  const actorIdentity = new Map([
+    ['blue-rafale', { semanticEntityRef: 'Blue formation', side: 'blue', platformType: 'blue-fighter' }],
+    ['red-j10', { semanticEntityRef: 'Red formation', side: 'red', platformType: 'red-fighter' }],
+    ['missile-1', { semanticEntityRef: 'Blue weapon', side: 'blue', platformType: 'blue-weapon' }],
+    ['missile-2', { semanticEntityRef: 'Red weapon', side: 'red', platformType: 'red-weapon' }],
+  ])
+  fixture.sceneBlueprint = {
+    ...fixture.sceneBlueprint,
+    blueprintId: 'blueprint-generic-engagements',
+    scenarioPack: { packId: 'generic/v1', version: '1' },
+    actorGroups: fixture.sceneBlueprint.actorGroups.map(group => {
+      const groupId = remapGroup(group.groupId)
+      const identity = actorIdentity.get(groupId)
+      return identity ? { ...group, groupId, ...identity, behaviorProfile: `${group.role}/generic/v1` } : group
+    }),
+    engagementIntents: [
+      {
+        engagementIntentId: 'intent:blue-launch',
+        eventUnitId: 'unit-first-strike',
+        launcherGroupRef: 'blue-rafale',
+        weaponGroupRef: 'missile-1',
+        targetGroupRef: 'red-j10',
+        assertedOutcome: 'destroyed',
+        evidenceRefs: ['ev-first-strike'],
+      },
+      {
+        engagementIntentId: 'intent:red-launch',
+        eventUnitId: 'unit-counterattack',
+        launcherGroupRef: 'red-j10',
+        weaponGroupRef: 'missile-2',
+        targetGroupRef: 'blue-rafale',
+        assertedOutcome: 'unconfirmed',
+        evidenceRefs: ['ev-counterattack'],
+      },
+    ],
+    sceneBeats: fixture.sceneBlueprint.sceneBeats.map(beat => ({
+      ...beat,
+      actorRefs: beat.actorRefs.map(remapGroup),
+    })),
+  }
+  fixture.resolvedScenePlan = {
+    ...fixture.resolvedScenePlan,
+    sourceBlueprintId: fixture.sceneBlueprint.blueprintId,
+    sourceBlueprintFingerprint: fingerprint(fixture.sceneBlueprint),
+    resolvedActors: fixture.resolvedScenePlan.resolvedActors.map(actor => ({
+      ...actor,
+      actorInstanceId: remapActor(actor.actorInstanceId),
+      actorGroupRef: remapGroup(actor.actorGroupRef),
+    })),
+    resolvedFormationBundles: fixture.resolvedScenePlan.resolvedFormationBundles.map(bundle => ({
+      ...bundle,
+      actorGroupRef: remapGroup(bundle.actorGroupRef),
+    })),
+    actorRouteAssignments: fixture.resolvedScenePlan.actorRouteAssignments.map(assignment => ({
+      ...assignment,
+      actorInstanceRef: remapActor(assignment.actorInstanceRef),
+      segmentId: assignment.segmentId.replace(assignment.actorInstanceRef, remapActor(assignment.actorInstanceRef)),
+    })),
+    staticActorBindings: fixture.resolvedScenePlan.staticActorBindings.map(binding => ({
+      ...binding,
+      actorInstanceRef: remapActor(binding.actorInstanceRef),
+      actorGroupRef: remapGroup(binding.actorGroupRef),
+    })),
+  }
+  return fixture
+}
+
+test('generic engagement intents compile without scenario-specific target selection', () => {
+  const fixture = genericEngagementIntentFixture()
+  const choreography = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint: fixture.sceneBlueprint,
+    resolvedScenePlan: fixture.resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+
+  assert.deepEqual(choreography.weaponEngagements.map(item => ({
+    launcherRef: item.launcherRef,
+    weaponRef: item.weaponRef,
+    targetRef: item.targetRef,
+    outcome: item.outcome,
+  })), [
+    { launcherRef: 'actor:blue-rafale:0', weaponRef: 'actor:missile-1:0', targetRef: 'actor:red-j10:0', outcome: 'destroyed' },
+    { launcherRef: 'actor:red-j10:0', weaponRef: 'actor:missile-2:0', targetRef: 'actor:blue-rafale:0', outcome: 'unconfirmed' },
+  ])
+  assert.equal(choreography.relationSegments.filter(item => item.linkKind === 'fighter-missile').length, 2)
+  for (const engagement of choreography.weaponEngagements) {
+    assert.deepEqual(
+      choreography.shotPlan
+        .filter(shot => shot.sceneBeatRefs.includes(engagement.sceneBeatRef) && shot.phase)
+        .map(shot => shot.phase),
+      ['launch', 'midcourse', 'terminal', 'aftermath'],
+    )
+  }
+  const source = readFileSync(new URL('../src/compiler/choreographyCompiler.ts', import.meta.url), 'utf8')
+  for (const forbidden of ['india-first-strike', 'pakistan-intercept', 'pakistan-counterattack', "fighter('india'", "fighter('pakistan'"]) {
+    assert.equal(source.includes(forbidden), false, forbidden)
+  }
+})
 
 function finalInputForEngagementFixture() {
   const fixture = multiEngagementChoreographyFixture()
@@ -1334,7 +1468,7 @@ test('compiles grounded missile engagements with establishing and supported phas
   }
 })
 
-test('compiles the real cross-beat engagement shape with grounded target borrowing and the Chinese Rafale alias', () => {
+test('compiles the real cross-beat engagement shape from explicit intents', () => {
   const fixture = realCrossBeatEngagementFixture()
   const actorRef = (groupRef: string) => fixture.input.resolvedScenePlan.resolvedActors
     .find(actor => actor.actorGroupRef === groupRef)!.actorInstanceId
@@ -1390,7 +1524,7 @@ test('compiles the real cross-beat engagement shape with grounded target borrowi
   assert.deepEqual(destroyedStates.map(command => command.targetId), [rafale])
 })
 
-test('does not treat a report about Indian fighters as a Pakistani fighter target fact', () => {
+test('uses reviewed first-strike group references regardless of scene fact wording', () => {
   const fixture = multiEngagementChoreographyFixture()
   fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-first-strike'
     ? {
@@ -1409,10 +1543,10 @@ test('does not treat a report about Indian fighters as a Pakistani fighter targe
   })
 
   assert.equal(choreography.weaponEngagements.some(engagement =>
-    engagement.sceneBeatRef === 'scene-beat-first-strike'), false)
+    engagement.sceneBeatRef === 'scene-beat-first-strike'), true)
 })
 
-test('recognizes only direct Pakistani fighter target identity phrases for first-strike borrowing', () => {
+test('does not parse first-strike target identity from required facts', () => {
   const requiredFacts = [
     'The AWACS tracks Pakistani fighters.',
     'The AWACS tracks Pakistani aircraft.',
@@ -1446,7 +1580,7 @@ test('recognizes only direct Pakistani fighter target identity phrases for first
   }
 })
 
-test('does not treat an incoming Pakistani missile near Indian aircraft as an incoming Indian missile fact', () => {
+test('uses reviewed interception group references regardless of scene fact wording', () => {
   const fixture = multiEngagementChoreographyFixture()
   fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-intercept'
     ? {
@@ -1465,10 +1599,10 @@ test('does not treat an incoming Pakistani missile near Indian aircraft as an in
   })
 
   assert.equal(choreography.weaponEngagements.some(engagement =>
-    engagement.sceneBeatRef === 'scene-beat-intercept'), false)
+    engagement.sceneBeatRef === 'scene-beat-intercept'), true)
 })
 
-test('recognizes only direct incoming Indian missile identity phrases for interception borrowing', () => {
+test('does not parse interception target identity from required facts', () => {
   const requiredFacts = [
     'JF-17 intercepts the incoming Indian missile.',
     'JF-17 intercepts the Indian incoming missile.',
@@ -1499,7 +1633,7 @@ test('recognizes only direct incoming Indian missile identity phrases for interc
   }
 })
 
-test('keeps counterattack outcomes unconfirmed without grounded and allowed destruction facts', () => {
+test('keeps reviewed counterattack outcomes unconfirmed regardless of scene text', () => {
   const cases = [
     {
       requiredFacts: ['JF-17 counterattacks the Rafale and drives it off.'],
@@ -1524,6 +1658,10 @@ test('keeps counterattack outcomes unconfirmed without grounded and allowed dest
   ]
   for (const { requiredFacts, forbiddenClaims } of cases) {
     const fixture = multiEngagementChoreographyFixture()
+    fixture.sceneBlueprint.engagementIntents = fixture.sceneBlueprint.engagementIntents.map(intent =>
+      intent.engagementIntentId === 'intent:counterattack'
+        ? { ...intent, assertedOutcome: 'unconfirmed' }
+        : intent)
     fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-counterattack'
       ? { ...beat, requiredFacts, forbiddenClaims }
       : beat)
@@ -1543,7 +1681,7 @@ test('keeps counterattack outcomes unconfirmed without grounded and allowed dest
   }
 })
 
-test('does not borrow global fighter actors when a counterattack beat omits its Rafale target', () => {
+test('resolves the reviewed target when a counterattack beat omits the target group', () => {
   const fixture = multiEngagementChoreographyFixture()
   fixture.sceneBlueprint.sceneBeats = fixture.sceneBlueprint.sceneBeats.map(beat => beat.sceneBeatId === 'scene-beat-counterattack'
     ? { ...beat, actorRefs: ['group:weapon-counterattack', 'group:pakistan-jf17-minhas'] }
@@ -1559,7 +1697,7 @@ test('does not borrow global fighter actors when a counterattack beat omits its 
 
   assert.equal(
     choreography.weaponEngagements.some(engagement => engagement.sceneBeatRef === 'scene-beat-counterattack'),
-    false,
+    true,
   )
 })
 

@@ -29,29 +29,6 @@ function fail(code: string, message: string): never {
   throw new CompilationError([diagnostic(code, message)])
 }
 
-// Event ids originate from different document stages; keep zero-padding from
-// making an event-scoped actor look unrelated to its scene beat.
-function equivalentEventId(left: string, right: string): boolean {
-  const normalize = (value: string) => value.replace(/^(.*?)-(\d+)$/u, (_, prefix: string, ordinal: string) =>
-    `${prefix}-${Number.parseInt(ordinal, 10)}`)
-  return normalize(left) === normalize(right)
-}
-
-function statesUnresolvedOutcome(value: string): boolean {
-  return /\b(?:unresolved|unconfirmed|undetermined|result\s+(?:is|remains)\s+unknown|not\s+confirmed|no\s+(?:geometric\s+)?intersection)\b|\u672a\u51b3|\u672a\u5b9a|\u7ed3\u679c\u672a\u5b9a|\u672a\u786e\u8ba4|\u6ca1\u6709\u786e\u8ba4|\u672a\u5efa\u7acb\u51e0\u4f55\u4ea4\u6c47|\u65e0\u51e0\u4f55\u4ea4\u6c47/iu.test(value)
-}
-
-function statesConfirmedDestruction(value: string): boolean {
-  if (statesUnresolvedOutcome(value)) return false
-  if (/\b(?:not|never|must\s+not|do\s+not)\b.{0,32}\b(?:destroy|kill|hit)\b|\u4e0d\u5f97.{0,24}(?:\u51fb\u6bc1|\u6467\u6bc1|\u547d\u4e2d)|\u4e0d\u786e\u8ba4.{0,16}(?:\u51fb\u6bc1|\u6467\u6bc1|\u547d\u4e2d)/iu.test(value)) return false
-  return /\b(?:destroyed|confirmed\s+(?:kill|destruction)|hit\s+and\s+destroyed)\b|\u786e\u8ba4(?:\u51fb\u6bc1|\u6467\u6bc1)|\u88ab\u786e\u8ba4(?:\u51fb\u6bc1|\u6467\u6bc1)|\u547d\u4e2d\u5e76(?:\u51fb\u6bc1|\u6467\u6bc1)/iu.test(value)
-}
-
-function forbidsConfirmedDestruction(value: string): boolean {
-  return statesUnresolvedOutcome(value)
-    || /\bconfirmed\s+(?:destruction|outcome|target\s+destruction)\b|\u786e\u8ba4\u6218\u679c|\u786e\u8ba4(?:\u51fb\u6bc1|\u6467\u6bc1)/iu.test(value)
-}
-
 export function compileChoreography(rawInput: CompileChoreographyInput): ChoreographyPlan {
   const narrationPlan = narrationPlanSchema.parse(rawInput.narrationPlan)
   const sceneBlueprint = sceneBlueprintSchema.parse(rawInput.sceneBlueprint)
@@ -131,108 +108,26 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     resolvedScenePlan.resolvedActors
       .filter(actor => actor.actorGroupRef === groupRef)
       .sort((left, right) => left.ordinal - right.ordinal || left.actorInstanceId.localeCompare(right.actorInstanceId))
-  const actorForCurrentBeat = (
-    sceneBeat: SceneBlueprint['sceneBeats'][number],
-    predicate: (group: SceneBlueprint['actorGroups'][number]) => boolean,
-  ): string | undefined => {
-    for (const groupRef of sceneBeat.actorRefs) {
-      const group = groups.get(groupRef)
-      if (group && predicate(group)) return actorsForGroup(groupRef)[0]?.actorInstanceId
-    }
-    return undefined
-  }
-  const actorForScene = (predicate: (group: SceneBlueprint['actorGroups'][number]) => boolean): string | undefined => {
-    for (const group of sceneBlueprint.actorGroups) {
-      if (predicate(group)) return actorsForGroup(group.groupId)[0]?.actorInstanceId
-    }
-    return undefined
-  }
-  const rawWeaponEngagements = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
-    const narrationBeat = narrationPlan.beats.find(beat => beat.subtitleId === sceneBeat.subtitleId)
-    if (!narrationBeat) return []
-    const weaponGroups = sceneBeat.actorRefs
-      .map(groupRef => groups.get(groupRef))
-      .filter((group): group is SceneBlueprint['actorGroups'][number] => group?.role === 'weapon-launch'
-        && equivalentEventId(group.lifecycle.replace(/^event-scoped:/u, ''), sceneBeat.eventUnitId))
-      .sort((left, right) => left.groupId.localeCompare(right.groupId))
-    return weaponGroups.flatMap(weaponGroup => actorsForGroup(weaponGroup.groupId)
-      .filter(weaponActor => !staticActors.has(weaponActor.actorInstanceId)).flatMap(weaponActor => {
-      const weaponRef = weaponActor.actorInstanceId
-      const fighter = (side: string, platform: 'su30' | 'jf17' | 'rafale') => actorForCurrentBeat(sceneBeat, group => {
-        if (group.role !== 'fighter-formation' || group.side !== side) return false
-        const entity = group.semanticEntityRef.toLocaleLowerCase('en-US')
-        if (platform === 'su30') return /su[- ]?30mki|30mki/u.test(entity)
-        if (platform === 'jf17') return /jf[- ]?17/u.test(entity)
-        return /rafale|\u9635\u98ce/u.test(entity)
-      })
-      const firstStrikeWeapon = actorForCurrentBeat(sceneBeat, group =>
-        group.role === 'weapon-launch' && group.behaviorProfile === 'weapon-launch/india-first-strike/v1')
-      const profile = weaponGroup.behaviorProfile
-      const groundedPakistaniFighterTarget = sceneBeat.requiredFacts.some(fact =>
-        /\bpakistani\s+(?:fighters?|aircraft)\b|\bpakistan(?:'s|\u2019s)\s+(?:fighters?|aircraft)\b|\b(?:fighters?|aircraft)\s+of\s+pakistan\b|\u5df4\u65b9(?:\u6218\u673a|\u98de\u673a)/iu.test(fact))
-      const groundedIncomingIndianMissile = sceneBeat.requiredFacts.some(fact =>
-        /\b(?:incoming\s+indian|indian\s+incoming|indian\s+first[- ]strike|first[- ]strike\s+indian|incoming\s+first[- ]strike|first[- ]strike\s+incoming)\s+missiles?\b|(?:\u5370\u65b9)?\u6765\u88ad\u5bfc\u5f39|\u62e6\u622a\u5bfc\u5f39.{0,12}\u6765\u88ad\u5bfc\u5f39/iu.test(fact))
-      const firstStrikeTarget = fighter('pakistan', 'jf17') ?? (groundedPakistaniFighterTarget
-        ? actorForScene(group => group.role === 'fighter-formation'
-          && group.side === 'pakistan'
-          && /jf[- ]?17/u.test(group.semanticEntityRef.toLocaleLowerCase('en-US')))
-        : undefined)
-      const interceptedWeapon = firstStrikeWeapon ?? (groundedIncomingIndianMissile
-        ? actorForScene(group => group.role === 'weapon-launch'
-          && group.behaviorProfile === 'weapon-launch/india-first-strike/v1')
-        : undefined)
-      const defaultSpecification = profile === 'weapon-launch/india-first-strike/v1'
-        ? { launcherRef: fighter('india', 'su30'), targetRef: firstStrikeTarget, outcome: 'intercepted' as const }
-        : profile === 'weapon-launch/pakistan-intercept/v1' && interceptedWeapon
-          ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: interceptedWeapon, outcome: 'interception' as const }
-          : profile === 'weapon-launch/pakistan-counterattack/v1'
-            ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: fighter('india', 'rafale'), outcome: 'unconfirmed' as const }
-            : {
-              launcherRef: weaponGroup.side === 'india' ? fighter('india', 'su30') : fighter('pakistan', 'jf17'),
-              targetRef: weaponGroup.side === 'india' ? fighter('pakistan', 'jf17') : fighter('india', 'rafale'),
-              outcome: 'unconfirmed' as const,
-            }
-      const targetGroupRef = resolvedScenePlan.resolvedActors.find(actor =>
-        actor.actorInstanceId === defaultSpecification.targetRef)?.actorGroupRef
-      const launchBeatIndex = sceneBlueprint.sceneBeats.indexOf(sceneBeat)
-      const nextWeaponLaunchIndex = sceneBlueprint.sceneBeats.findIndex((beat, index) => index > launchBeatIndex
-        && beat.actorRefs.some(groupRef => {
-          const group = groups.get(groupRef)
-          return group?.role === 'weapon-launch'
-            && group.groupId !== weaponGroup.groupId
-            && equivalentEventId(group.lifecycle.replace(/^event-scoped:/u, ''), beat.eventUnitId)
-        }))
-      const outcomeWindow = sceneBlueprint.sceneBeats.slice(
-        launchBeatIndex,
-        nextWeaponLaunchIndex < 0 ? undefined : nextWeaponLaunchIndex,
-      )
-      const outcomeBeats = outcomeWindow.filter(beat =>
-        beat.actorRefs.includes(weaponGroup.groupId)
-        && (targetGroupRef === undefined || beat.actorRefs.includes(targetGroupRef)))
-      const requiredOutcomeFacts = outcomeBeats.flatMap(beat => beat.requiredFacts)
-      const forbiddenOutcomeClaims = outcomeBeats.flatMap(beat => beat.forbiddenClaims)
-      const confirmedDestruction = requiredOutcomeFacts.some(statesConfirmedDestruction)
-        && !forbiddenOutcomeClaims.some(forbidsConfirmedDestruction)
-      const explicitlyUnresolved = [
-        ...requiredOutcomeFacts,
-        ...forbiddenOutcomeClaims,
-      ].some(statesUnresolvedOutcome)
-      const specification = defaultSpecification.launcherRef && defaultSpecification.targetRef
-        ? {
-          ...defaultSpecification,
-          outcome: explicitlyUnresolved ? 'unconfirmed' as const : confirmedDestruction ? 'destroyed' as const : defaultSpecification.outcome,
-        }
-        : undefined
-      if (!specification?.launcherRef || !specification.targetRef) return []
-      return [{
-        engagementId: `engagement:${sceneBeat.sceneBeatId}:${weaponRef}`,
-        sceneBeatRef: sceneBeat.sceneBeatId,
-        launcherRef: specification.launcherRef,
-        weaponRef,
-        targetRef: specification.targetRef,
-        outcome: specification.outcome,
-        evidenceRefs: [...narrationBeat.evidenceRefs],
-      }]
+  const leadActorForGroup = (groupRef: string) => actorsForGroup(groupRef)
+    .filter(actor => !staticActors.has(actor.actorInstanceId))
+    .sort((left, right) => left.ordinal - right.ordinal)[0]
+  const rawWeaponEngagements = sceneBlueprint.engagementIntents.flatMap(intent => {
+    const launcher = leadActorForGroup(intent.launcherGroupRef)
+    const target = leadActorForGroup(intent.targetGroupRef)
+    const weapons = actorsForGroup(intent.weaponGroupRef)
+      .filter(actor => !staticActors.has(actor.actorInstanceId))
+      .sort((left, right) => left.ordinal - right.ordinal)
+    if (!launcher || !target || weapons.length === 0) return []
+    const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.eventUnitId === intent.eventUnitId)
+    if (!sceneBeat) return []
+    return weapons.map(weapon => ({
+      engagementId: `engagement:${sceneBeat.sceneBeatId}:${weapon.actorInstanceId}`,
+      sceneBeatRef: sceneBeat.sceneBeatId,
+      launcherRef: launcher.actorInstanceId,
+      weaponRef: weapon.actorInstanceId,
+      targetRef: target.actorInstanceId,
+      outcome: intent.assertedOutcome,
+      evidenceRefs: [...intent.evidenceRefs],
     }))
   })
   // A single weapon actor has one runtime lifecycle. Models may describe the

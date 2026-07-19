@@ -5,7 +5,7 @@ import { solveInteractionGeometry } from '../src/compiler/interactionSolver.ts'
 test('interaction solver propagates a producer weapon terminal point to a downstream interceptor', () => {
   const result = solveInteractionGeometry({
     intents: [
-      { interactionId: 'interaction:first', weaponRef: 'weapon:first', targetRef: 'fighter:pakistan', interactionTimeMs: 10_000 },
+      { interactionId: 'interaction:first', weaponRef: 'weapon:first', targetRef: 'fighter:lead-target', interactionTimeMs: 10_000 },
       { interactionId: 'interaction:intercept', weaponRef: 'weapon:interceptor', targetRef: 'weapon:first', interactionTimeMs: 12_000 },
     ],
     directPoints: new Map([
