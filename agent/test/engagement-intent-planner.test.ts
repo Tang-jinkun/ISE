@@ -198,6 +198,36 @@ test('explicit unresolved wording wins over destruction wording', () => {
   assert.notEqual(planning.intents[1]?.assertedOutcome, 'destroyed')
 })
 
+test('does not confirm destruction from English negated destruction evidence', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = input.eventPlan.eventUnits.slice(0, 1)
+  input.actorGroups = input.actorGroups.filter(group => group.groupId !== 'group:weapon-launch-2')
+  input.evidence.records[1] = {
+    ...input.evidence.records[1]!,
+    claim: 'The Red J-10 was not destroyed.',
+  }
+
+  const planning = planEngagementIntents(input)
+
+  assert.equal(planning.intents[0]?.assertedOutcome, 'unconfirmed')
+  assert.deepEqual(planning.intents[0]?.evidenceRefs, ['ev:launch-1', 'ev:outcome-1'])
+})
+
+test('does not confirm destruction from Chinese negated destruction evidence', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = input.eventPlan.eventUnits.slice(0, 1)
+  input.actorGroups = input.actorGroups.filter(group => group.groupId !== 'group:weapon-launch-2')
+  input.evidence.records[1] = {
+    ...input.evidence.records[1]!,
+    claim: '\u76ee\u6807\u672a\u88ab\u51fb\u6bc1\u3002',
+  }
+
+  const planning = planEngagementIntents(input)
+
+  assert.equal(planning.intents[0]?.assertedOutcome, 'unconfirmed')
+  assert.deepEqual(planning.intents[0]?.evidenceRefs, ['ev:launch-1', 'ev:outcome-1'])
+})
+
 test('does not assert an outcome from illustrative evidence', () => {
   const input = fixture()
   input.eventPlan.eventUnits = input.eventPlan.eventUnits.slice(0, 1)

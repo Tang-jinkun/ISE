@@ -23,12 +23,16 @@ export function completedLaunch(value: string): boolean {
   return actionPattern.test(value)
 }
 
+function statesNegatedDestruction(value: string): boolean {
+  return /\b(?:(?:was|were|is|are)\s+(?:not|never)|(?:wasn't|weren't|isn't|aren't)|(?:not|never))\s+(?:destroyed|shot\s+down|eliminated|killed)\b|\bfailed\s+to\s+(?:destroy|eliminate|kill)\b|(?:\u672a|\u6ca1\u6709|\u5e76\u672a|\u5c1a\u672a)(?:\u80fd|\u88ab)?(?:\u51fb\u6bc1|\u6467\u6bc1)/iu.test(value)
+}
+
 export function statesUnresolvedOutcome(value: string): boolean {
-  return /\b(?:unconfirmed|unresolved|not\s+(?:confirmed|verified)|could\s+not\s+be\s+(?:confirmed|verified)|outcome\s+(?:was\s+)?unknown)\b|\u672a\u786e\u8ba4|\u5c1a\u672a\u786e\u8ba4|\u7ed3\u679c\u4e0d\u660e|\u65e0\u6cd5\u786e\u8ba4/iu.test(value)
+  return statesNegatedDestruction(value) || /\b(?:unconfirmed|unresolved|not\s+(?:confirmed|verified)|could\s+not\s+be\s+(?:confirmed|verified)|outcome\s+(?:was\s+)?unknown)\b|\u672a\u786e\u8ba4|\u5c1a\u672a\u786e\u8ba4|\u7ed3\u679c\u4e0d\u660e|\u65e0\u6cd5\u786e\u8ba4/iu.test(value)
 }
 
 export function statesConfirmedDestruction(value: string): boolean {
-  return /\b(?:destroy(?:s|ed)|shot\s+down|eliminat(?:es|ed)|kill(?:s|ed))\b|\u51fb\u6bc1|\u6467\u6bc1/iu.test(value)
+  return !statesNegatedDestruction(value) && /\b(?:destroy(?:s|ed)|shot\s+down|eliminat(?:es|ed)|kill(?:s|ed))\b|\u51fb\u6bc1|\u6467\u6bc1/iu.test(value)
 }
 
 function statesConfirmedInterception(value: string): boolean {
