@@ -366,7 +366,12 @@ Assert-FinalDomainInvariants $genericGeneratedSelection -AllowGenericScene -Requ
 $genericResolvedMutationRejected = $false
 try {
   $invalidGenericGeneratedSelection = (ConvertTo-JsonText $genericGeneratedSelection) | ConvertFrom-Json
-  $invalidGenericGeneratedSelection.Compiled.data.runtimePlan.interactions[1].status = 'resolved'
+  $invalidGenericGeneratedSelection.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
+    outcome = 'unconfirmed'; targetRef = 'actor:b'; evidenceRefs = @('evidence:unconfirmed')
+  }
+  $invalidGenericGeneratedSelection.Compiled.data.runtimePlan.interactions += [pscustomobject]@{
+    interactionId = 'interaction:duplicate-destroyed'; status = 'resolved'; targetRef = 'actor:b'
+  }
   Assert-FinalDomainInvariants $invalidGenericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
 } catch {
   $genericResolvedMutationRejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:'

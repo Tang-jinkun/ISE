@@ -641,6 +641,31 @@ function Assert-FinalDomainInvariants {
     if ($markerCommands.Count -eq 0 -and $followCommands.Count -eq 0) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes require at least one grounded marker or moving actor.'
     }
+    $resolvedInteractions = @(@(Get-PropertyValue $runtime 'interactions') | Where-Object {
+      (Get-PropertyValue $_ 'status') -eq 'resolved'
+    })
+    $confirmedEngagements = @(@(Get-PropertyValue $choreography 'weaponEngagements') | Where-Object {
+      Test-OrdinalContains @('destroyed', 'interception', 'intercepted') (Get-PropertyValue $_ 'outcome')
+    })
+    if ($resolvedInteractions.Count -ne $confirmedEngagements.Count) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved generic interactions must correspond one-to-one with confirmed weapon engagements.'
+    }
+    $remainingConfirmedEngagements = [System.Collections.Generic.List[object]]::new()
+    foreach ($engagement in $confirmedEngagements) { $remainingConfirmedEngagements.Add($engagement) }
+    foreach ($interaction in $resolvedInteractions) {
+      $interactionTargetRef = Get-PropertyValue $interaction 'targetRef'
+      $matchedEngagementIndex = -1
+      for ($engagementIndex = 0; $engagementIndex -lt $remainingConfirmedEngagements.Count; $engagementIndex += 1) {
+        if (Test-OrdinalEqual $interactionTargetRef (Get-PropertyValue $remainingConfirmedEngagements[$engagementIndex] 'targetRef')) {
+          $matchedEngagementIndex = $engagementIndex
+          break
+        }
+      }
+      if ($matchedEngagementIndex -lt 0) {
+        Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved generic interactions must correspond one-to-one with confirmed weapon engagements by targetRef.'
+      }
+      $remainingConfirmedEngagements.RemoveAt($matchedEngagementIndex)
+    }
   }
 
   if ($ExpectedActorCount -gt 0) {
