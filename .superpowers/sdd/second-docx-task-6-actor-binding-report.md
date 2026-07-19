@@ -2,7 +2,7 @@
 
 ## Scope
 
-Persistent semantic actors now bind to a SceneBeat when their grounded evidence intersects the EventUnit evidence and the participant wording shares a term unique to that semantic actor among planned persistent groups, in addition to the existing participant-alias match. When multiple evidence candidates remain, only the highest unique-term score binds. This prevents a broad EventUnit from activating every actor mentioned by its multiple evidence records. Event-scoped weapon and engagement-chain binding is unchanged.
+Persistent semantic actors now bind to a SceneBeat when their grounded evidence intersects the EventUnit evidence and the participant wording shares a term unique to that semantic actor among planned persistent groups, in addition to the existing participant-alias match. Each participant selects its own positive highest unique-term score, allowing multiple grounded actors in one EventUnit while excluding lower-scoring generic matches. Event-scoped weapon and engagement-chain binding is unchanged.
 
 ## Root Cause
 
@@ -76,6 +76,36 @@ npx tsx --test test/cross-document-start-end-flow.test.ts
 ```
 
 The persisted offline rebuild was repeated with the scored predicate: 11 actors, 11 generated routes, `model:awacs-generic-e3a`, `destroyed,unconfirmed`, and 1 resolved plus 1 unresolved interaction.
+
+## Multi-Variant Follow-up
+
+The first scored implementation selected one global maximum across an EventUnit. That excluded valid persistent actors with fewer discriminative terms whenever another participant had a stronger match.
+
+RED:
+
+```powershell
+npx tsx --test --test-name-pattern="binds evidence-matched persistent actors per discriminative participant term" test/scene-blueprint-planner.test.ts
+```
+
+Before the per-participant selection change, the `Boeing KC-135` group was absent:
+
+```text
+AssertionError: assert.ok(beat.actorRefs.includes(tanker.groupId))
+```
+
+The same EventUnit and evidence record name manufacturer-omitted E-3A and KC-135 participants plus a relay actor sharing `Blue`, `Royal`, and `Air`. The regression requires both intended groups and rejects the relay group.
+
+GREEN:
+
+```powershell
+npx tsx --test --test-name-pattern="binds evidence-matched persistent actors per discriminative participant term|generic planning chains split weapon outcomes" test/scene-blueprint-planner.test.ts
+# 2 pass, 0 fail
+
+npx tsx --test test/cross-document-start-end-flow.test.ts
+# 1 pass, 0 fail
+```
+
+The offline rebuild of session `f023640d-2a17-4d67-945f-e6965f40f9b7` was repeated with the per-participant selection: 11 actors, 11 generated routes, `model:awacs-generic-e3a`, `destroyed,unconfirmed`, and 1 resolved plus 1 unresolved interaction.
 
 ## Files
 

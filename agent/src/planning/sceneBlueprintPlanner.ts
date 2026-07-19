@@ -20,16 +20,20 @@ function evidenceBoundPersistentGroupIds(unit: EventUnit, groups: readonly Actor
   for (const group of persistent) for (const term of new Set(group.participantAliases.flatMap(identityTerms))) {
     termCounts.set(term, (termCounts.get(term) ?? 0) + 1)
   }
-  const participantTerms = new Set(unit.participants.flatMap(identityTerms))
-  const scored = persistent
+  const candidates = persistent
     .filter(group => unit.evidenceRefs.some(evidenceRef => group.evidenceRefs.includes(evidenceRef)))
-    .map(group => ({
+  const selected = new Set<string>()
+  for (const participant of unit.participants) {
+    const participantTerms = new Set(identityTerms(participant))
+    const scored = candidates.map(group => ({
       groupId: group.groupId,
       score: [...new Set(group.participantAliases.flatMap(identityTerms))]
         .filter(term => participantTerms.has(term) && termCounts.get(term) === 1).length,
     }))
-  const bestScore = Math.max(0, ...scored.map(candidate => candidate.score))
-  return new Set(scored.filter(candidate => candidate.score === bestScore && bestScore > 0).map(candidate => candidate.groupId))
+    const bestScore = Math.max(0, ...scored.map(candidate => candidate.score))
+    for (const candidate of scored) if (candidate.score === bestScore && bestScore > 0) selected.add(candidate.groupId)
+  }
+  return selected
 }
 function slug(value: string): string { const ascii = value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); return ascii || fingerprint(value).slice(7, 19) }
 function actorRefsForUnit(unit: EventUnit, groups: ActorGroupIntent[], engagements: readonly EngagementIntent[]): string[] {

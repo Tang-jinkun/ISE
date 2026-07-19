@@ -631,14 +631,14 @@ test('does not create or bind either side for an unqualified generic AWACS fact'
   )
 })
 
-test('binds an evidence-matched persistent actor only by a discriminative identity term', () => {
+test('binds evidence-matched persistent actors per discriminative participant term', () => {
   const fixture = planningFixture()
   fixture.eventPlan.eventUnits.push(
     {
       eventUnitId: 'event:evidence-bound-awacs',
       title: 'Early-warning patrol',
-      worldStateChange: 'Blue E-3A Sentry AWACS patrols the documented route.',
-      participants: ['Blue E-3A Sentry AWACS'],
+      worldStateChange: 'Blue E-3A Sentry AWACS and Blue KC-135 patrol the documented route.',
+      participants: ['Blue E-3A Sentry AWACS', 'Blue KC-135'],
       locationRefs: ['AWACS patrol route'],
       evidenceRefs: ['ev-shared-awacs-route'],
       inferenceRefs: [],
@@ -650,32 +650,34 @@ test('binds an evidence-matched persistent actor only by a discriminative identi
   fixture.evidence.records.push(
     {
       evidenceId: 'ev-shared-awacs-route', sourceRef: 'docx:p8',
-      claim: 'One Boeing E-3A Sentry AWACS and one Blue Royal Air relay aircraft patrol the AWACS patrol route.',
-      kind: 'explicit_fact', entities: ['Boeing E-3A Sentry AWACS', 'Blue Royal Air relay aircraft'],
+      claim: 'One Boeing E-3A Sentry AWACS, one Boeing KC-135, and one Blue Royal Air relay aircraft patrol the AWACS patrol route.',
+      kind: 'explicit_fact', entities: ['Boeing E-3A Sentry AWACS', 'Boeing KC-135', 'Blue Royal Air relay aircraft'],
       locationExpression: 'AWACS patrol route', routeExpression: 'patrol route', confidence: 1, ambiguities: [],
     },
   )
   fixture.narrativePlan.subtitles.push(
     {
       subtitleId: 'subtitle:evidence-bound-awacs', eventUnitId: 'event:evidence-bound-awacs',
-      text: 'Blue E-3A Sentry AWACS patrols the documented route.', evidenceRefs: ['ev-shared-awacs-route'], importance: 'high',
+      text: 'Blue E-3A Sentry AWACS and Blue KC-135 patrol the documented route.', evidenceRefs: ['ev-shared-awacs-route'], importance: 'high',
     },
   )
   fixture.narrativePlan.sceneRequirements.push(
     {
       requirementId: 'requirement:evidence-bound-awacs', eventUnitId: 'event:evidence-bound-awacs',
-      focusEntities: ['Blue E-3A Sentry AWACS'], spatialRelations: [], stateChanges: [], motionRequirements: ['follow documented route'],
-      attentionRequirements: ['show early-warning patrol'], requiredFacts: ['Grounded early-warning patrol'], forbiddenClaims: [], preferredTemplate: 'deployment',
+      focusEntities: ['Blue E-3A Sentry AWACS', 'Blue KC-135'], spatialRelations: [], stateChanges: [], motionRequirements: ['follow documented route'],
+      attentionRequirements: ['show grounded patrols'], requiredFacts: ['Grounded early-warning and tanker patrols'], forbiddenClaims: [], preferredTemplate: 'deployment',
     },
   )
   fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
 
   const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
   const awacs = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Boeing E-3A Sentry AWACS')!
+  const tanker = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Boeing KC-135')!
   const unrelated = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Blue Royal Air relay aircraft')!
   const beat = blueprint.sceneBeats.find(item => item.eventUnitId === 'event:evidence-bound-awacs')!
 
   assert.ok(beat.actorRefs.includes(awacs.groupId))
+  assert.ok(beat.actorRefs.includes(tanker.groupId))
   assert.equal(beat.actorRefs.includes(unrelated.groupId), false)
 })
 
