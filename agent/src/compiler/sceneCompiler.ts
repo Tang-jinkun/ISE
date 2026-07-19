@@ -873,9 +873,22 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const intervalMinimumMs = transitionDurationMs + followMinimumMs
     const visualStartMs = Math.max(subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS, cameraPresentationCursorMs)
     const intervalCount = phaseShots.length > 0 ? subtitleShots.length : 1
+    const terminalInteractionEndMs = Math.max(0,
+      ...phaseShots
+        .filter(shot => shot.phase === 'terminal')
+        .map(shot => {
+          const engagement = engagementForShot(shot)
+          const weaponWindow = engagement && actorPlaybackWindows.get(engagement.weaponRef)
+          const targetWindow = engagement && actorPlaybackWindows.get(engagement.targetRef)
+          return weaponWindow && targetWindow
+            ? Math.max(weaponWindow.followStartMs, targetWindow.followStartMs) + followMinimumMs
+            : 0
+        }),
+    )
     const visualEndMs = Math.max(
       subtitle.startMs + subtitle.durationMs,
       visualStartMs + intervalCount * intervalMinimumMs,
+      terminalInteractionEndMs,
     )
     cameraPresentationCursorMs = visualEndMs
     if (phaseShots.length > 0) {

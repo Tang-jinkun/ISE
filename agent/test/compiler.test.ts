@@ -934,6 +934,76 @@ test('missile launch follows the launcher source-clock position instead of its s
     `weapon=${weaponFollow.startMs} launcher=${launcherFollow.startMs} expected=${expectedLaunchMs}`)
 })
 
+test('terminal interaction windows extend for late source-clock launches without resolving unconfirmed outcomes', () => {
+  const fixture = finalInputForEngagementFixture()
+  const originalEngagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  fixture.input.choreographyPlan = {
+    ...fixture.input.choreographyPlan,
+    weaponEngagements: fixture.input.choreographyPlan.weaponEngagements.map(item => item.engagementId === originalEngagement.engagementId
+      ? { ...item, outcome: 'unconfirmed' as const }
+      : item),
+  }
+  const engagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.engagementId === originalEngagement.engagementId)!
+  const assignmentByActor = new Map(fixture.input.resolvedScenePlan.actorRouteAssignments
+    .map(assignment => [assignment.actorInstanceRef, assignment]))
+  const sourceRouteByRole = new Map([
+    ['launcher', assignmentByActor.get(engagement.launcherRef)!.trajectoryAssetRef],
+    ['weapon', assignmentByActor.get(engagement.weaponRef)!.trajectoryAssetRef],
+    ['target', assignmentByActor.get(engagement.targetRef)!.trajectoryAssetRef],
+  ])
+  const sourceClockAssetId = (role: string) => `trajectory:source-clock-${role}`
+  const roleByActor = new Map([
+    [engagement.launcherRef, 'launcher'],
+    [engagement.weaponRef, 'weapon'],
+    [engagement.targetRef, 'target'],
+  ])
+  fixture.input.resolvedScenePlan = {
+    ...fixture.input.resolvedScenePlan,
+    actorRouteAssignments: fixture.input.resolvedScenePlan.actorRouteAssignments.map(assignment => {
+      const role = roleByActor.get(assignment.actorInstanceRef)
+      return role ? { ...assignment, trajectoryAssetRef: sourceClockAssetId(role) } : assignment
+    }),
+  }
+  fixture.input.choreographyPlan = {
+    ...fixture.input.choreographyPlan,
+    sourceResolvedScenePlanFingerprint: fingerprint(fixture.input.resolvedScenePlan),
+  }
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    assets: fixture.input.assetRegistry.assets.flatMap(asset => asset.kind !== 'trajectory'
+      ? [asset]
+      : [asset, ...[...sourceRouteByRole.entries()]
+        .filter(([, assetId]) => assetId === asset.assetId)
+        .map(([role]) => {
+          const startTimeMs = role === 'launcher' ? 0 : 118_000
+          const endTimeMs = 120_000
+          const originalDurationMs = Math.max(1, asset.trajectory.endTimeMs - asset.trajectory.startTimeMs)
+          return { ...asset, assetId: sourceClockAssetId(role), trajectory: {
+            ...asset.trajectory, startTimeMs, endTimeMs, sourceTimeOriginMs: 1_700_000_000_000,
+            points: asset.trajectory.points?.map(point => ({ ...point, timeMs: startTimeMs
+              + (point.timeMs - asset.trajectory.startTimeMs) * (endTimeMs - startTimeMs) / originalDurationMs })),
+          } }
+        })]),
+  }
+
+  const plan = compileFinalScene(fixture.input)
+  const minimumFollowMs = capabilityManifest.minimumDurations['model.follow_path']
+  const weaponFollow = plan.commands.find(command => command.type === 'model.follow_path'
+    && command.targetId === engagement.weaponRef)!
+  const targetFollow = plan.commands.find(command => command.type === 'model.follow_path'
+    && command.targetId === engagement.targetRef)!
+  const terminalFollow = plan.commands.find(command => command.commandId.includes(
+    `:${engagement.weaponRef}:terminal:follow`))!
+  const interaction = plan.interactions.find(item => item.engagementId === engagement.engagementId)!
+
+  assert.ok(weaponFollow.durationMs >= minimumFollowMs)
+  assert.ok(targetFollow.durationMs >= minimumFollowMs)
+  assert.equal(weaponFollow.startMs + weaponFollow.durationMs, targetFollow.startMs + targetFollow.durationMs)
+  assert.equal(weaponFollow.startMs + weaponFollow.durationMs, interaction.interactionTimeMs)
+  assert.ok(interaction.interactionTimeMs >= terminalFollow.startMs + terminalFollow.durationMs)
+  assert.equal(interaction.status, 'unresolved')
+})
+
 test('dynamic camera destroyed target hide starts when the aftermath interval ends', () => {
   const fixture = finalInputForEngagementFixture()
   const plan = compileFinalScene(fixture.input)
