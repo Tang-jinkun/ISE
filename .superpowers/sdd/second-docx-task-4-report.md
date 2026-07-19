@@ -29,3 +29,25 @@ Implemented the deterministic real-DOCX vertical slice and fixed the generic def
 - `agent/test/semantic-actor-planner.test.ts`: the new alias regression and existing launch-target regression pass. Two existing pack-profile expectations fail in code paths bypassing the modified discovery branch; they were not expanded into this milestone.
 - `packages/agent-core/src/cli.ts` was restored content-identical. The verified in-worktree `node_modules.incomplete` directory was removed; the valid dependency installation was not touched.
 
+## Review Fixes
+
+Implementation commit: `8a1ae2a` (`fix: address task 4 review findings`).
+
+Files changed:
+
+- `.superpowers/sdd/run-real-docx-flow.ps1`
+- `.superpowers/sdd/test-run-real-docx-flow.ps1`
+- `agent/src/compiler/sceneCompiler.ts`
+- `agent/test/compiler.test.ts`
+
+The real export validator now accepts canonical SceneProject `data-link` tracks and legacy persisted `data_link` tracks through an exact discriminator helper. RuntimePlan command validation remains `data_link.show` and does not accept command names as track discriminators.
+
+Registry diagnostic scoping now treats a structured `assetId` as authoritative. A diagnostic with a referenced `assetId` is retained even when its message is opaque; a diagnostic with an unrelated structured `assetId` is omitted even when its message mentions a referenced asset. Message matching remains only as the compatibility fallback for `ASSET_ALIAS_CONFLICT` diagnostics without `assetId`.
+
+Review RED/GREEN evidence:
+
+- PowerShell RED command: `& '.\.superpowers\sdd\test-run-real-docx-flow.ps1'`. It failed with `Missing function under test: Test-SceneDataLinkTrackType`.
+- PowerShell GREEN command: `& '.\.superpowers\sdd\test-run-real-docx-flow.ps1'`. Exit code 0 with 9/9 checks reporting `ok`: empty ledger, transient retry, access token, ordered dictionary, event-unit copy, correlated selection, final invariants, export, and dry-run entry point.
+- Compiler RED command: `npx tsx --test --test-name-pattern="scopes registry diagnostics" test/compiler.test.ts`. It failed 0/1 because the opaque diagnostic for referenced `video:missile-impact` was omitted.
+- Compiler GREEN command: `npx tsx --test --test-name-pattern="scopes registry diagnostics" test/compiler.test.ts`. Passed 1/1 with 0 failures.
+- Vertical verification command: `npx tsx --test test/cross-document-start-end-flow.test.ts`. Passed 1/1 with 0 failures.
