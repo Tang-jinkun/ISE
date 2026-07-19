@@ -652,6 +652,7 @@ test('creates an event-scoped generic missile actor from grounded launch facts w
   assert.deepEqual(weapon, {
     groupId: 'group:weapon-event-launch',
     semanticEntityRef: 'missile',
+    evidenceRefs: ['ev-launch'],
     side: 'pakistan',
     locationRef: '米纳斯',
     platformType: 'missile',
@@ -1101,6 +1102,13 @@ test('buildSceneBlueprint records the selected ScenarioPack lineage', () => {
     packId: 'indo-pak-air-combat/v1',
     version: '1',
   })
+})
+
+test('scene blueprint preserves actor evidence references for route resolution', () => {
+  const blueprint = blueprintWithEnglishAliasQuantities()
+  const group = blueprint.actorGroups.find(candidate => candidate.groupId === 'group:india-su30-adampur')
+
+  assert.deepEqual(group?.evidenceRefs, ['ev-su30'])
 })
 
 const routeIds = [

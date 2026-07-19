@@ -23,6 +23,7 @@ const ENTITY_DICTIONARY = [
 const TIME_EXPRESSION = /\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}:\d{2}/
 
 const COORDINATE_EXPRESSION = /\bcoordinates?\s*:\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)/iu
+const ROUTE_EXPRESSION = /(?:\bfrom\b|从)\s*(?:coordinates?\s*:\s*)?([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*(?:\bto\b|\btoward\b|至|到|飞往)\s*(?:coordinates?\s*:\s*)?([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)/iu
 const GENERIC_ENTITY_EXPRESSION = /\b[A-Z][A-Za-z0-9&'-]*(?:\s+[A-Z][A-Za-z0-9&'-]*)*/g
 const GENERIC_ENTITY_STOPWORDS = new Set([
   'A', 'An', 'And', 'At', 'Blue', 'Coast', 'Civilian', 'East', 'Exercise', 'From', 'No',
@@ -140,6 +141,7 @@ function createEvidenceRecord(paragraph: DocumentIR['paragraphs'][number]): Evid
   const { sourceRef, text } = paragraph
   const timeExpression = text.match(TIME_EXPRESSION)?.[0]
   const coordinateMatch = COORDINATE_EXPRESSION.exec(text)
+  const routeMatch = ROUTE_EXPRESSION.exec(text)
   const knownEntities = ENTITY_DICTIONARY.filter(entity => text.includes(entity))
   const genericEntities = extractGenericEntities(text).filter(entity =>
     !knownEntities.some(known => known.toLocaleLowerCase('en-US') === entity.toLocaleLowerCase('en-US')))
@@ -152,6 +154,15 @@ function createEvidenceRecord(paragraph: DocumentIR['paragraphs'][number]): Evid
     entities: [...new Set([...knownEntities, ...genericEntities])],
     ...(coordinateMatch === null ? {} : {
       locationExpression: `coordinates:${coordinateMatch[1]},${coordinateMatch[2]}`,
+    }),
+    ...(routeMatch === null ? {} : {
+      routeExpression: {
+        start: [Number(routeMatch[1]), Number(routeMatch[2])] as [number, number],
+        end: [Number(routeMatch[3]), Number(routeMatch[4])] as [number, number],
+        pathStyle: /\b(?:launch|fire|intercept|missile)\b|发射|拦截|导弹/iu.test(text)
+          ? 'intercept' as const
+          : 'great_circle' as const,
+      },
     }),
     ...(timeExpression === undefined ? {} : { timeExpression }),
     confidence: 1,

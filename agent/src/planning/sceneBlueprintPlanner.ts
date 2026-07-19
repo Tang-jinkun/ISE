@@ -23,7 +23,7 @@ export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBluep
   assertNarrationBinding(input)
   const selection = selectScenarioPack(input.eventPlan, input.evidence); const pack = selection.pack
   const intents = planActorGroups({ eventPlan: input.eventPlan, evidence: input.evidence, pack })
-  const groups: ActorGroup[] = intents.map(({ aliases: _aliases, participantAliases: _participants, evidenceRefs: _evidenceRefs, platformKind: _platformKind, diagnostics: _diagnostics, ...group }) => group)
+  const groups: ActorGroup[] = intents.map(({ aliases: _aliases, participantAliases: _participants, platformKind: _platformKind, diagnostics: _diagnostics, ...group }) => group)
   const units = new Map(input.eventPlan.eventUnits.map(unit => [unit.eventUnitId, unit])); const byEvent = requirements(input.narrativePlan)
   const hasImage = input.narrationPlan.beats.some(beat => media(byEvent.get(beat.eventUnitId)?.preferredTemplate).includes('image'))
   const sceneBeats = input.narrationPlan.beats.map((beat, index) => {

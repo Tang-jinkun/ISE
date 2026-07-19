@@ -122,3 +122,19 @@ test('parser extracts unknown factual entities and explicit coordinate grounding
   assert.ok(record.entities.includes('Falcon'))
   assert.equal(record.locationExpression, 'coordinates:10.125,20.250')
 })
+
+test('parser extracts a grounded start/end route expression from one factual paragraph', async t => {
+  t.mock.method(mammoth, 'convertToHtml', async () => ({
+    value: '<p>Start/end route report</p><h1>Movement</h1><p>Su-30MKI departs from coordinates:75.100,30.100 to coordinates:76.200,31.200.</p>',
+    messages: [],
+  }))
+
+  const parsed = await parseBattleReport(Buffer.from('synthetic-start-end-route'))
+  const record = parsed.evidence.records.find(item => item.claim.includes('Su-30MKI'))!
+
+  assert.deepEqual(record.routeExpression, {
+    start: [75.1, 30.1],
+    end: [76.2, 31.2],
+    pathStyle: 'great_circle',
+  })
+})

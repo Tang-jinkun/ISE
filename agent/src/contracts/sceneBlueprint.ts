@@ -19,6 +19,7 @@ export const quantityDecisionSchema = z.strictObject({
 export const actorGroupSchema = z.strictObject({
   groupId: z.string().min(1),
   semanticEntityRef: z.string().min(1),
+  evidenceRefs: z.array(z.string().min(1)),
   side: z.string().min(1),
   locationRef: z.string().min(1),
   platformType: z.string().min(1),
