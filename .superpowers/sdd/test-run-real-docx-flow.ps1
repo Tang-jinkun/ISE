@@ -295,6 +295,10 @@ $artifacts = @(
       }
       sceneProjectConfig = [pscustomobject]@{
         schemaVersion = 'ise-scene/v1'; eventPlanArtifactId = 'accepted-1'; runtimePlanArtifactId = 'compiled-1'
+        entities = @(
+          [pscustomobject]@{ entityId = 'actor:a' },
+          [pscustomobject]@{ entityId = 'actor:b' }
+        )
         tracks = @(
           [pscustomobject]@{
             trackId = 'model-track-a'; type = 'model'
@@ -335,7 +339,41 @@ if ($selection.Accepted.artifactId -ne 'accepted-1' -or
   throw 'Expected exact correlated final artifact selection.'
 }
 Assert-FinalDomainInvariants $selection
-Assert-FinalDomainInvariants $selection 2
+
+$genericGeneratedSelection = (ConvertTo-JsonText $selection) | ConvertFrom-Json
+$genericGeneratedSelection.ResolvedScenePlan.data.actorRouteAssignments[0].sourceKind = 'generated'
+$genericGeneratedSelection.ResolvedScenePlan.data.actorRouteAssignments[1].sourceKind = 'generated'
+Add-Member -InputObject $genericGeneratedSelection.ResolvedScenePlan.data -NotePropertyName staticActorBindings -NotePropertyValue @() -Force
+Add-Member -InputObject $genericGeneratedSelection.ResolvedScenePlan.data -NotePropertyName generatedTrajectoryAssets -NotePropertyValue @(
+  [pscustomobject]@{ trajectoryAssetId = 'trajectory:a' },
+  [pscustomobject]@{ trajectoryAssetId = 'trajectory:b' }
+) -Force
+Add-Member -InputObject $genericGeneratedSelection.Compiled.data.sceneProjectConfig -NotePropertyName generatedTrajectories -NotePropertyValue @(
+  [pscustomobject]@{ trajectoryAssetId = 'trajectory:a' },
+  [pscustomobject]@{ trajectoryAssetId = 'trajectory:b' }
+) -Force
+Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan.entities[0] -NotePropertyName modelAssetId -NotePropertyValue 'model:awacs-generic-e3a' -Force
+Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan.entities[1] -NotePropertyName modelAssetId -NotePropertyValue 'model:pl15e' -Force
+Add-Member -InputObject $genericGeneratedSelection.ChoreographyPlan.data -NotePropertyName weaponEngagements -NotePropertyValue @(
+  [pscustomobject]@{ outcome = 'destroyed'; targetRef = 'actor:b'; evidenceRefs = @('evidence:destroyed') }
+) -Force
+Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan -NotePropertyName interactions -NotePropertyValue @(
+  [pscustomobject]@{ interactionId = 'interaction:destroyed'; status = 'resolved'; targetRef = 'actor:b' },
+  [pscustomobject]@{ interactionId = 'interaction:unconfirmed'; status = 'unresolved'; targetRef = 'actor:a' }
+) -Force
+Assert-FinalDomainInvariants $genericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
+
+$genericResolvedMutationRejected = $false
+try {
+  $invalidGenericGeneratedSelection = (ConvertTo-JsonText $genericGeneratedSelection) | ConvertFrom-Json
+  $invalidGenericGeneratedSelection.Compiled.data.runtimePlan.interactions[1].status = 'resolved'
+  Assert-FinalDomainInvariants $invalidGenericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
+} catch {
+  $genericResolvedMutationRejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:'
+}
+if (-not $genericResolvedMutationRejected) {
+  throw 'Expected a second resolved interaction without a second destroyed engagement to be rejected.'
+}
 
 $wrongActorCountRejected = $false
 try { Assert-FinalDomainInvariants $selection 3 }
@@ -389,8 +427,8 @@ Assert-InvariantRejected {
 } 'case-drift runtime lineage artifact id'
 Assert-InvariantRejected {
   param($value)
-  $value.ResolvedScenePlan.data.diagnostics = @([pscustomobject]@{ code = 'TRAJECTORY_SYNTHESIZED' })
-} 'synthesized trajectory diagnostic'
+  $value.ResolvedScenePlan.data.fallbackTrajectoryRecipes = @([pscustomobject]@{ recipeId = 'fallback:a' })
+} 'fallback trajectory recipe'
 Assert-InvariantRejected {
   param($value)
   $value.Compiled.data.runtimePlan.diagnostics = @([pscustomobject]@{
@@ -478,14 +516,32 @@ try {
   if (Test-Path -LiteralPath $exportDir) { Remove-Item -LiteralPath $exportDir -Recurse -Force }
 }
 
-$dryRunOutput = (& powershell -NoProfile -ExecutionPolicy Bypass -File $flowPath -DryRun 2>&1 | Out-String)
-$dryRunExitCode = $LASTEXITCODE
-if ($dryRunExitCode -ne 0) {
-  throw "Expected the complete dry-run entry point to pass without services: $dryRunOutput"
+$dryRunDocxPath = Join-Path ([System.IO.Path]::GetTempPath()) ('ise-flow-dry-run-' + [Guid]::NewGuid().ToString('N') + '.docx')
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$dryRunArchive = [System.IO.Compression.ZipFile]::Open($dryRunDocxPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+  foreach ($entryName in @('[Content_Types].xml', 'word/document.xml')) {
+    $entry = $dryRunArchive.CreateEntry($entryName)
+    $writer = [System.IO.StreamWriter]::new($entry.Open(), [System.Text.Encoding]::UTF8)
+    try { $writer.Write('<xml/>') }
+    finally { $writer.Dispose() }
+  }
+} finally {
+  $dryRunArchive.Dispose()
 }
-if ($dryRunOutput -notmatch '^DRY_RUN_OK:' -or
-    @($dryRunOutput -split "`r?`n" | Where-Object { $_ -match '^DRY_RUN_OK:' }).Count -ne 1) {
-  throw 'Expected exactly one DRY_RUN_OK marker from the complete dry-run entry point.'
+try {
+  $dryRunOutput = (& powershell -NoProfile -ExecutionPolicy Bypass -File $flowPath -DryRun -SourceDocxPath $dryRunDocxPath 2>&1 | Out-String)
+  $dryRunExitCode = $LASTEXITCODE
+  if ($dryRunExitCode -ne 0) {
+    throw "Expected the complete dry-run entry point to pass without services: $dryRunOutput"
+  }
+  if ($dryRunOutput -notmatch '^DRY_RUN_OK:' -or
+      @($dryRunOutput -split "`r?`n" | Where-Object { $_ -match '^DRY_RUN_OK:' }).Count -ne 1) {
+    throw 'Expected exactly one DRY_RUN_OK marker from the complete dry-run entry point.'
+  }
+} finally {
+  if (Test-Path -LiteralPath $dryRunDocxPath) { Remove-Item -LiteralPath $dryRunDocxPath -Force }
 }
 
 [Console]::Out.WriteLine('EMPTY_ARTIFACT_LEDGER=ok')

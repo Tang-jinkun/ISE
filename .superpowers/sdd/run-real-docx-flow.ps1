@@ -641,10 +641,6 @@ function Assert-FinalDomainInvariants {
     if ($markerCommands.Count -eq 0 -and $followCommands.Count -eq 0) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes require at least one grounded marker or moving actor.'
     }
-    if (@($runtime.interactions | Where-Object { (Get-PropertyValue $_ 'status') -eq 'resolved' }).Count -gt 0) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes may not fabricate resolved interactions.'
-    }
-    return
   }
 
   if ($ExpectedActorCount -gt 0) {
