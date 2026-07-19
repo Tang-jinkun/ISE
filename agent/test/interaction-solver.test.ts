@@ -49,3 +49,23 @@ test('interaction solver marks cycles and ambiguous producers unresolved', () =>
   assert.equal(ambiguous.get('interaction:downstream')?.status, 'unresolved')
   assert.equal(ambiguous.get('interaction:downstream')?.reason, 'ambiguous-target-chain')
 })
+
+test('interaction solver requires downstream source geometry before inheriting an upstream point', () => {
+  const result = solveInteractionGeometry({
+    intents: [
+      { interactionId: 'interaction:first', weaponRef: 'weapon:first', targetRef: 'fighter:lead-target', interactionTimeMs: 10_000 },
+      { interactionId: 'interaction:intercept', weaponRef: 'weapon:interceptor', targetRef: 'weapon:first', interactionTimeMs: 12_000 },
+    ],
+    directPoints: new Map([
+      ['interaction:first', { longitudeDeg: 74.5, latitudeDeg: 31, altitudeM: 8_800 }],
+      ['interaction:intercept', undefined],
+    ]),
+  })
+
+  assert.deepEqual(result.get('interaction:intercept'), {
+    interactionId: 'interaction:intercept',
+    interactionTimeMs: 12_000,
+    status: 'unresolved',
+    reason: 'geometry-mismatch',
+  })
+})

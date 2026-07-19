@@ -458,6 +458,13 @@ function approximateDistanceMeters(
   return Math.hypot(longitudeMeters, latitudeMeters)
 }
 
+function approximateSpatialSeparationMeters(
+  left: { longitude: number, latitude: number, altitudeM: number },
+  right: { longitude: number, latitude: number, altitudeM: number },
+): number {
+  return Math.hypot(approximateDistanceMeters(left, right), left.altitudeM - right.altitudeM)
+}
+
 function unionBounds(
   bounds: readonly [[number, number], [number, number]][],
 ): [[number, number], [number, number]] {
@@ -844,9 +851,10 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     }
   }
   const cameraCommands: CanonicalCommand[] = []
+  const outcomeEffectCommands: Array<{ engagementId: string, command: CanonicalCommand }> = []
   const interactionEndMs = new Map<string, number>()
-  const destroyedTargetHides = new Map<string, CanonicalCommand>()
-  const interceptedTargetHides = new Map<string, CanonicalCommand>()
+  const destroyedTargetHideCandidates: Array<{ engagementId: string, command: CanonicalCommand }> = []
+  const interceptedTargetHideCandidates: Array<{ engagementId: string, command: CanonicalCommand }> = []
   const engagementForShot = (shot: ChoreographyPlan['shotPlan'][number]) =>
     choreographyPlan.weaponEngagements.find(engagement =>
       shot.shotId.includes(`:${engagement.weaponRef}:`))
@@ -1030,16 +1038,19 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         }))
       }
       if (shot.phase === 'terminal' && (engagement!.outcome === 'interception' || engagement!.outcome === 'destroyed')) {
-        cameraCommands.push(runtimeCommandSchema.parse({
-          commandId: `cmd:${shot.shotId}:impact-video`, eventUnitId: unit.eventUnitId, targetId: 'overlay:missile-impact',
-          type: 'video.play', params: {
-            assetId: 'video:missile-impact',
-            layout: { xPct: 64, yPct: 6, widthPct: 30, heightPct: 24, zIndex: 30, opacity: 1, fit: 'cover' },
-            volume: 0, playbackRate: 1, loop: false,
-          },
-          startMs: followStartMs, durationMs: endMs - followStartMs,
-          dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
-        }))
+        outcomeEffectCommands.push({
+          engagementId: engagement!.engagementId,
+          command: runtimeCommandSchema.parse({
+            commandId: `cmd:${shot.shotId}:impact-video`, eventUnitId: unit.eventUnitId, targetId: 'overlay:missile-impact',
+            type: 'video.play', params: {
+              assetId: 'video:missile-impact',
+              layout: { xPct: 64, yPct: 6, widthPct: 30, heightPct: 24, zIndex: 30, opacity: 1, fit: 'cover' },
+              volume: 0, playbackRate: 1, loop: false,
+            },
+            startMs: followStartMs, durationMs: endMs - followStartMs,
+            dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
+          }),
+        })
         if (engagement!.outcome === 'interception') {
           const interceptedHide = runtimeCommandSchema.parse({
             commandId: `cmd:${shot.shotId}:intercepted-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
@@ -1050,25 +1061,28 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
             startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
             dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
           })
-          const existingHide = interceptedTargetHides.get(engagement!.targetRef)
-          if (!existingHide || interceptedHide.startMs < existingHide.startMs) {
-            interceptedTargetHides.set(engagement!.targetRef, interceptedHide)
-          }
+          interceptedTargetHideCandidates.push({ engagementId: engagement!.engagementId, command: interceptedHide })
         }
       }
       if (shot.phase === 'aftermath' && engagement!.outcome === 'destroyed') {
         const stateDurationMs = 1_000
-        cameraCommands.push(runtimeCommandSchema.parse({
-          commandId: `cmd:${shot.shotId}:destroyed`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
-          type: 'model.set_state', params: { action: 'model.set_state', entityId: engagement!.targetRef, state: 'destroyed' },
-          startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
-        }))
-        destroyedTargetHides.set(engagement!.targetRef, runtimeCommandSchema.parse({
-          commandId: `cmd:${shot.shotId}:destroyed-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
-          type: 'model.hide', params: { action: 'model.hide', entityId: engagement!.targetRef },
-          startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
-          dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
-        }))
+        outcomeEffectCommands.push({
+          engagementId: engagement!.engagementId,
+          command: runtimeCommandSchema.parse({
+            commandId: `cmd:${shot.shotId}:destroyed`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
+            type: 'model.set_state', params: { action: 'model.set_state', entityId: engagement!.targetRef, state: 'destroyed' },
+            startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
+          }),
+        })
+        destroyedTargetHideCandidates.push({
+          engagementId: engagement!.engagementId,
+          command: runtimeCommandSchema.parse({
+            commandId: `cmd:${shot.shotId}:destroyed-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
+            type: 'model.hide', params: { action: 'model.hide', entityId: engagement!.targetRef },
+            startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
+            dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
+          }),
+        })
       }
     }
   }
@@ -1086,12 +1100,16 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   // terminal point; a downstream weapon targeting it inherits that point.
   const interactionIntents: InteractionIntent[] = []
   const directInteractionPoints = new Map<string, InteractionPoint | undefined>()
+  const interactionSpatialToleranceM = 500
   for (const engagement of choreographyPlan.weaponEngagements) {
+    const weaponWindow = actorPlaybackWindows.get(engagement.weaponRef)
     const targetWindow = actorPlaybackWindows.get(engagement.targetRef)
+    const weaponAssignment = assignments.get(engagement.weaponRef)
     const targetAssignment = assignments.get(engagement.targetRef)
-    if (!targetWindow || !targetAssignment) continue
+    if (!weaponWindow || !targetWindow || !weaponAssignment || !targetAssignment) continue
     const terminalShotEndMs = interactionEndMs.get(engagement.engagementId)
     const interactionTimeMs = terminalShotEndMs ?? targetWindow.followEndMs
+    const weaponFollowEndMs = terminalShotEndMs ?? weaponWindow.followEndMs
     const targetFollowEndMs = terminalShotEndMs ?? targetWindow.followEndMs
     interactionIntents.push({
       interactionId: `interaction:${engagement.engagementId}`,
@@ -1099,18 +1117,27 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       targetRef: engagement.targetRef,
       interactionTimeMs,
     })
-    const directPoint = routeSampleAtPlaybackTime(
+    const weaponPoint = routeSampleAtPlaybackTime(
+      assetRegistry,
+      weaponAssignment.trajectoryAssetRef,
+      interactionTimeMs,
+      weaponWindow.followStartMs,
+      weaponFollowEndMs,
+    )
+    const targetPoint = routeSampleAtPlaybackTime(
       assetRegistry,
       targetAssignment.trajectoryAssetRef,
       interactionTimeMs,
       targetWindow.followStartMs,
       targetFollowEndMs,
     )
-    directInteractionPoints.set(`interaction:${engagement.engagementId}`, {
-      longitudeDeg: directPoint.longitude,
-      latitudeDeg: directPoint.latitude,
-      altitudeM: directPoint.altitudeM,
-    })
+    const geometryVerified = engagement.outcome !== 'unconfirmed'
+      && approximateSpatialSeparationMeters(weaponPoint, targetPoint) <= interactionSpatialToleranceM
+    directInteractionPoints.set(`interaction:${engagement.engagementId}`, geometryVerified ? {
+      longitudeDeg: targetPoint.longitude,
+      latitudeDeg: targetPoint.latitude,
+      altitudeM: targetPoint.altitudeM,
+    } : undefined)
   }
   const interactionGeometry = solveInteractionGeometry({
     intents: interactionIntents,
@@ -1127,7 +1154,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       engagementId: intent.interactionId.replace(/^interaction:/u, ''),
       interactionTimeMs: intent.interactionTimeMs,
       ...(status === 'resolved' && result?.interactionPoint ? { interactionPoint: result.interactionPoint } : {}),
-      spatialToleranceM: 500,
+      spatialToleranceM: interactionSpatialToleranceM,
       temporalToleranceMs: 250,
       status,
       ...(status === 'resolved' && result?.propagatedFromInteractionId
@@ -1138,6 +1165,26 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         : result?.reason ? [`INTERACTION_${result.reason.replaceAll('-', '_').toUpperCase()}`] : [],
     }
   })
+  const resolvedInteractionEngagementIds = new Set(interactions
+    .filter(interaction => interaction.status === 'resolved')
+    .map(interaction => interaction.engagementId))
+  const resolvedOutcomeEffectCommands = outcomeEffectCommands
+    .filter(candidate => resolvedInteractionEngagementIds.has(candidate.engagementId))
+    .map(candidate => candidate.command)
+  const destroyedTargetHides = new Map<string, CanonicalCommand>()
+  for (const candidate of destroyedTargetHideCandidates) {
+    if (resolvedInteractionEngagementIds.has(candidate.engagementId)) {
+      destroyedTargetHides.set(candidate.command.targetId, candidate.command)
+    }
+  }
+  const interceptedTargetHides = new Map<string, CanonicalCommand>()
+  for (const candidate of interceptedTargetHideCandidates) {
+    if (!resolvedInteractionEngagementIds.has(candidate.engagementId)) continue
+    const existingHide = interceptedTargetHides.get(candidate.command.targetId)
+    if (!existingHide || candidate.command.startMs < existingHide.startMs) {
+      interceptedTargetHides.set(candidate.command.targetId, candidate.command)
+    }
+  }
 
   // Close each engagement at the terminal shot boundary. This makes the two
   // routes and their target state share the same observable interaction time.
@@ -1172,7 +1219,10 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       ...weaponDraft.params.timing,
       status: interactionStatus,
     }
-    if (binding && targetPoint && launchPoint) {
+    if (interactionStatus !== 'resolved') {
+      const { spatialBinding: _spatialBinding, ...timingWithoutSpatialBinding } = weaponDraft.params.timing
+      weaponDraft.params.timing = timingWithoutSpatialBinding
+    } else if (binding && targetPoint && launchPoint) {
       weaponDraft.params.timing = {
         ...weaponDraft.params.timing,
         spatialBinding: {
@@ -1254,6 +1304,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     ...scheduled.commands,
     ...dataLinkCommands,
     ...cameraCommands,
+    ...resolvedOutcomeEffectCommands,
     ...staticMarkerCommands,
     ...actorCommands,
     ...destroyedTargetHides.values(),

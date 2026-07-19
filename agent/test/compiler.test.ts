@@ -1054,6 +1054,50 @@ test('destroyed engagement ends the missile path when the target enters destroye
   assert.equal(missileHide.startMs, destroyed.startMs)
 })
 
+test('source geometry mismatch keeps an asserted destroyed engagement unresolved without outcome effects', () => {
+  const fixture = finalInputForEngagementFixture()
+  const engagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const weaponAssignment = fixture.input.resolvedScenePlan.actorRouteAssignments.find(item =>
+    item.actorInstanceRef === engagement.weaponRef)!
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    assets: fixture.input.assetRegistry.assets.map(asset => {
+      if (asset.kind !== 'trajectory' || asset.assetId !== weaponAssignment.trajectoryAssetRef) return asset
+      const points = asset.trajectory.points!
+      return {
+        ...asset,
+        trajectory: {
+          ...asset.trajectory,
+          points: points.map((point, index) => index === points.length - 1
+            ? { ...point, altitudeM: point.altitudeM + 10_000 }
+            : point),
+        },
+      }
+    }),
+  }
+
+  const plan = compileFinalScene(fixture.input)
+  const interaction = plan.interactions.find(item => item.engagementId === engagement.engagementId)!
+  const weaponFollow = plan.commands.find((command): command is Extract<(typeof plan.commands)[number], { type: 'model.follow_path' }> =>
+    command.type === 'model.follow_path' && command.targetId === engagement.weaponRef)!
+
+  assert.equal(interaction.status, 'unresolved')
+  assert.deepEqual(interaction.diagnostics, ['INTERACTION_GEOMETRY_MISMATCH'])
+  assert.equal(weaponFollow.params.timing?.spatialBinding, undefined)
+  assert.equal(plan.commands.some(command => command.type === 'video.play'
+    && command.params.assetId === 'video:missile-impact'
+    && command.evidenceRefs.includes('ev-counterattack')), false)
+  assert.equal(plan.commands.some(command => command.type === 'model.set_state'
+    && command.targetId === engagement.targetRef
+    && command.params.state === 'destroyed'), false)
+  assert.equal(plan.commands.some(command => command.type === 'model.hide'
+    && command.targetId === engagement.targetRef
+    && command.commandId.endsWith(':destroyed-hide')), false)
+  assert.ok(plan.commands.some(command => command.type === 'model.hide'
+    && command.targetId === engagement.targetRef
+    && command.commandId === `cmd:${engagement.targetRef}:hide`))
+})
+
 test('chained interception propagates the downstream interaction point to the upstream missile', () => {
   const fixture = finalInputForEngagementFixture()
   const plan = compileFinalScene(fixture.input)

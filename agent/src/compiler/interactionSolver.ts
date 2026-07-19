@@ -16,7 +16,7 @@ export interface ResolvedInteractionGeometry {
   interactionTimeMs: number
   interactionPoint?: InteractionPoint
   status: 'resolved' | 'unresolved'
-  reason?: 'missing-target-geometry' | 'dependency-cycle' | 'ambiguous-target-chain'
+  reason?: 'missing-target-geometry' | 'geometry-mismatch' | 'dependency-cycle' | 'ambiguous-target-chain'
   propagatedFromInteractionId?: string
 }
 
@@ -71,6 +71,10 @@ export function solveInteractionGeometry(
 
     visiting.add(interactionId)
     const candidates = producers.get(intent.targetRef) ?? []
+    const directPoint = input.directPoints.get(interactionId)
+    const missingDirectReason = input.directPoints.has(interactionId)
+      ? 'geometry-mismatch' as const
+      : 'missing-target-geometry' as const
     let result: ResolvedInteractionGeometry
     if (candidates.length > 1) {
       result = {
@@ -80,8 +84,8 @@ export function solveInteractionGeometry(
         reason: 'ambiguous-target-chain',
       }
     } else if (candidates.length === 1 && candidates[0]!.interactionId !== interactionId) {
-      const upstream = resolve(candidates[0]!.interactionId)
-      result = upstream.status === 'resolved' && upstream.interactionPoint
+      const upstream = directPoint ? resolve(candidates[0]!.interactionId) : undefined
+      result = directPoint && upstream?.status === 'resolved' && upstream.interactionPoint
         ? {
           interactionId,
           interactionTimeMs: intent.interactionTimeMs,
@@ -93,10 +97,9 @@ export function solveInteractionGeometry(
           interactionId,
           interactionTimeMs: intent.interactionTimeMs,
           status: 'unresolved',
-          reason: upstream.reason ?? 'missing-target-geometry',
+          reason: upstream?.reason ?? missingDirectReason,
         }
     } else {
-      const directPoint = input.directPoints.get(interactionId)
       result = directPoint
         ? {
           interactionId,
@@ -108,7 +111,7 @@ export function solveInteractionGeometry(
           interactionId,
           interactionTimeMs: intent.interactionTimeMs,
           status: 'unresolved',
-          reason: 'missing-target-geometry',
+          reason: missingDirectReason,
         }
     }
     visiting.delete(interactionId)

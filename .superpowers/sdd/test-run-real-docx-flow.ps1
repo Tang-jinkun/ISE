@@ -373,7 +373,59 @@ Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan -No
   [pscustomobject]@{ interactionId = 'interaction:destroyed'; engagementId = 'engagement:destroyed'; status = 'resolved' },
   [pscustomobject]@{ interactionId = 'interaction:unconfirmed'; engagementId = 'engagement:unconfirmed'; status = 'unresolved' }
 ) -Force
+$destroyedStateCommand = [pscustomobject]@{
+  commandId = 'destroyed-b'; eventUnitId = 'event-1'; targetId = 'actor:b'; type = 'model.set_state'; startMs = 1900; durationMs = 1000
+  params = [pscustomobject]@{ action = 'model.set_state'; entityId = 'actor:b'; state = 'destroyed' }
+}
+$genericGeneratedSelection.Compiled.data.runtimePlan.commands += $destroyedStateCommand
+$genericGeneratedSelection.Compiled.data.sceneProjectConfig.tracks[1].items += $destroyedStateCommand
 Assert-FinalDomainInvariants $genericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
+
+$script:GenericAcceptanceFailures = [System.Collections.Generic.List[string]]::new()
+function Assert-GenericSelectionAccepted {
+  param($Value, [string]$Label)
+  try {
+    Assert-FinalDomainInvariants $Value -AllowGenericScene -RequireGeneratedScenario
+  } catch {
+    $script:GenericAcceptanceFailures.Add("$Label => $($_.Exception.Message)")
+  }
+}
+
+$genericConfirmedSubsetSelection = (ConvertTo-JsonText $genericGeneratedSelection) | ConvertFrom-Json
+$genericConfirmedSubsetSelection.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
+  engagementId = 'engagement:geometry-mismatch'; outcome = 'interception'; targetRef = 'actor:a'; evidenceRefs = @('evidence:geometry-mismatch')
+}
+Assert-GenericSelectionAccepted $genericConfirmedSubsetSelection 'confirmed engagement without a resolved interaction'
+
+$genericStaticSelection = (ConvertTo-JsonText $genericGeneratedSelection) | ConvertFrom-Json
+$genericStaticSelection.ResolvedScenePlan.data.actorRouteAssignments = @(
+  $genericStaticSelection.ResolvedScenePlan.data.actorRouteAssignments | Where-Object { $_.actorInstanceRef -eq 'actor:b' }
+)
+$genericStaticSelection.ResolvedScenePlan.data.staticActorBindings = @(
+  [pscustomobject]@{ actorInstanceRef = 'actor:a'; coordinates = @(2.5, 53.5); sourceRefs = @('evidence:static') }
+)
+$genericStaticSelection.ResolvedScenePlan.data.generatedTrajectoryAssets = @(
+  [pscustomobject]@{ trajectoryAssetId = 'trajectory:b' }
+)
+$genericStaticSelection.Compiled.data.sceneProjectConfig.generatedTrajectories = @(
+  [pscustomobject]@{ trajectoryAssetId = 'trajectory:b' }
+)
+$genericStaticSelection.Compiled.data.runtimePlan.entities[0].PSObject.Properties.Remove('defaultTrajectoryAssetId')
+$genericStaticSelection.Compiled.data.runtimePlan.commands = @(
+  $genericStaticSelection.Compiled.data.runtimePlan.commands | Where-Object { $_.commandId -ne 'follow-a' }
+)
+$genericStaticSelection.Compiled.data.runtimePlan.commands += [pscustomobject]@{
+  commandId = 'marker-a'; eventUnitId = 'event-1'; targetId = 'actor:a'; type = 'marker.show'; startMs = 900; durationMs = 2100
+  params = [pscustomobject]@{ coordinates = @(2.5, 53.5); label = 'Static actor'; color = '#4d7cff' }
+}
+$genericStaticSelection.Compiled.data.sceneProjectConfig.tracks = @(
+  $genericStaticSelection.Compiled.data.sceneProjectConfig.tracks | Where-Object { $_.trackId -eq 'model-track-b' }
+)
+Assert-GenericSelectionAccepted $genericStaticSelection 'one moving actor plus one grounded static actor'
+
+if ($script:GenericAcceptanceFailures.Count -ne 0) {
+  throw "Expected generic selections to be accepted:`n$($script:GenericAcceptanceFailures -join "`n")"
+}
 
 function Assert-GenericResolvedInteractionRejected {
   param([scriptblock]$Mutate, [string]$Label)
@@ -412,13 +464,6 @@ Assert-GenericResolvedInteractionRejected {
   }
   $value.Compiled.data.runtimePlan.interactions[1].status = 'resolved'
 } 'resolved interaction for an unconfirmed engagement'
-Assert-GenericResolvedInteractionRejected {
-  param($value)
-  $value.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
-    engagementId = 'engagement:interception'; outcome = 'interception'; targetRef = 'actor:a'; evidenceRefs = @('evidence:interception')
-  }
-} 'missing resolved interaction for a confirmed engagement'
-
 $wrongActorCountRejected = $false
 try { Assert-FinalDomainInvariants $selection 3 }
 catch { $wrongActorCountRejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:' }

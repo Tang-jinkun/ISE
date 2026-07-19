@@ -592,8 +592,30 @@ function Assert-FinalDomainInvariants {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must retain a missile model.'
     }
     $scenarioEngagements = @(Get-PropertyValue $choreography 'weaponEngagements')
-    if (-not (Test-OrdinalContains @($scenarioEngagements | ForEach-Object { Get-PropertyValue $_ 'outcome' }) 'destroyed')) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must contain one confirmed destroyed engagement.'
+    $destroyedEngagements = @($scenarioEngagements | Where-Object { (Get-PropertyValue $_ 'outcome') -eq 'destroyed' })
+    $resolvedScenarioInteractions = @($runtime.interactions | Where-Object { (Get-PropertyValue $_ 'status') -eq 'resolved' })
+    $destroyedStateCommands = @($runtime.commands | Where-Object {
+      (Get-PropertyValue $_ 'type') -eq 'model.set_state' -and
+      (Get-PropertyValue (Get-PropertyValue $_ 'params') 'state') -eq 'destroyed'
+    })
+    $hasResolvedDestroyedEngagement = $false
+    foreach ($engagement in $destroyedEngagements) {
+      $engagementId = Get-PropertyValue $engagement 'engagementId'
+      $targetRef = Get-PropertyValue $engagement 'targetRef'
+      $matchingInteraction = @($resolvedScenarioInteractions | Where-Object {
+        Test-OrdinalEqual (Get-PropertyValue $_ 'engagementId') $engagementId
+      })
+      $matchingState = @($destroyedStateCommands | Where-Object {
+        Test-OrdinalEqual (Get-PropertyValue $_ 'targetId') $targetRef -and
+        Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId') $targetRef
+      })
+      if ($matchingInteraction.Count -eq 1 -and $matchingState.Count -eq 1) {
+        $hasResolvedDestroyedEngagement = $true
+        break
+      }
+    }
+    if (-not $hasResolvedDestroyedEngagement) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must contain one geometrically resolved destroyed engagement and matching state transition.'
     }
     if (@($runtime.interactions | Where-Object { (Get-PropertyValue $_ 'status') -eq 'unresolved' }).Count -lt 1) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must preserve one unresolved interaction.'
@@ -646,19 +668,21 @@ function Assert-FinalDomainInvariants {
     if ($markerCommands.Count -eq 0 -and $followCommands.Count -eq 0) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes require at least one grounded marker or moving actor.'
     }
+    $markerActorIds = @($markerCommands | ForEach-Object { Get-PropertyValue $_ 'targetId' })
+    if (-not (Test-OrdinalSetEqual $markerActorIds $staticActorIds)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic static actor bindings must correspond exactly to RuntimePlan marker.show targets.'
+    }
     $resolvedInteractions = @(@(Get-PropertyValue $runtime 'interactions') | Where-Object {
       (Get-PropertyValue $_ 'status') -eq 'resolved'
     })
     $confirmedEngagements = @(@(Get-PropertyValue $choreography 'weaponEngagements') | Where-Object {
       Test-OrdinalContains @('destroyed', 'interception', 'intercepted') (Get-PropertyValue $_ 'outcome')
     })
-    if ($resolvedInteractions.Count -ne $confirmedEngagements.Count) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved generic interactions must correspond one-to-one with confirmed weapon engagements.'
-    }
     $resolvedInteractionEngagementIds = @($resolvedInteractions | ForEach-Object { Get-PropertyValue $_ 'engagementId' })
     $confirmedEngagementIds = @($confirmedEngagements | ForEach-Object { Get-PropertyValue $_ 'engagementId' })
-    if (-not (Test-OrdinalSetEqual $resolvedInteractionEngagementIds $confirmedEngagementIds)) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved generic interactions must correspond one-to-one with confirmed weapon engagements by engagementId.'
+    if (-not (Test-OrdinalUnique $resolvedInteractionEngagementIds) -or
+        @($resolvedInteractionEngagementIds | Where-Object { -not (Test-OrdinalContains $confirmedEngagementIds $_) }).Count -ne 0) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved generic interaction engagementIds must be a unique subset of confirmed weapon engagements.'
     }
   }
 
@@ -711,6 +735,11 @@ function Assert-FinalDomainInvariants {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
     }
   }
+  $expectedModelActorIds = @(if ($AllowGenericScene) { $assignmentActorIds } else { $runtimeEntityIds })
+  $expectedModelActorIdSet = New-OrdinalStringSet $expectedModelActorIds
+  if ($null -eq $expectedModelActorIdSet) {
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig model track actor IDs are invalid.'
+  }
   $modelTrackEntityIdSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
   $interceptedTargetIds = @(
     @(Get-PropertyValue $choreography 'weaponEngagements') |
@@ -732,13 +761,13 @@ function Assert-FinalDomainInvariants {
     }
     $null = $modelTrackEntityIdSet.Add(@($trackEntityIdSet)[0])
   }
-  if ($modelTracks.Count -ne $runtimeEntityIds.Count -or
-      $modelTrackEntityIdSet.Count -ne $runtimeEntityIdSet.Count) {
-    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
+  if ($modelTracks.Count -ne $expectedModelActorIds.Count -or
+      $modelTrackEntityIdSet.Count -ne $expectedModelActorIdSet.Count) {
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per moving RuntimePlan entity.'
   }
-  foreach ($runtimeEntityId in $runtimeEntityIds) {
-    if (-not $modelTrackEntityIdSet.Contains([string]$runtimeEntityId)) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per RuntimePlan entity.'
+  foreach ($expectedModelActorId in $expectedModelActorIds) {
+    if (-not $modelTrackEntityIdSet.Contains([string]$expectedModelActorId)) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'SceneProjectConfig must contain exactly one model track per moving RuntimePlan entity.'
     }
   }
   $sceneEntityIds = @(@(Get-PropertyValue $scene 'entities') | ForEach-Object { Get-PropertyValue $_ 'entityId' })
@@ -790,13 +819,13 @@ function Assert-FinalDomainInvariants {
 
   $commands = @(Get-PropertyValue $runtime 'commands')
   $followCommands = @($commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'model.follow_path' })
-  if ($followCommands.Count -ne $entities.Count -or
+  $expectedFollowActorIds = @(if ($AllowGenericScene) { $assignmentActorIds } else { $runtimeEntityIds })
+  if ($followCommands.Count -ne $expectedFollowActorIds.Count -or
       @($commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'image.show' }).Count -lt 1 -or
       @($commands | Where-Object { (Get-PropertyValue $_ 'type') -eq 'video.play' }).Count -lt 1) {
-    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan requires one follow route per entity plus image and video commands.'
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'RuntimePlan requires one follow route per moving entity plus image and video commands.'
   }
-  foreach ($entity in $entities) {
-    $entityId = Get-PropertyValue $entity 'entityId'
+  foreach ($entityId in $expectedFollowActorIds) {
     $entityFollows = @($followCommands | Where-Object {
       Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $_ 'params') 'entityId') $entityId
     })
@@ -805,8 +834,10 @@ function Assert-FinalDomainInvariants {
     })
     if ($entityFollows.Count -ne 1 -or $assignment.Count -ne 1 -or
         -not (Test-OrdinalEqual (Get-PropertyValue (Get-PropertyValue $entityFollows[0] 'params') 'trajectoryAssetId') (Get-PropertyValue $assignment[0] 'trajectoryAssetRef')) -or
-        -not (Test-OrdinalEqual (Get-PropertyValue $entity 'defaultTrajectoryAssetId') (Get-PropertyValue $assignment[0] 'trajectoryAssetRef'))) {
-      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each RuntimePlan entity must follow its unique resolved route exactly once.'
+        -not (Test-OrdinalEqual (Get-PropertyValue ($entities | Where-Object {
+          Test-OrdinalEqual (Get-PropertyValue $_ 'entityId') $entityId
+        } | Select-Object -First 1) 'defaultTrajectoryAssetId') (Get-PropertyValue $assignment[0] 'trajectoryAssetRef'))) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Each moving RuntimePlan entity must follow its unique resolved route exactly once.'
     }
   }
 
