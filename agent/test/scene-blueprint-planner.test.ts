@@ -1054,6 +1054,7 @@ test('does not create actors for spare routes or scenario-local catalog labels',
   ])
   assert.equal(blueprint.actorGroups.some(group => /vampire|j-?10ce/i.test(group.semanticEntityRef)), false)
   assert.deepEqual(blueprint.diagnostics.map(item => item.code), [
+    'ENGAGEMENT_PARTICIPANT_UNRESOLVED',
     'SCENARIO_LOCAL_CALLSIGN_MAPPING',
     'OPERATOR_ROUTE_LABEL_DIFFERS_FROM_REPORT_ENTITY',
   ])
@@ -1102,6 +1103,87 @@ test('buildSceneBlueprint records the selected ScenarioPack lineage', () => {
     packId: 'indo-pak-air-combat/v1',
     version: '1',
   })
+})
+
+test('generic northern-sea planning preserves both evidence-backed engagement intents', () => {
+  const northernEvidence: EvidenceIR = evidence([
+    {
+      evidenceId: 'ev-northern-forces', sourceRef: 'docx:p1',
+      claim: 'One Blue E-3A AWACS and four Blue Rafale aircraft patrol while four Red J-10 aircraft approach.',
+      kind: 'explicit_fact', entities: ['Blue E-3A AWACS', 'Blue Rafale', 'Red J-10'],
+      locationExpression: 'Northern Sea', confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-northern-launch-1', sourceRef: 'docx:p2',
+      claim: 'Blue Rafale launched one PL-15E missile at Red J-10.',
+      kind: 'explicit_fact', entities: ['Blue Rafale', 'PL-15E', 'Red J-10'],
+      locationExpression: 'Northern Sea', confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-northern-outcome-1', sourceRef: 'docx:p3',
+      claim: 'The Red J-10 was destroyed.', kind: 'explicit_fact', entities: ['Red J-10'],
+      confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-northern-launch-2', sourceRef: 'docx:p4',
+      claim: 'Red J-10 fired one PL-15E missile toward Blue Rafale.',
+      kind: 'explicit_fact', entities: ['Red J-10', 'PL-15E', 'Blue Rafale'],
+      locationExpression: 'Northern Sea', confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-northern-outcome-2', sourceRef: 'docx:p5',
+      claim: 'The second engagement remained unconfirmed.', kind: 'explicit_fact', entities: ['Blue Rafale'],
+      confidence: 1, ambiguities: [],
+    },
+  ])
+  const eventPlan: EventPlan = {
+    schemaVersion: 'event-plan/v1', planId: 'event-plan:northern-sea', documentId: northernEvidence.documentId,
+    version: 1, omittedEvidence: [], warnings: [], eventUnits: [
+      {
+        eventUnitId: 'event:northern-forces', title: 'Forces', worldStateChange: 'Opposing aircraft enter the area.',
+        participants: ['Blue E-3A AWACS', 'Blue Rafale', 'Red J-10'], locationRefs: ['Northern Sea'],
+        evidenceRefs: ['ev-northern-forces'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Establish the forces', importance: 'high',
+      },
+      {
+        eventUnitId: 'event:northern-launch-1', title: 'First launch',
+        worldStateChange: 'Blue Rafale launches a missile at Red J-10.',
+        participants: ['Blue Rafale', 'PL-15E', 'Red J-10'], locationRefs: ['Northern Sea'],
+        evidenceRefs: ['ev-northern-launch-1', 'ev-northern-outcome-1'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Show the first engagement', importance: 'high',
+      },
+      {
+        eventUnitId: 'event:northern-launch-2', title: 'Second launch',
+        worldStateChange: 'Red J-10 fires a missile toward Blue Rafale.',
+        participants: ['Red J-10', 'PL-15E', 'Blue Rafale'], locationRefs: ['Northern Sea'],
+        evidenceRefs: ['ev-northern-launch-2', 'ev-northern-outcome-2'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Show the counter-engagement', importance: 'high',
+      },
+    ],
+  }
+  const narrativePlan: NarrativePlan = {
+    schemaVersion: 'narrative-plan/v1', narrativePlanId: 'narrative:northern-sea', targetDurationMs: 30_000,
+    sourceEventPlan: {
+      artifactId: 'accepted:event-plan:northern-sea:v1', planId: eventPlan.planId,
+      version: eventPlan.version, fingerprint: fingerprint(eventPlan),
+    },
+    subtitles: eventPlan.eventUnits.map((unit, index) => ({
+      subtitleId: `subtitle:northern-${index + 1}`, eventUnitId: unit.eventUnitId,
+      text: unit.worldStateChange, evidenceRefs: unit.evidenceRefs, importance: unit.importance,
+    })),
+    sceneRequirements: eventPlan.eventUnits.map((unit, index) => ({
+      requirementId: `requirement:northern-${index + 1}`, eventUnitId: unit.eventUnitId,
+      focusEntities: unit.participants, spatialRelations: [], stateChanges: [], motionRequirements: [],
+      attentionRequirements: [`show:${unit.eventUnitId}`], requiredFacts: [], forbiddenClaims: [],
+      preferredTemplate: index === 0 ? 'deployment' as const : 'attack_chain' as const,
+    })),
+  }
+  const planning = { eventPlan, narrativePlan, evidence: northernEvidence }
+  const blueprint = buildSceneBlueprint({ ...planning, narrationPlan: buildNarrationPlan(planning) })
+
+  assert.equal(blueprint.scenarioPack?.packId, 'generic/v1')
+  assert.deepEqual(blueprint.engagementIntents.map(intent => intent.assertedOutcome), ['destroyed', 'unconfirmed'])
+  assert.equal(blueprint.engagementIntents.length, 2)
 })
 
 test('scene blueprint preserves actor evidence references for route resolution', () => {

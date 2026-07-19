@@ -38,6 +38,16 @@ export const actorInstanceSchema = z.strictObject({
   ordinal: z.number().int().nonnegative(),
 })
 
+export const engagementIntentSchema = z.strictObject({
+  engagementIntentId: z.string().min(1),
+  eventUnitId: z.string().min(1),
+  launcherGroupRef: z.string().min(1),
+  weaponGroupRef: z.string().min(1),
+  targetGroupRef: z.string().min(1),
+  assertedOutcome: z.enum(['intercepted', 'interception', 'destroyed', 'unconfirmed']),
+  evidenceRefs: z.array(z.string().min(1)).min(1),
+})
+
 export const sceneBeatSchema = z.strictObject({
   sceneBeatId: z.string().min(1),
   subtitleId: z.string().min(1).optional(),
@@ -65,6 +75,7 @@ export const sceneBlueprintSchema = z.strictObject({
     version: z.string().min(1),
   }).optional(),
   actorGroups: z.array(actorGroupSchema),
+  engagementIntents: z.array(engagementIntentSchema).default([]),
   sceneBeats: z.array(sceneBeatSchema),
   diagnostics: z.array(compilationDiagnosticSchema),
 })
@@ -82,5 +93,6 @@ export interface ActorGroupIntent extends ActorGroup {
   diagnostics: readonly CompilationDiagnostic[]
 }
 export type ActorInstance = z.infer<typeof actorInstanceSchema>
+export type EngagementIntent = z.infer<typeof engagementIntentSchema>
 export type SceneBeat = z.infer<typeof sceneBeatSchema>
 export type SceneBlueprint = z.infer<typeof sceneBlueprintSchema>

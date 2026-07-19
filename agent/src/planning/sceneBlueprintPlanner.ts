@@ -6,6 +6,7 @@ import { sceneBlueprintSchema, type ActorGroup, type ActorGroupIntent, type Scen
 import { fingerprint } from '../services/fingerprint.ts'
 import { selectScenarioPack } from '../services/scenarioPackRegistry.ts'
 import { diagnostic } from '../services/runtimeDiagnostics.ts'
+import { planEngagementIntents } from './engagementIntentPlanner.ts'
 import { planActorGroups } from './semanticActorPlanner.ts'
 
 export interface BuildSceneBlueprintInput { eventPlan: EventPlan; narrativePlan: NarrativePlan; narrationPlan: NarrationPlan; evidence: EvidenceIR }
@@ -24,6 +25,8 @@ export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBluep
   const selection = selectScenarioPack(input.eventPlan, input.evidence); const pack = selection.pack
   const intents = planActorGroups({ eventPlan: input.eventPlan, evidence: input.evidence, pack })
   const groups: ActorGroup[] = intents.map(({ aliases: _aliases, participantAliases: _participants, platformKind: _platformKind, diagnostics: _diagnostics, ...group }) => group)
+  const engagementPlanning = planEngagementIntents({ eventPlan: input.eventPlan, evidence: input.evidence, actorGroups: intents })
+  const engagementIntents = engagementPlanning.intents
   const units = new Map(input.eventPlan.eventUnits.map(unit => [unit.eventUnitId, unit])); const byEvent = requirements(input.narrativePlan)
   const hasImage = input.narrationPlan.beats.some(beat => media(byEvent.get(beat.eventUnitId)?.preferredTemplate).includes('image'))
   const sceneBeats = input.narrationPlan.beats.map((beat, index) => {
@@ -33,8 +36,8 @@ export function buildSceneBlueprint(input: BuildSceneBlueprintInput): SceneBluep
     const actorRefs = actorRefsForUnit(unit, intents)
     return { sceneBeatId: `scene-beat:${slug(beat.subtitleId)}`, subtitleId: beat.subtitleId, eventUnitId: beat.eventUnitId, purpose: unit.narrativePurpose, actorRefs, behaviorIntents: [...(requirement?.motionRequirements ?? [])], spatialConstraints: [...(requirement?.spatialRelations ?? [])], stateTransitions: [...(requirement?.stateChanges ?? [])], cameraIntent: requirement?.attentionRequirements[0] ?? `focus:${beat.attentionTarget}`, mediaIntents, requiredFacts: [...(requirement?.requiredFacts ?? [])], forbiddenClaims: [...(requirement?.forbiddenClaims ?? [])], fidelity: fidelity(actorRefs, groups), priority: beat.importance }
   })
-  const diagnostics = [...selection.diagnostics, ...intents.flatMap(intent => intent.diagnostics), ...groups.flatMap(group => pack.actorProfiles.find(profile => profile.groupId === group.groupId)?.diagnostics.map(item => diagnostic(item.code, item.message, 'warning')) ?? [])].filter((item, index, items) => items.findIndex(candidate => candidate.code === item.code && candidate.message === item.message) === index)
+  const diagnostics = [...selection.diagnostics, ...intents.flatMap(intent => intent.diagnostics), ...engagementPlanning.diagnostics, ...groups.flatMap(group => pack.actorProfiles.find(profile => profile.groupId === group.groupId)?.diagnostics.map(item => diagnostic(item.code, item.message, 'warning')) ?? [])].filter((item, index, items) => items.findIndex(candidate => candidate.code === item.code && candidate.message === item.message) === index)
   const narrationFingerprint = fingerprint(input.narrationPlan); const scenarioPack = { packId: pack.packId, version: pack.version }
-  const identity = fingerprint({ sourceNarrationPlanId: input.narrationPlan.narrationPlanId, sourceNarrationFingerprint: narrationFingerprint, scenarioPack, actorGroups: groups, sceneBeats, diagnostics })
-  return sceneBlueprintSchema.parse({ schemaVersion: 'ise.scene-blueprint/v1', blueprintId: `blueprint:${identity.slice(7, 23)}`, sourceNarrationPlanId: input.narrationPlan.narrationPlanId, sourceNarrationFingerprint: narrationFingerprint, scenarioPack, actorGroups: groups, sceneBeats, diagnostics })
+  const identity = fingerprint({ sourceNarrationPlanId: input.narrationPlan.narrationPlanId, sourceNarrationFingerprint: narrationFingerprint, scenarioPack, actorGroups: groups, engagementIntents, sceneBeats, diagnostics })
+  return sceneBlueprintSchema.parse({ schemaVersion: 'ise.scene-blueprint/v1', blueprintId: `blueprint:${identity.slice(7, 23)}`, sourceNarrationPlanId: input.narrationPlan.narrationPlanId, sourceNarrationFingerprint: narrationFingerprint, scenarioPack, actorGroups: groups, engagementIntents, sceneBeats, diagnostics })
 }
