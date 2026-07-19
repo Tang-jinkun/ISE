@@ -140,6 +140,36 @@ test('keeps a target after a neutral named launch object as a persistent actor',
   assert.equal(groups.find(group => group.platformKind === 'weapon')?.semanticEntityRef, 'Arrow')
 })
 
+test('coalesces faction-prefixed aliases into their route-bearing persistent actor groups', () => {
+  const aliasEvidence: EvidenceIR = {
+    schemaVersion: 'evidence-ir/v1', documentId: 'doc:alias-engagement', records: [
+      { evidenceId: 'ev-blue-route', sourceRef: 'docx:p1', claim: 'Four Rafale aircraft follow the western route.', kind: 'explicit_fact', entities: ['Rafale'], locationExpression: 'western route', routeExpression: 'from 1,1 to 2,2', confidence: 1, ambiguities: [] },
+      { evidenceId: 'ev-red-route', sourceRef: 'docx:p2', claim: 'Four J-10 aircraft follow the eastern route.', kind: 'explicit_fact', entities: ['J-10'], locationExpression: 'eastern route', routeExpression: 'from 3,3 to 2,2', confidence: 1, ambiguities: [] },
+      { evidenceId: 'ev-launch-aliases', sourceRef: 'docx:p3', claim: 'The lead Blue Rafale launches one PL-99 missile at the lead Red J-10.', kind: 'explicit_fact', entities: ['Blue Rafale', 'PL-99 missile', 'Red J-10'], locationExpression: 'intercept point', confidence: 1, ambiguities: [] },
+    ],
+  }
+  const aliasPlan: EventPlan = {
+    schemaVersion: 'event-plan/v1', planId: 'event-plan:alias-engagement', documentId: 'doc:alias-engagement', version: 1,
+    omittedEvidence: [], warnings: [], eventUnits: [
+      { eventUnitId: 'event:blue-route', title: 'Blue route', worldStateChange: 'Four Rafale aircraft follow their route.', participants: ['Rafale'], locationRefs: ['western route'], evidenceRefs: ['ev-blue-route'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'deployment', importance: 'high' },
+      { eventUnitId: 'event:red-route', title: 'Red route', worldStateChange: 'Four J-10 aircraft follow their route.', participants: ['J-10'], locationRefs: ['eastern route'], evidenceRefs: ['ev-red-route'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'deployment', importance: 'high' },
+      { eventUnitId: 'event:launch', title: 'Launch', worldStateChange: 'The lead Blue Rafale launches one PL-99 missile at the lead Red J-10.', participants: ['Blue Rafale', 'PL-99 missile', 'Red J-10'], locationRefs: ['intercept point'], evidenceRefs: ['ev-launch-aliases'], inferenceRefs: [], uncertainties: [], narrativePurpose: 'engagement', importance: 'high' },
+    ],
+  }
+
+  const persistent = planActorGroups({ eventPlan: aliasPlan, evidence: aliasEvidence, pack: genericScenarioPack })
+    .filter(group => group.lifecycle === 'scene-persistent')
+
+  assert.deepEqual(persistent.map(group => ({
+    semanticEntityRef: group.semanticEntityRef,
+    locationRef: group.locationRef,
+    aliases: group.aliases,
+  })), [
+    { semanticEntityRef: 'Rafale', locationRef: 'western route', aliases: ['Rafale', 'Blue Rafale'] },
+    { semanticEntityRef: 'J-10', locationRef: 'eastern route', aliases: ['J-10', 'Red J-10'] },
+  ])
+})
+
 test('prefers counterattack semantics when an event also mentions an intercept route', () => {
   const counterEvidence: EvidenceIR = {
     schemaVersion: 'evidence-ir/v1', documentId: 'doc:indo-pak-counter', records: [{

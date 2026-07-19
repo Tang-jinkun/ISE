@@ -71,6 +71,17 @@ function genericGroups(
 }
 
 function actorKey(group: Pick<ActorGroupIntent, 'semanticEntityRef' | 'side' | 'locationRef'>): string { return [group.semanticEntityRef, group.side, group.locationRef].map(normalize).join('|') }
+function entityTokens(value: string): string[] { return value.normalize('NFKC').toLocaleLowerCase('en-US').split(/[^\p{L}\p{N}]+/u).filter(Boolean) }
+function aliasesRouteEntity(value: string, routeEntity: string): boolean {
+  const valueTokens = entityTokens(value)
+  const routeTokens = entityTokens(routeEntity)
+  if (valueTokens.length < routeTokens.length || valueTokens.length - routeTokens.length > 2) return false
+  return routeTokens.every((token, index) => token === valueTokens[valueTokens.length - routeTokens.length + index])
+}
+function renderableEntity(value: string): boolean {
+  if (/^(?:their|they|them|theirs|it|its|this|that|these|those)$/iu.test(value.trim())) return false
+  return !/\b(?:(?:task|air|battle|carrier|strike|naval)\s+group|command|headquarters|coalition|force)\b/iu.test(value)
+}
 function directLaunchWeapon(record: EvidenceRecord, unit: EventUnit): string | undefined {
   const claim = record.claim
   const action = /\b(?:launch(?:es|ed|ing)?|fire(?:s|d|ing)?|intercept(?:s|ed|ing)?)\b|\u53d1\u5c04|\u62e6\u622a/iu.exec(claim)
@@ -97,6 +108,18 @@ function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scen
     const candidate = normalize(value)
     return [...knownAliases].some(alias => candidate.includes(alias) || alias.includes(candidate))
   }
+  const routeAnchors = eventPlan.eventUnits.flatMap(unit => factual(evidence.records)
+    .filter(record => unit.evidenceRefs.includes(record.evidenceId) && record.routeExpression !== undefined)
+    .flatMap(record => {
+      const excluded = new Set([
+        record.locationExpression,
+        ...unit.locationRefs,
+        ...pack.factions.flatMap(profile => profile.aliases),
+      ].filter((value): value is string => value !== undefined).map(normalize))
+      return record.entities
+        .filter(entity => !excluded.has(normalize(entity)) && renderableEntity(entity) && inferredKind(entity) !== 'weapon')
+        .map(entity => ({ entity, record, unit, locationRef: record.locationExpression ?? unit.locationRefs[0] ?? 'location:unspecified' }))
+    }))
   for (const unit of eventPlan.eventUnits) {
     const records = factual(evidence.records).filter(record => unit.evidenceRefs.includes(record.evidenceId))
     for (const record of records) {
@@ -107,21 +130,36 @@ function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scen
       const entities = record.entities.filter(entity => !locationTokens.has(normalize(entity)) && !factionTokens.has(normalize(entity)))
       const candidates = entities.length > 0 ? entities : unit.participants.filter(participant => contains(record.claim, [participant]))
       for (const entity of candidates) {
-        if (knownEntity(entity)) continue
+        if (!renderableEntity(entity) || knownEntity(entity)) continue
         const source = `${record.claim}|${unit.worldStateChange}|${unit.participants.join('|')}`
         const platformKind = inferredKind(entity)
         if (platformKind === 'weapon' || launchObject(entity, record, unit)) continue
-        const role = inferredRole(platformKind, source); const side = faction(source, pack); const groupId = `group:${slug(`${side}-${entity}-${locationRef}`)}`
-        const key = actorKey({ semanticEntityRef: entity, side, locationRef })
-        if (groups.has(groupId) || occupied.has(key)) continue
+        const anchor = routeAnchors.find(candidate => aliasesRouteEntity(entity, candidate.entity))
+        const semanticEntityRef = anchor?.entity ?? entity
+        const actorLocationRef = anchor?.locationRef ?? locationRef
+        const quantityRecord = anchor?.record ?? record
+        const quantityUnit = anchor?.unit ?? unit
+        const identitySource = `${quantityRecord.claim}|${quantityUnit.worldStateChange}|${quantityUnit.participants.join('|')}`
+        const actorKind = inferredKind(semanticEntityRef)
+        const role = inferredRole(actorKind, identitySource); const side = faction(identitySource, pack); const groupId = `group:${slug(`${side}-${semanticEntityRef}-${actorLocationRef}`)}`
+        const key = actorKey({ semanticEntityRef, side, locationRef: actorLocationRef })
+        const existing = groups.get(groupId)
+        if (existing !== undefined) {
+          if (!existing.aliases.some(alias => normalize(alias) === normalize(entity))) existing.aliases.push(entity)
+          if (!existing.participantAliases.some(alias => normalize(alias) === normalize(entity))) existing.participantAliases.push(entity)
+          if (!existing.evidenceRefs.includes(record.evidenceId)) existing.evidenceRefs.push(record.evidenceId)
+          continue
+        }
+        if (occupied.has(key)) continue
         const diagnostics = [
-          ...(side === 'faction:unknown' ? [diagnostic('ACTOR_FACTION_UNRESOLVED', `Actor ${entity} has no grounded faction.`, 'warning')] : []),
-          ...(locations.length === 0 ? [diagnostic('ACTOR_LOCATION_UNRESOLVED', `Actor ${entity} has no grounded location.`, 'warning')] : []),
+          ...(side === 'faction:unknown' ? [diagnostic('ACTOR_FACTION_UNRESOLVED', `Actor ${semanticEntityRef} has no grounded faction.`, 'warning')] : []),
+          ...(actorLocationRef === 'location:unspecified' ? [diagnostic('ACTOR_LOCATION_UNRESOLVED', `Actor ${semanticEntityRef} has no grounded location.`, 'warning')] : []),
           ...(entities.length > 1 ? [diagnostic('ACTOR_IDENTITY_AMBIGUOUS', `Evidence ${record.evidenceId} names multiple generic entities.`, 'warning')] : []),
         ]
-        groups.set(groupId, { groupId, semanticEntityRef: entity, side, locationRef, platformType: platformKind, role,
-          quantityDecision: resolveQuantity({ entityName: entity, entityAliases: [entity], platformType: platformKind, role: role === 'fighter-formation' ? 'formation' : role, evidence: evidenceScope(evidence, [record]) }),
-          formationPattern: role === 'fighter-formation' ? 'formation' : 'single', leaderPolicy: role === 'fighter-formation' ? 'stable-first-member' : 'single-member', behaviorProfile: `${role}/v1`, lifecycle: 'scene-persistent', aliases: [entity], participantAliases: [entity], evidenceRefs: [record.evidenceId], platformKind, diagnostics })
+        const aliases = semanticEntityRef === entity ? [semanticEntityRef] : [semanticEntityRef, entity]
+        groups.set(groupId, { groupId, semanticEntityRef, side, locationRef: actorLocationRef, platformType: actorKind, role,
+          quantityDecision: resolveQuantity({ entityName: semanticEntityRef, entityAliases: aliases, platformType: actorKind, role: role === 'fighter-formation' ? 'formation' : role, evidence: evidenceScope(evidence, [quantityRecord]) }),
+          formationPattern: role === 'fighter-formation' ? 'formation' : 'single', leaderPolicy: role === 'fighter-formation' ? 'stable-first-member' : 'single-member', behaviorProfile: `${role}/v1`, lifecycle: 'scene-persistent', aliases, participantAliases: [...aliases], evidenceRefs: [...new Set([quantityRecord.evidenceId, record.evidenceId])], platformKind: actorKind, diagnostics })
       }
     }
   }

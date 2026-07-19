@@ -54,7 +54,7 @@ function validConfig(): SceneProjectConfig {
 test('accepts all eight frozen track variants', () => {
   const parsed = sceneProjectConfigSchema.parse(validConfig());
   assert.deepEqual(parsed.tracks.map(track => track.type), [
-    'subtitle', 'image', 'video', 'marker', 'geojson', 'camera', 'model', 'data_link'
+    'subtitle', 'image', 'video', 'marker', 'geojson', 'camera', 'model', 'data-link'
   ]);
 });
 

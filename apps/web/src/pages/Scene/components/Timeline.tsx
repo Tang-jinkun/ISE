@@ -108,7 +108,7 @@ const trackColors: Record<SceneTrack['type'], string> = {
   geojson: 'bg-fuchsia-600/80 border-fuchsia-400',
   camera: 'bg-cyan-600/80 border-cyan-400',
   model: 'bg-orange-600/80 border-orange-400',
-  data_link: 'bg-sky-600/80 border-sky-400',
+  'data-link': 'bg-sky-600/80 border-sky-400',
 };
 
 function typeIcon(type: SceneTrack['type']) {

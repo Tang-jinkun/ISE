@@ -445,8 +445,8 @@ function isOverlayTrack(
 
 function isDataLinkTrack(
   track: SceneTrack,
-): track is Extract<SceneTrack, { type: 'data_link' }> {
-  return track.type === 'data_link';
+): track is Extract<SceneTrack, { type: 'data-link' }> {
+  return track.type === 'data-link';
 }
 
 function disposedError(cause: unknown) {

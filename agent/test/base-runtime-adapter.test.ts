@@ -182,8 +182,15 @@ test('adapter produces the exact shared entity shape', () => {
 
 test('adapter groups all eight discriminated tracks and passes shared schema', () => {
   const config = new BaseRuntimeAdapter().adapt(runtimePlanWithEveryTrack(), 'runtime-artifact-1')
-  assert.deepEqual(config.tracks.map(track => track.type).sort(), ['camera', 'data_link', 'geojson', 'image', 'marker', 'model', 'subtitle', 'video'])
+  assert.deepEqual(config.tracks.map(track => track.type).sort(), ['camera', 'data-link', 'geojson', 'image', 'marker', 'model', 'subtitle', 'video'])
   assert.deepEqual(sceneProjectConfigSchema.parse(config), config)
+})
+
+test('adapter exposes data-link commands with the SceneProject track discriminator', () => {
+  const config = new BaseRuntimeAdapter().adapt(runtimePlanWithEveryTrack(), 'runtime-artifact-1')
+  const dataLinkTrack = config.tracks.find(track => track.items.some(item => item.id === 'data-link-1'))
+
+  assert.equal(dataLinkTrack?.type, 'data-link')
 })
 
 test('adapter preserves every dynamic camera follow parameter in the camera track', () => {
@@ -208,7 +215,7 @@ test('adapter preserves every data link pair as an independently editable track'
     }],
   })
   const dataLinkTracks = new BaseRuntimeAdapter().adapt(expanded, 'runtime-artifact-1').tracks
-    .filter(track => track.type === 'data_link')
+    .filter(track => track.type === 'data-link')
 
   assert.deepEqual(dataLinkTracks.map(track => track.trackId), [
     'track:data_link:entity:awacs-1:entity:jf17-1',

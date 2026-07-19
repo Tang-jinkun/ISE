@@ -7,7 +7,7 @@ import { DataLinkRuntime } from '../DataLinkRuntime';
 import type { ModelEntityFrameSnapshot } from '../ModelRuntime';
 import { FakeMap } from './helpers/fakes';
 
-type DataLinkTrack = Extract<SceneTrack, { type: 'data_link' }>;
+type DataLinkTrack = Extract<SceneTrack, { type: 'data-link' }>;
 
 const evidenceRefs = ['fixture:evidence'];
 const sourceId = 'ise:data-links';
@@ -19,7 +19,7 @@ function dataLinkTrack(
 ): DataLinkTrack {
   return {
     trackId: 'data-links',
-    type: 'data_link',
+    type: 'data-link',
     label: 'Data links',
     visible,
     items,

@@ -7,7 +7,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import type { ModelEntityFrameSnapshot } from './ModelRuntime';
 import { SceneRuntimeError } from './errors';
 
-type DataLinkItem = Extract<SceneTrack, { type: 'data_link' }>['items'][number];
+type DataLinkItem = Extract<SceneTrack, { type: 'data-link' }>['items'][number];
 
 const layerId = 'ise-data-link-runtime';
 const linkColors = {
@@ -61,8 +61,8 @@ export class DataLinkRuntime {
       throw signal.reason ?? new DOMException('Data link load aborted', 'AbortError');
     }
     const items = tracks
-      .filter((track): track is Extract<SceneTrack, { type: 'data_link' }> => (
-        track.visible && track.type === 'data_link'
+      .filter((track): track is Extract<SceneTrack, { type: 'data-link' }> => (
+        track.visible && track.type === 'data-link'
       ))
       .flatMap((track) => track.items);
     for (const item of items) {

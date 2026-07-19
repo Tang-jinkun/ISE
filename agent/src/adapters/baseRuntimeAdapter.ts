@@ -18,7 +18,7 @@ function commandTrackType(command: CanonicalCommand): TrackType {
     case 'camera.transition': return 'camera'
     case 'camera.follow_actor':
     case 'camera.follow_group': return 'camera'
-    case 'data_link.show': return 'data_link'
+    case 'data_link.show': return 'data-link'
     case 'model.spawn':
     case 'model.follow_path':
     case 'model.set_state':
@@ -151,7 +151,7 @@ export class BaseRuntimeAdapter {
           params: { text: card.text, position: 'top', maxWidthPct: 70 },
         })),
       ]],
-      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []], ['data_link', []],
+      ['image', []], ['video', []], ['marker', []], ['geojson', []], ['camera', []], ['data-link', []],
     ])
     const modelItems = new Map(plan.entities.map(entity => [entity.entityId, [] as unknown[]]))
     const dataLinkItems = new Map<string, {
@@ -190,7 +190,7 @@ export class BaseRuntimeAdapter {
       ...[...dataLinkItems.values()].map(({ sourceEntityId, targetEntityId, items: trackItems }) => {
         return {
           trackId: `track:data_link:${sourceEntityId}:${targetEntityId}`,
-          type: 'data_link' as const,
+          type: 'data-link' as const,
           label: `Data link ${sourceEntityId} to ${targetEntityId}`,
           visible: true,
           items: trackItems,

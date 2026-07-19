@@ -227,7 +227,7 @@ export const sceneTrackSchema = z.discriminatedUnion('type', [
   z.strictObject({ ...trackBase, type: z.literal('geojson'), items: z.array(geojsonItemSchema) }),
   z.strictObject({ ...trackBase, type: z.literal('camera'), items: z.array(cameraItemSchema) }),
   z.strictObject({ ...trackBase, type: z.literal('model'), items: z.array(modelItemSchema) }),
-  z.strictObject({ ...trackBase, type: z.literal('data_link'), items: z.array(dataLinkItemSchema) })
+  z.strictObject({ ...trackBase, type: z.literal('data-link'), items: z.array(dataLinkItemSchema) })
 ]);
 export type SceneTrack = z.infer<typeof sceneTrackSchema>;
 
@@ -244,7 +244,7 @@ const baseSceneProjectConfigSchema = z.strictObject({
   diagnostics: z.array(diagnosticSchema)
 });
 
-export const sceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine((config, context) => {
+const refinedSceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine((config, context) => {
   const entityIds = new Set<string>();
   for (const [index, entity] of config.entities.entries()) {
     if (entityIds.has(entity.entityId)) {
@@ -298,7 +298,7 @@ export const sceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine
         }
       }
     }
-    if (track.type === 'data_link') {
+    if (track.type === 'data-link') {
       for (const [itemIndex, trackItem] of track.items.entries()) {
         if (!entityIds.has(trackItem.params.sourceEntityId)) {
           context.addIssue({ code: 'custom', path: ['tracks', trackIndex, 'items', itemIndex, 'params', 'sourceEntityId'], message: 'Unknown data link sourceEntityId' });
@@ -313,6 +313,16 @@ export const sceneProjectConfigSchema = baseSceneProjectConfigSchema.superRefine
     }
   }
 });
+
+export const sceneProjectConfigSchema = z.preprocess((value) => {
+  if (typeof value !== 'object' || value === null || !('tracks' in value) || !Array.isArray(value.tracks)) return value;
+  return {
+    ...value,
+    tracks: value.tracks.map((track) => typeof track === 'object' && track !== null && 'type' in track && track.type === 'data_link'
+      ? { ...track, type: 'data-link' }
+      : track)
+  };
+}, refinedSceneProjectConfigSchema);
 export type SceneProjectConfig = z.infer<typeof sceneProjectConfigSchema>;
 
 export const sceneProjectConfigJsonSchema = {

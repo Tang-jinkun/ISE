@@ -224,9 +224,6 @@ function validatePlan(plan: CanonicalRuntimePlan, input: LegacyCompilerInput): v
       throw new CompilationError([diagnostic('CAPABILITY_MINIMUM_VIOLATED', command.commandId, 'error', { commandId: command.commandId })])
     }
   }
-  if (plan.totalDurationMs > input.narrativePlan.targetDurationMs) {
-    throw new CompilationError([diagnostic('RUNTIME_DURATION_EXCEEDED', `${plan.totalDurationMs} exceeds ${input.narrativePlan.targetDurationMs}`)])
-  }
   const lineageIds = plan.lineage.map(item => item.outputId)
   if (new Set(lineageIds).size !== lineageIds.length || lineageIds.some(id => !outputIds.has(id)) || outputIds.size !== lineageIds.length) {
     throw new CompilationError([diagnostic('LINEAGE_OUTPUT_MISMATCH', 'Lineage must reference every output exactly once')])

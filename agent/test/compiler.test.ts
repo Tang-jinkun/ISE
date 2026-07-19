@@ -1838,6 +1838,22 @@ test('the final Indo-Pak compiler emits exact multi-actor choreography with medi
     && item.sourceArtifactIds.every(id => expectedSources.has(id))))
 })
 
+test('canonical runtime duration expands beyond narration for required interaction visuals', () => {
+  const fixture = finalInputForEngagementFixture()
+  const baseline = compileFinalScene(fixture.input)
+  const narrationEndMs = Math.max(...baseline.subtitles.map(item => item.startMs + item.durationMs))
+  const visualEndMs = Math.max(...baseline.commands.map(item => item.startMs + item.durationMs))
+  assert.ok(visualEndMs > narrationEndMs)
+  const scheduledVisualEndMs = narrationEndMs + SUBTITLE_VISUAL_LEAD_MS
+  fixture.input.narrativePlan.targetDurationMs = scheduledVisualEndMs
+
+  const plan = compileFinalScene(fixture.input)
+
+  assert.ok(plan.interactions.length > 0)
+  assert.equal(plan.totalDurationMs, visualEndMs)
+  assert.ok(plan.totalDurationMs > fixture.input.narrativePlan.targetDurationMs)
+})
+
 test('planner and scheduler keep exact subtitle duration parity across importance and Han boundaries', () => {
   const source = input()
   source.narrativePlan.sourceEventPlan.fingerprint = fingerprint(source.eventPlan)

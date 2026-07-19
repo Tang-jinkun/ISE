@@ -32,7 +32,7 @@ const routingTracks: SceneTrack[] = [
   { trackId: 'markers', type: 'marker', label: 'Markers', visible: true, items: [] },
   { trackId: 'hidden-map', type: 'camera', label: 'Hidden camera', visible: false, items: [] },
   { trackId: 'models', type: 'model', label: 'Models', visible: true, items: [] },
-  { trackId: 'links', type: 'data_link', label: 'Links', visible: true, items: [] },
+  { trackId: 'links', type: 'data-link', label: 'Links', visible: true, items: [] },
   { trackId: 'subtitles', type: 'subtitle', label: 'Subtitles', visible: true, items: [] },
   { trackId: 'hidden-video', type: 'video', label: 'Hidden video', visible: false, items: [] },
 ];
@@ -301,7 +301,7 @@ it('routes visible tracks and loads components before one paused zero frame', as
     'model',
   ]);
   expect((harness.dataLinkRuntime.load.mock.calls[0]![0] as SceneTrack[]).map((track) => track.type)).toEqual([
-    'data_link',
+      'data-link',
   ]);
   expect((harness.overlayRuntime.load.mock.calls[0]![0] as SceneTrack[]).map((track) => track.type)).toEqual([
     'subtitle',

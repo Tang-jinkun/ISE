@@ -161,7 +161,7 @@ type DynamicCameraParams = Extract<
   { action: 'camera.follow_actor' | 'camera.follow_group' }
 >;
 type DynamicCameraItem = CameraTrackItem & { params: DynamicCameraParams };
-type DataLinkTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'data_link' }>;
+type DataLinkTrack = Extract<SceneProjectConfig['tracks'][number], { type: 'data-link' }>;
 type FollowPathItem = ModelTrackItem & {
   params: Extract<ModelTrackItem['params'], { action: 'model.follow_path' }>;
 };
@@ -949,7 +949,7 @@ test('plays and seeks a persisted generated replay', async ({ page }, testInfo) 
   }
 
   const dataLinkTracks = sceneConfig.tracks.filter(
-    (track): track is DataLinkTrack => track.type === 'data_link',
+    (track): track is DataLinkTrack => track.type === 'data-link',
   );
   const dataLinkItems = dataLinkTracks.flatMap((track) => track.items);
   expect(dataLinkTracks.length).toBeGreaterThan(0);
