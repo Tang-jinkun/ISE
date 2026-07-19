@@ -254,6 +254,161 @@ test('does not assert an outcome from evidence outside the launch event', () => 
   assert.deepEqual(planning.intents[0]?.evidenceRefs, ['ev:launch-1'])
 })
 
+test('does not correlate an unrelated later destruction to a weapon launch', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = [
+    { ...input.eventPlan.eventUnits[0]!, evidenceRefs: ['ev:launch-1'] },
+    {
+      ...input.eventPlan.eventUnits[0]!,
+      eventUnitId: 'event:unrelated-destruction',
+      title: 'Unrelated loss',
+      worldStateChange: 'The first Red J-10 was destroyed in a runway accident.',
+      participants: ['Red J-10'],
+      evidenceRefs: ['ev:outcome-1'],
+    },
+  ]
+  input.evidence.records = [
+    input.evidence.records[0]!,
+    {
+      ...input.evidence.records[1]!,
+      claim: 'The first Red J-10 was destroyed in a runway accident unrelated to any missile.',
+      entities: ['Red J-10'],
+    },
+  ]
+  input.actorGroups = input.actorGroups.filter(group => group.groupId !== 'group:weapon-launch-2')
+
+  const planning = planEngagementIntents(input)
+
+  assert.equal(planning.intents[0]?.assertedOutcome, 'unconfirmed')
+  assert.deepEqual(planning.intents[0]?.evidenceRefs, ['ev:launch-1'])
+  assert.deepEqual(planning.diagnostics, [])
+})
+
+test('keeps competing confirmed outcomes unresolved and emits a scoped ambiguity diagnostic', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = [
+    { ...input.eventPlan.eventUnits[0]!, evidenceRefs: ['ev:launch-1'] },
+    { ...input.eventPlan.eventUnits[0]!, eventUnitId: 'event:destroyed-outcome', title: 'Destroyed outcome',
+      worldStateChange: 'The weapon destroyed its target.', evidenceRefs: ['ev:outcome-1'] },
+    { ...input.eventPlan.eventUnits[0]!, eventUnitId: 'event:intercepted-outcome', title: 'Intercepted outcome',
+      worldStateChange: 'The weapon intercepted its target.', evidenceRefs: ['ev:outcome-competing'] },
+  ]
+  input.evidence.records = [
+    input.evidence.records[0]!,
+    {
+      ...input.evidence.records[1]!,
+      claim: 'The PL-15E destroyed the targeted Red J-10.',
+      entities: ['PL-15E', 'Red J-10'],
+    },
+    {
+      evidenceId: 'ev:outcome-competing', sourceRef: 'docx:p5',
+      claim: 'The PL-15E successfully intercepted the targeted Red J-10.',
+      kind: 'explicit_fact', entities: ['PL-15E', 'Red J-10'], confidence: 1, ambiguities: [],
+    },
+  ]
+  input.actorGroups = input.actorGroups.filter(group => group.groupId !== 'group:weapon-launch-2')
+
+  const planning = planEngagementIntents(input)
+
+  assert.equal(planning.intents[0]?.assertedOutcome, 'unconfirmed')
+  assert.deepEqual(planning.intents[0]?.evidenceRefs, [
+    'ev:launch-1',
+    'ev:outcome-1',
+    'ev:outcome-competing',
+  ])
+  assert.deepEqual(planning.diagnostics.map(item => ({ code: item.code, eventUnitId: item.eventUnitId })), [{
+    code: 'ENGAGEMENT_OUTCOME_AMBIGUOUS',
+    eventUnitId: 'event:launch-1',
+  }])
+})
+
+test('preserves correlated chain facts that do not state the outcome', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = [
+    { ...input.eventPlan.eventUnits[0]!, evidenceRefs: ['ev:launch-1'] },
+    {
+      ...input.eventPlan.eventUnits[0]!,
+      eventUnitId: 'event:terminal-guidance',
+      title: 'Terminal guidance',
+      worldStateChange: 'The first missile receives terminal guidance.',
+      evidenceRefs: ['ev:terminal-guidance'],
+    },
+    {
+      ...input.eventPlan.eventUnits[0]!,
+      eventUnitId: 'event:first-outcome',
+      title: 'First outcome',
+      worldStateChange: 'The target is confirmed destroyed.',
+      evidenceRefs: ['ev:outcome-1'],
+    },
+  ]
+  input.evidence.records = [
+    input.evidence.records[0]!,
+    {
+      evidenceId: 'ev:terminal-guidance', sourceRef: 'docx:p4',
+      claim: 'The first PL-15E receives terminal guidance until impact.',
+      kind: 'explicit_fact', entities: ['PL-15E'], confidence: 1, ambiguities: [],
+    },
+    {
+      ...input.evidence.records[1]!,
+      claim: 'The first PL-15E destroyed the targeted Red J-10.',
+      entities: ['PL-15E', 'Red J-10'],
+    },
+  ]
+  input.actorGroups = input.actorGroups.filter(group => group.groupId !== 'group:weapon-launch-2')
+
+  const planning = planEngagementIntents(input)
+
+  assert.equal(planning.intents[0]?.assertedOutcome, 'destroyed')
+  assert.deepEqual(planning.intents[0]?.evidenceRefs, [
+    'ev:launch-1',
+    'ev:terminal-guidance',
+    'ev:outcome-1',
+  ])
+})
+
+test('uses an explicit weapon ordinal to correlate an outcome after a later launch', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = [
+    { ...input.eventPlan.eventUnits[0]!, evidenceRefs: ['ev:launch-1'] },
+    { ...input.eventPlan.eventUnits[1]!, evidenceRefs: ['ev:launch-2'] },
+    {
+      ...input.eventPlan.eventUnits[0]!,
+      eventUnitId: 'event:first-late-outcome',
+      title: 'First weapon late outcome',
+      worldStateChange: 'The first weapon destroyed its target.',
+      evidenceRefs: ['ev:outcome-1'],
+    },
+  ]
+  input.evidence.records = [
+    input.evidence.records[0]!,
+    input.evidence.records[2]!,
+    {
+      ...input.evidence.records[1]!,
+      claim: 'The first PL-15E destroyed the targeted Red J-10.',
+      entities: ['PL-15E', 'Red J-10'],
+    },
+  ]
+
+  const planning = planEngagementIntents(input)
+
+  assert.deepEqual(planning.intents.map(intent => ({
+    eventUnitId: intent.eventUnitId,
+    outcome: intent.assertedOutcome,
+    evidenceRefs: intent.evidenceRefs,
+  })), [
+    {
+      eventUnitId: 'event:launch-1',
+      outcome: 'destroyed',
+      evidenceRefs: ['ev:launch-1', 'ev:outcome-1'],
+    },
+    {
+      eventUnitId: 'event:launch-2',
+      outcome: 'unconfirmed',
+      evidenceRefs: ['ev:launch-2'],
+    },
+  ])
+})
+
 test('omits an intent when multiple weapon groups resolve to one launch', () => {
   const input = fixture()
   input.eventPlan.eventUnits = input.eventPlan.eventUnits.slice(0, 1)

@@ -1168,8 +1168,15 @@ test('generic planning chains split weapon outcomes and scopes shared weapon ali
         eventUnitId: 'event:cirrus-outcome-a', title: 'First outcome',
         worldStateChange: 'The first PL-77Q intersects its target and destroys it.',
         participants: ['Aster Wing', 'PL-77Q', 'Beryl Flight'], locationRefs: ['Cirrus Reach'],
-        evidenceRefs: ['ev-cirrus-outcome-a', 'ev-cirrus-link-a'], inferenceRefs: [], uncertainties: [],
+        evidenceRefs: ['ev-cirrus-outcome-a'], inferenceRefs: [], uncertainties: [],
         narrativePurpose: 'Show the first engagement outcome', importance: 'high',
+      },
+      {
+        eventUnitId: 'event:cirrus-guidance-a', title: 'First terminal guidance',
+        worldStateChange: 'Aster Wing supplies terminal guidance to the first PL-77Q.',
+        participants: ['Aster Wing', 'PL-77Q'], locationRefs: ['Cirrus Reach'],
+        evidenceRefs: ['ev-cirrus-link-a'], inferenceRefs: [], uncertainties: [],
+        narrativePurpose: 'Show the first engagement terminal link', importance: 'medium',
       },
       {
         eventUnitId: 'event:cirrus-launch-b', title: 'Second launch',
@@ -1220,10 +1227,11 @@ test('generic planning chains split weapon outcomes and scopes shared weapon ali
   assert.equal(blueprint.scenarioPack?.packId, 'generic/v1')
   assert.deepEqual(blueprint.engagementIntents.map(intent => intent.assertedOutcome), ['destroyed', 'unconfirmed'])
   assert.deepEqual(blueprint.engagementIntents.map(intent => intent.evidenceRefs), [
-    ['ev-cirrus-launch-a', 'ev-cirrus-outcome-a'],
-    ['ev-cirrus-launch-b', 'ev-cirrus-outcome-b'],
+    ['ev-cirrus-launch-a', 'ev-cirrus-outcome-a', 'ev-cirrus-link-a'],
+    ['ev-cirrus-launch-b', 'ev-cirrus-outcome-b', 'ev-cirrus-link-b'],
   ])
   assert.deepEqual(scopedWeaponRefs('event:cirrus-outcome-a'), [firstWeapon])
+  assert.deepEqual(scopedWeaponRefs('event:cirrus-guidance-a'), [firstWeapon])
   assert.deepEqual(scopedWeaponRefs('event:cirrus-launch-b'), [secondWeapon])
   assert.deepEqual(scopedWeaponRefs('event:cirrus-outcome-b'), [secondWeapon])
   assert.equal(blueprint.engagementIntents.length, 2)

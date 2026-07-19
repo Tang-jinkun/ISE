@@ -862,35 +862,21 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const phaseShots = subtitleShots.filter(shot => shot.phase)
     const shotIntervals = new Map<string, readonly [number, number]>()
     const transitionDurationMs = capabilityManifest.minimumDurations['camera.transition']
-    const followMinimumMs = Math.max(
+    const cameraFollowMinimumMs = Math.max(
       capabilityManifest.minimumDurations['camera.follow_group'],
-      capabilityManifest.minimumDurations['model.follow_path'],
+      capabilityManifest.minimumDurations['camera.follow_actor'],
     )
     // Every phase needs enough room for the camera to settle and for the
     // involved actors to remain in motion. The solver may extend the visual
     // window beyond the subtitle end; subtitles stay on their narrative clock
     // while the scene continues resolving the interaction.
-    const intervalMinimumMs = transitionDurationMs + followMinimumMs
+    const intervalMinimumMs = transitionDurationMs + cameraFollowMinimumMs
     const visualStartMs = Math.max(subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS, cameraPresentationCursorMs)
     const intervalCount = phaseShots.length > 0 ? subtitleShots.length : 1
-    const terminalInteractionEndMs = Math.max(0,
-      ...phaseShots
-        .filter(shot => shot.phase === 'terminal')
-        .map(shot => {
-          const engagement = engagementForShot(shot)
-          const weaponWindow = engagement && actorPlaybackWindows.get(engagement.weaponRef)
-          const targetWindow = engagement && actorPlaybackWindows.get(engagement.targetRef)
-          return weaponWindow && targetWindow
-            ? Math.max(weaponWindow.followStartMs, targetWindow.followStartMs) + followMinimumMs
-            : 0
-        }),
-    )
-    const visualEndMs = Math.max(
+    let visualEndMs = Math.max(
       subtitle.startMs + subtitle.durationMs,
       visualStartMs + intervalCount * intervalMinimumMs,
-      terminalInteractionEndMs,
     )
-    cameraPresentationCursorMs = visualEndMs
     if (phaseShots.length > 0) {
       const establishing = subtitleShots.find(shot => !shot.phase)
       if (!establishing || subtitleShots.length !== phaseShots.length + 1) {
@@ -898,13 +884,35 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       }
       const establishingEndMs = visualStartMs + intervalMinimumMs
       shotIntervals.set(establishing.shotId, [visualStartMs, establishingEndMs])
-      const remainingMs = visualEndMs - establishingEndMs
-      const phaseBaseDurationMs = Math.floor(remainingMs / phaseShots.length)
+      const phaseDurationsMs = phaseShots.map(() => intervalMinimumMs)
       let cursorMs = establishingEndMs
+      for (const [index, shot] of phaseShots.entries()) {
+        if (shot.phase === 'terminal') {
+          const engagement = engagementForShot(shot)
+          const weaponWindow = engagement && actorPlaybackWindows.get(engagement.weaponRef)
+          const targetWindow = engagement && actorPlaybackWindows.get(engagement.targetRef)
+          if (weaponWindow && targetWindow) {
+            const requiredEndMs = Math.max(weaponWindow.followStartMs, targetWindow.followStartMs)
+              + capabilityManifest.minimumDurations['model.follow_path']
+            phaseDurationsMs[index] = Math.max(phaseDurationsMs[index]!, requiredEndMs - cursorMs)
+          }
+        }
+        cursorMs += phaseDurationsMs[index]!
+      }
+      visualEndMs = Math.max(visualEndMs, cursorMs)
+      const distributableMs = visualEndMs - cursorMs
+      const phaseExtraMs = Math.floor(distributableMs / phaseShots.length)
+      for (let index = 0; index < phaseDurationsMs.length; index++) {
+        phaseDurationsMs[index] = phaseDurationsMs[index]! + phaseExtraMs
+      }
+      const lastPhaseIndex = phaseDurationsMs.length - 1
+      phaseDurationsMs[lastPhaseIndex] = phaseDurationsMs[lastPhaseIndex]!
+        + distributableMs - phaseExtraMs * phaseShots.length
+      cursorMs = establishingEndMs
       for (const [index, shot] of phaseShots.entries()) {
         const endMs = index === phaseShots.length - 1
           ? visualEndMs
-          : cursorMs + phaseBaseDurationMs
+          : cursorMs + phaseDurationsMs[index]!
         shotIntervals.set(shot.shotId, [cursorMs, endMs])
         cursorMs = endMs
       }
@@ -913,6 +921,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         shotIntervals.set(shot.shotId, [visualStartMs, visualEndMs])
       }
     }
+    cameraPresentationCursorMs = visualEndMs
     for (const shot of phaseShots) {
       const engagement = engagementForShot(shot)
       const interval = shotIntervals.get(shot.shotId)
@@ -979,7 +988,10 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
       const template = requirement?.preferredTemplate ?? (requirement ? inferTemplateFromStateChange(requirement) : 'deployment')
       const camera = cameraParamsForBounds(unionBounds(subjectBounds), cameraProfile(template))
       const followStartMs = startMs + transitionDurationMs
-      const evidenceRefs = engagement ? engagement.evidenceRefs : unit.evidenceRefs
+      const evidenceRefs = engagement
+        ? engagement.evidenceRefs.filter(evidenceRef => unit.evidenceRefs.includes(evidenceRef))
+        : unit.evidenceRefs
+      if (evidenceRefs.length === 0) fail('COMMAND_EVIDENCE_UNBOUND', shot.shotId)
       cameraCommands.push(runtimeCommandSchema.parse({
         commandId: `cmd:${shot.shotId}:camera`, eventUnitId: unit.eventUnitId, targetId: 'camera:main',
         type: 'camera.transition',
@@ -1026,7 +1038,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
             volume: 0, playbackRate: 1, loop: false,
           },
           startMs: followStartMs, durationMs: endMs - followStartMs,
-          dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
         }))
         if (engagement!.outcome === 'interception') {
           const interceptedHide = runtimeCommandSchema.parse({
@@ -1036,7 +1048,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
             // shared endpoint is observable before the intercepted weapon is
             // removed from the scene.
             startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
-            dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
+            dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
           })
           const existingHide = interceptedTargetHides.get(engagement!.targetRef)
           if (!existingHide || interceptedHide.startMs < existingHide.startMs) {
@@ -1049,13 +1061,13 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         cameraCommands.push(runtimeCommandSchema.parse({
           commandId: `cmd:${shot.shotId}:destroyed`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
           type: 'model.set_state', params: { action: 'model.set_state', entityId: engagement!.targetRef, state: 'destroyed' },
-          startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
+          startMs, durationMs: stateDurationMs, dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
         }))
         destroyedTargetHides.set(engagement!.targetRef, runtimeCommandSchema.parse({
           commandId: `cmd:${shot.shotId}:destroyed-hide`, eventUnitId: unit.eventUnitId, targetId: engagement!.targetRef,
           type: 'model.hide', params: { action: 'model.hide', entityId: engagement!.targetRef },
           startMs: endMs, durationMs: capabilityManifest.minimumDurations['model.hide'],
-          dependsOn: [], onFailure: 'abort', evidenceRefs: [...engagement!.evidenceRefs],
+          dependsOn: [], onFailure: 'abort', evidenceRefs: [...evidenceRefs],
         }))
       }
     }

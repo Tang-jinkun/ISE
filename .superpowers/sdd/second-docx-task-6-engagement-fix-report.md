@@ -63,3 +63,58 @@ Offline rebuild inputs came from session `6696577c-b530-4930-8197-5de738944cb4` 
 ## Commit
 
 - Implementation: `1fd1738` (`fix: correlate split engagement outcomes`)
+
+## Coordinated Blocker Follow-Up
+
+### Review Fixes
+
+The coordinated Task 6 blocker wave extends the initial planner-only scope:
+
+- Cross-unit outcomes now require a strong same-chain anchor. Unnumbered facts must identify both the event-scoped weapon and target with compatible EventUnit participants. A matching explicit weapon ordinal may cross a later launch boundary, but target-only ordinal text cannot resolve the missile.
+- Multiple eligible outcome EventUnits or conflicting confirmed states remain `unconfirmed` and emit `ENGAGEMENT_OUTCOME_AMBIGUOUS`. Explicit unresolved wording retains precedence.
+- Once an outcome EventUnit is uniquely anchored, all of its factual evidence is retained. Correlated chain-only facts such as terminal guidance are also retained, so their SceneBeats bind only the correct event-scoped weapon.
+- `weaponEngagements` preserve full launch, outcome, and terminal-link evidence. Launch-bound fighter-to-missile relations intersect that lineage with the bound narration beat; empty intersections throw `CHOREOGRAPHY_RELATION_EVIDENCE_UNBOUND`.
+- Final engagement camera, state, effect, and hide commands intersect the engagement lineage with their bound EventUnit. Empty intersections throw `COMMAND_EVIDENCE_UNBOUND`; `validatePlan` remains strict and unchanged.
+- The shared timing allocator gives late source-clock terminal interactions enough model-follow time while preserving unresolved interaction status.
+
+### RED Evidence
+
+- Same-target unrelated destruction, including target-only ordinal text, incorrectly produced `destroyed` instead of `unconfirmed`.
+- Competing eligible destroyed/intercepted outcome anchors incorrectly produced `destroyed` instead of an ambiguity diagnostic.
+- A correlated terminal-guidance fact was absent from the engagement evidence lineage.
+- The split red fighter-to-missile command failed with `COMMAND_EVIDENCE_INVALID` because it copied later outcome evidence into the launch EventUnit.
+- After relation scoping, the launch-bound aftermath camera exposed the same invalid cross-event evidence copy.
+- The late source-clock timing fixture failed with `NARRATION_VISUAL_DURATION_CONFLICT` before terminal-aware phase allocation.
+
+### Final Verification
+
+```powershell
+npx tsx --test test/engagement-intent-planner.test.ts
+# 16 pass, 0 fail
+
+npx tsx --test --test-name-pattern="unrelated later destruction|competing confirmed outcomes|preserves correlated chain facts|explicit weapon ordinal" test/engagement-intent-planner.test.ts
+# 4 pass, 0 fail
+
+npx tsx --test --test-name-pattern="generic planning chains split weapon outcomes" test/scene-blueprint-planner.test.ts
+# 1 pass, 0 fail
+
+npx tsx --test test/cross-document-start-end-flow.test.ts
+# 1 pass, 0 fail; includes final RuntimePlan and SceneProjectConfig validation
+
+npx tsx --test --test-name-pattern="terminal interaction windows|missile launch follows|engagement intervals cover|destroyed engagement ends|chained interception" test/compiler.test.ts
+# 5 pass, 0 fail
+```
+
+The full scene-blueprint planner command remains 54/55 because the unrelated existing synthesized-trajectory diagnostic test expects an exception that the current choreography compiler does not throw. Repository-wide `tsc --noEmit` also remains blocked by pre-existing type errors outside this blocker wave.
+
+### Persisted SceneProject Rebuild
+
+Session `6696577c-b530-4930-8197-5de738944cb4` was rebuilt offline from its accepted EventPlan, EvidenceIR, NarrativePlan, and AssetRegistry through a schema-validated `SceneProjectConfig` with 21 tracks.
+
+- Outcomes: `destroyed`, `unconfirmed`.
+- Blue engagement evidence: `ev-e31fefa0f6bb452d`, `ev-f12596ba86430a05`, `ev-22463a4466960116`.
+- Red engagement evidence: `ev-0f565a213062813f`, `ev-f3fd0a8547194250`, `ev-02419d43e83d4fb7`.
+- Blue launch relation and `data_link.show` command evidence: `ev-e31fefa0f6bb452d` only.
+- Red launch relation and `data_link.show` command evidence: `ev-0f565a213062813f` only.
+
+Coordinated blocker commit: pending.

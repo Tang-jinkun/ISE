@@ -14,6 +14,7 @@ import { buildSceneBlueprint } from '../src/planning/sceneBlueprintPlanner.ts'
 import { createAssetRegistrySnapshot } from '../src/services/assetRegistry.ts'
 import { parseBattleReport } from '../src/services/documentParser.ts'
 import { fingerprint } from '../src/services/fingerprint.ts'
+import { CompilationError } from '../src/services/runtimeDiagnostics.ts'
 
 const fixture = new URL('./fixtures/north-sea-evacuation-interception.docx', import.meta.url)
 
@@ -71,27 +72,51 @@ test('a second real DOCX compiles deterministic generated routes and grounded in
         importance: 'high',
       },
       {
-        eventUnitId: 'event:north-sea-first-engagement',
-        title: 'First missile destroys its target',
-        worldStateChange: 'The lead Blue Rafale launches one PL-15E at the lead Red J-10, and intersecting geometry confirms the target destroyed.',
+        eventUnitId: 'event:north-sea-first-launch',
+        title: 'First missile launches',
+        worldStateChange: 'The lead Blue Rafale launches one PL-15E at the lead Red J-10.',
         participants: ['Blue Rafale', 'PL-15E', 'Red J-10'],
-        locationRefs: [firstLaunch.locationExpression!, firstOutcome.locationExpression!],
-        evidenceRefs: [firstLaunch.evidenceId, firstOutcome.evidenceId, firstLink.evidenceId],
+        locationRefs: [firstLaunch.locationExpression!],
+        evidenceRefs: [firstLaunch.evidenceId],
         inferenceRefs: [],
         uncertainties: [],
-        narrativePurpose: 'Show the grounded successful engagement.',
+        narrativePurpose: 'Show the grounded first launch.',
         importance: 'high',
       },
       {
-        eventUnitId: 'event:north-sea-second-engagement',
-        title: 'Second missile remains unresolved',
-        worldStateChange: 'A surviving Red J-10 launches one PL-15E toward the Blue Rafale formation, but no intersection is established and the outcome remains unconfirmed.',
+        eventUnitId: 'event:north-sea-first-outcome',
+        title: 'First missile destroys its target',
+        worldStateChange: 'Intersecting geometry confirms the first missile target destroyed.',
+        participants: ['Blue Rafale', 'PL-15E', 'Red J-10'],
+        locationRefs: [firstOutcome.locationExpression!],
+        evidenceRefs: [firstOutcome.evidenceId, firstLink.evidenceId],
+        inferenceRefs: [],
+        uncertainties: [],
+        narrativePurpose: 'Show the grounded successful engagement outcome.',
+        importance: 'high',
+      },
+      {
+        eventUnitId: 'event:north-sea-second-launch',
+        title: 'Second missile launches',
+        worldStateChange: 'A surviving Red J-10 launches one PL-15E toward the Blue Rafale formation.',
         participants: ['Red J-10', 'PL-15E', 'Blue Rafale'],
-        locationRefs: [secondLaunch.locationExpression!, secondOutcome.locationExpression!],
-        evidenceRefs: [secondLaunch.evidenceId, secondOutcome.evidenceId, secondLink.evidenceId],
+        locationRefs: [secondLaunch.locationExpression!],
+        evidenceRefs: [secondLaunch.evidenceId],
+        inferenceRefs: [],
+        uncertainties: [],
+        narrativePurpose: 'Show the grounded counter-launch.',
+        importance: 'high',
+      },
+      {
+        eventUnitId: 'event:north-sea-second-outcome',
+        title: 'Second missile remains unresolved',
+        worldStateChange: 'No intersection is established and the second missile outcome remains unconfirmed.',
+        participants: ['Red J-10', 'PL-15E', 'Blue Rafale'],
+        locationRefs: [secondOutcome.locationExpression!],
+        evidenceRefs: [secondOutcome.evidenceId, secondLink.evidenceId],
         inferenceRefs: [],
         uncertainties: ['No hit, destruction, or miss may be claimed.'],
-        narrativePurpose: 'Keep the second engagement explicitly unresolved.',
+        narrativePurpose: 'Keep the second engagement outcome explicitly unresolved.',
         importance: 'high',
       },
     ],
@@ -125,13 +150,17 @@ test('a second real DOCX compiles deterministic generated routes and grounded in
       eventUnitId: unit.eventUnitId,
       focusEntities: unit.participants,
       spatialRelations: index >= 2 ? ['weapon route relative to target route'] : [],
-      stateChanges: index === 2 ? ['target destroyed at grounded intersection'] : [],
+      stateChanges: unit.eventUnitId === 'event:north-sea-first-outcome'
+        ? ['target destroyed at grounded intersection']
+        : [],
       motionRequirements: index === 0
         ? ['patrol documented routes and share target information by data link']
         : ['follow documented routes'],
       attentionRequirements: [`show ${unit.title}`],
       requiredFacts: [unit.worldStateChange],
-      forbiddenClaims: index === 3 ? ['confirmed hit', 'destruction', 'miss'] : [],
+      forbiddenClaims: unit.eventUnitId === 'event:north-sea-second-outcome'
+        ? ['confirmed hit', 'destruction', 'miss']
+        : [],
       preferredTemplate: index < 2 ? 'deployment' as const : 'attack_chain' as const,
     })),
   })
@@ -167,16 +196,33 @@ test('a second real DOCX compiles deterministic generated routes and grounded in
     { semanticEntityRef: 'Boeing E-3A Sentry AWACS', quantity: 1, lifecycle: 'scene-persistent' },
     { semanticEntityRef: 'Rafale', quantity: 4, lifecycle: 'scene-persistent' },
     { semanticEntityRef: 'J-10', quantity: 4, lifecycle: 'scene-persistent' },
-    { semanticEntityRef: 'PL-15E', quantity: 1, lifecycle: 'event-scoped:event:north-sea-first-engagement' },
-    { semanticEntityRef: 'PL-15E', quantity: 1, lifecycle: 'event-scoped:event:north-sea-second-engagement' },
+    { semanticEntityRef: 'PL-15E', quantity: 1, lifecycle: 'event-scoped:event:north-sea-first-launch' },
+    { semanticEntityRef: 'PL-15E', quantity: 1, lifecycle: 'event-scoped:event:north-sea-second-launch' },
   ])
   assert.equal(resolvedScenePlan.resolvedActors.length, 11)
   assert.equal(resolvedScenePlan.actorRouteAssignments.length, 11)
   assert.equal(resolvedScenePlan.generatedTrajectoryAssets.length, 11)
   assert.ok(resolvedScenePlan.actorRouteAssignments.every(item => item.sourceKind === 'generated'))
-  assert.deepEqual(choreographyPlan.weaponEngagements.map(item => item.outcome), ['destroyed', 'unconfirmed'])
+  assert.deepEqual(choreographyPlan.weaponEngagements.map(item => ({
+    outcome: item.outcome,
+    evidenceRefs: item.evidenceRefs,
+  })), [
+    { outcome: 'destroyed', evidenceRefs: [firstLaunch.evidenceId, firstOutcome.evidenceId, firstLink.evidenceId] },
+    { outcome: 'unconfirmed', evidenceRefs: [secondLaunch.evidenceId, secondOutcome.evidenceId, secondLink.evidenceId] },
+  ])
   assert.ok(choreographyPlan.relationSegments.some(item => item.linkKind === 'awacs-fighter'))
-  assert.equal(choreographyPlan.relationSegments.filter(item => item.linkKind === 'fighter-missile').length, 2)
+  const fighterMissileRelations = choreographyPlan.relationSegments.filter(item => item.linkKind === 'fighter-missile')
+  const relationEvidenceByEvent = new Map(fighterMissileRelations.map(relation => [
+    sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === relation.sceneBeatRef)!.eventUnitId,
+    relation.evidenceRefs,
+  ]))
+  assert.deepEqual(relationEvidenceByEvent.get('event:north-sea-first-launch'), [firstLaunch.evidenceId])
+  assert.deepEqual(relationEvidenceByEvent.get('event:north-sea-second-launch'), [secondLaunch.evidenceId])
+  const fighterMissileCommands = runtimePlan.commands.filter(command =>
+    command.type === 'data_link.show' && command.params.linkKind === 'fighter-missile')
+  const commandEvidenceByEvent = new Map(fighterMissileCommands.map(command => [command.eventUnitId, command.evidenceRefs]))
+  assert.deepEqual(commandEvidenceByEvent.get('event:north-sea-first-launch'), [firstLaunch.evidenceId])
+  assert.deepEqual(commandEvidenceByEvent.get('event:north-sea-second-launch'), [secondLaunch.evidenceId])
   assert.equal(runtimePlan.interactions.filter(item => item.status === 'resolved').length, 1)
   assert.equal(runtimePlan.interactions.filter(item => item.status === 'unresolved').length, 1)
   assert.equal(runtimePlan.commands.filter(item => item.type === 'model.set_state' && item.params.state === 'destroyed').length, 1)
@@ -187,4 +233,21 @@ test('a second real DOCX compiles deterministic generated routes and grounded in
   const forbiddenLegacyMatch = serializedSceneProject.match(/india|pakistan|Adampur|Minhas/iu)
   assert.equal(forbiddenLegacyMatch, null, forbiddenLegacyMatch === null ? undefined
     : serializedSceneProject.slice(Math.max(0, forbiddenLegacyMatch.index! - 120), forbiddenLegacyMatch.index! + 120))
+
+  const unboundBlueprint = {
+    ...sceneBlueprint,
+    engagementIntents: sceneBlueprint.engagementIntents.map((intent, index) => index === 0
+      ? { ...intent, evidenceRefs: [firstOutcome.evidenceId] }
+      : intent),
+  }
+  assert.throws(() => compileChoreography({
+    narrationPlan,
+    sceneBlueprint: unboundBlueprint,
+    resolvedScenePlan: {
+      ...resolvedScenePlan,
+      sourceBlueprintFingerprint: fingerprint(unboundBlueprint),
+    },
+    assetRegistry,
+  }), (error: unknown) => error instanceof CompilationError
+    && error.diagnostics.some(item => item.code === 'CHOREOGRAPHY_RELATION_EVIDENCE_UNBOUND'))
 })

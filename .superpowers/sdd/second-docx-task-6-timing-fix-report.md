@@ -6,7 +6,7 @@
 
 ## Fix
 
-The terminal visual window now extends to the latest weapon/target follow start plus the manifest minimum follow duration. The existing terminal-close path then synchronizes both actor follows and the interaction time at that extended endpoint. Explicitly unconfirmed interactions retain `status: unresolved`.
+Phase scheduling now allocates each camera interval explicitly. A terminal phase grows until its actual endpoint reaches the latest weapon/target follow start plus the model-follow minimum, and every trailing phase retains at least its own camera interval minimum. The existing terminal-close path then synchronizes both actor follows and the interaction time at that endpoint. Explicitly unconfirmed interactions retain `status: unresolved`.
 
 ## Evidence
 
@@ -16,17 +16,23 @@ RED investigation command:
 npx tsx --test --test-name-pattern="terminal interaction windows extend" test/compiler.test.ts
 ```
 
-The focused fixture was added before the production scheduling change. Initial fixture refinement exposed only test-data/schema issues; the final focused assertion is against source-clock route windows, terminal synchronization, minimum duration, and unresolved status.
+The late-boundary fixture uses independent same-clock routes, a 91,000 ms source offset, and long actor lifecycles. Before the terminal-aware allocator it failed with:
+
+```text
+NARRATION_VISUAL_DURATION_CONFLICT: actor:weapon-intercept:leader
+```
+
+The final assertions require the interaction time to equal the actual terminal shot end, that endpoint to be at least the latest actor follow start plus 4,000 ms, synchronized weapon/target ends, and unresolved source status.
 
 GREEN commands:
 
 ```powershell
-npx tsx --test --test-name-pattern="terminal interaction windows extend" test/compiler.test.ts
+npx tsx --test --test-name-pattern="terminal interaction windows|missile launch follows|engagement intervals cover|destroyed engagement ends|chained interception" test/compiler.test.ts
 npx tsx --test test/cross-document-start-end-flow.test.ts
 ```
 
-Both passed. The persisted session ledger did not contain the generated narration, blueprint, resolved-scene, or choreography artifacts required for a literal `compileScene` replay; the named second-DOCX flow passed as the deterministic generated-route coverage.
+The timing cluster passed 5/5 and the cross-document vertical passed 1/1. The persisted session ledger did not contain the generated narration, blueprint, resolved-scene, or choreography artifacts required for a literal `compileScene` replay; the named second-DOCX flow passed as the deterministic generated-route coverage.
 
 Files: `agent/src/compiler/sceneCompiler.ts`, `agent/test/compiler.test.ts`.
 
-Implementation commit: `867acfe`.
+Initial implementation commit: `867acfe`. Terminal-boundary correction commit: pending.

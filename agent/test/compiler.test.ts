@@ -847,8 +847,8 @@ test('dynamic camera engagement intervals cover the complete visual window witho
   const cameras = plan.commands.filter(command => command.eventUnitId === subtitle.eventUnitId && command.targetId === 'camera:main')
     .sort((left, right) => left.startMs - right.startMs)
 
-  assert.equal(cameras[0]!.startMs, subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
-  assert.equal(cameras.at(-1)!.startMs + cameras.at(-1)!.durationMs, subtitle.startMs + subtitle.durationMs)
+  assert.ok(cameras[0]!.startMs >= subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS)
+  assert.ok(cameras.at(-1)!.startMs + cameras.at(-1)!.durationMs >= subtitle.startMs + subtitle.durationMs)
   assert.equal(cameras[0]!.durationMs + cameras[1]!.durationMs, 2_000)
   assert.ok(cameras.filter(command => command.type === 'camera.follow_actor' || command.type === 'camera.follow_group')
     .every(command => command.durationMs >= capabilityManifest.minimumDurations[command.type]))
@@ -936,7 +936,7 @@ test('missile launch follows the launcher source-clock position instead of its s
 
 test('terminal interaction windows extend for late source-clock launches without resolving unconfirmed outcomes', () => {
   const fixture = finalInputForEngagementFixture()
-  const originalEngagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'destroyed')!
+  const originalEngagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.outcome === 'interception')!
   fixture.input.choreographyPlan = {
     ...fixture.input.choreographyPlan,
     weaponEngagements: fixture.input.choreographyPlan.weaponEngagements.map(item => item.engagementId === originalEngagement.engagementId
@@ -944,6 +944,15 @@ test('terminal interaction windows extend for late source-clock launches without
       : item),
   }
   const engagement = fixture.input.choreographyPlan.weaponEngagements.find(item => item.engagementId === originalEngagement.engagementId)!
+  const firstSceneBeatRef = fixture.input.sceneBlueprint.sceneBeats.find(beat => beat.subtitleId)!.sceneBeatId
+  const lastSceneBeatRef = fixture.input.sceneBlueprint.sceneBeats.findLast(beat => beat.subtitleId)!.sceneBeatId
+  const lifecycleActors = new Set([engagement.launcherRef, engagement.weaponRef, engagement.targetRef])
+  fixture.input.choreographyPlan = {
+    ...fixture.input.choreographyPlan,
+    actorLifecycles: fixture.input.choreographyPlan.actorLifecycles.map(lifecycle => lifecycleActors.has(lifecycle.actorInstanceRef)
+      ? { ...lifecycle, firstSceneBeatRef, lastSceneBeatRef }
+      : lifecycle),
+  }
   const assignmentByActor = new Map(fixture.input.resolvedScenePlan.actorRouteAssignments
     .map(assignment => [assignment.actorInstanceRef, assignment]))
   const sourceRouteByRole = new Map([
@@ -975,7 +984,7 @@ test('terminal interaction windows extend for late source-clock launches without
       : [asset, ...[...sourceRouteByRole.entries()]
         .filter(([, assetId]) => assetId === asset.assetId)
         .map(([role]) => {
-          const startTimeMs = role === 'launcher' ? 0 : 118_000
+          const startTimeMs = role === 'launcher' ? 0 : 91_000
           const endTimeMs = 120_000
           const originalDurationMs = Math.max(1, asset.trajectory.endTimeMs - asset.trajectory.startTimeMs)
           return { ...asset, assetId: sourceClockAssetId(role), trajectory: {
@@ -1000,7 +1009,9 @@ test('terminal interaction windows extend for late source-clock launches without
   assert.ok(targetFollow.durationMs >= minimumFollowMs)
   assert.equal(weaponFollow.startMs + weaponFollow.durationMs, targetFollow.startMs + targetFollow.durationMs)
   assert.equal(weaponFollow.startMs + weaponFollow.durationMs, interaction.interactionTimeMs)
-  assert.ok(interaction.interactionTimeMs >= terminalFollow.startMs + terminalFollow.durationMs)
+  const terminalEndMs = terminalFollow.startMs + terminalFollow.durationMs
+  assert.equal(interaction.interactionTimeMs, terminalEndMs)
+  assert.ok(terminalEndMs >= Math.max(weaponFollow.startMs, targetFollow.startMs) + minimumFollowMs)
   assert.equal(interaction.status, 'unresolved')
 })
 

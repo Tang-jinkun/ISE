@@ -52,6 +52,27 @@ function matches(value: string, group: ActorGroupIntent): boolean {
   return aliases(group).some(alias => text.includes(normalize(alias)))
 }
 
+function recordText(record: EvidenceRecord): string {
+  return [record.claim, ...record.entities].join('|')
+}
+
+function explicitOrdinal(value: string): number | undefined {
+  const english = /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th))\b/iu.exec(value)?.[1]
+  if (english !== undefined) {
+    const named: Readonly<Record<string, number>> = {
+      first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
+      sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10,
+    }
+    return named[english.toLocaleLowerCase('en-US')] ?? Number.parseInt(english, 10)
+  }
+  const chinese = /第([一二三四五六七八九十]|\d+)(?:枚|个|次|发)?/u.exec(value)?.[1]
+  if (chinese === undefined) return undefined
+  const named: Readonly<Record<string, number>> = {
+    一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+  }
+  return named[chinese] ?? Number.parseInt(chinese, 10)
+}
+
 function participantCandidates(value: string, groups: readonly ActorGroupIntent[]): ActorGroupIntent[] {
   return groups.filter(group => group.platformKind !== 'weapon' && matches(value, group))
 }
@@ -78,35 +99,96 @@ function outcomeScope(
   evidence: EvidenceIR,
   eventPlan: EventPlan,
   unit: EventUnit,
+  weapon: ActorGroupIntent,
+  target: ActorGroupIntent,
+  launchOrdinal: number,
   weaponLaunchEvidenceIds: ReadonlySet<string>,
-): EvidenceRecord[] {
+): { records: EvidenceRecord[]; ambiguous: boolean } {
   const startIndex = evidence.records.findIndex(record => record.evidenceId === start.evidenceId)
-  if (startIndex < 0) return [start]
+  if (startIndex < 0) return { records: [start], ambiguous: false }
   const eventUnitIndex = eventPlan.eventUnits.findIndex(candidate => candidate.eventUnitId === unit.eventUnitId)
-  if (eventUnitIndex < 0) return [start]
+  if (eventUnitIndex < 0) return { records: [start], ambiguous: false }
   const tail = evidence.records.slice(startIndex + 1)
   const nextLaunch = tail.findIndex(record => weaponLaunchEvidenceIds.has(record.evidenceId))
-  const linkedOutcomeEvidence = new Set(eventPlan.eventUnits
-    .slice(eventUnitIndex + 1)
-    .flatMap(candidate => candidate.evidenceRefs))
-  return evidence.records
-    .slice(startIndex, nextLaunch < 0 ? evidence.records.length : startIndex + 1 + nextLaunch)
-    .filter(record => (unit.evidenceRefs.includes(record.evidenceId) || linkedOutcomeEvidence.has(record.evidenceId))
-      && (record.kind === 'explicit_fact' || record.kind === 'deterministic_derivation'))
+  const nextLaunchIndex = nextLaunch < 0 ? undefined : startIndex + 1 + nextLaunch
+  const evidenceById = new Map(evidence.records.map((record, index) => [record.evidenceId, { record, index }]))
+  const linkedUnits = eventPlan.eventUnits.slice(eventUnitIndex)
+  const recordsForUnit = (candidate: EventUnit) => candidate.evidenceRefs.flatMap(evidenceRef => {
+    const found = evidenceById.get(evidenceRef)
+    return found !== undefined
+      && (found.record.kind === 'explicit_fact' || found.record.kind === 'deterministic_derivation')
+      && found.index >= startIndex
+      ? [found]
+      : []
+  })
+  const relation = (record: EvidenceRecord, candidate: EventUnit) => ({
+    ordinal: explicitOrdinal(record.claim),
+    weaponRelated: matches(recordText(record), weapon),
+    targetRelated: matches(recordText(record), target),
+    participantWeapon: candidate.participants.some(participant => matches(participant, weapon)),
+    participantTarget: candidate.participants.some(participant => matches(participant, target)),
+  })
+  const correlated = (record: EvidenceRecord, index: number, candidate: EventUnit): boolean => {
+    if (candidate.eventUnitId === unit.eventUnitId) return true
+    const { ordinal, weaponRelated, targetRelated, participantWeapon, participantTarget } = relation(record, candidate)
+    if (ordinal !== undefined && ordinal !== launchOrdinal) return false
+    if (ordinal !== undefined) return weaponRelated && participantWeapon
+    if (nextLaunchIndex !== undefined && index >= nextLaunchIndex) return false
+    return weaponRelated && targetRelated && participantWeapon && participantTarget
+  }
+  const anchorsOutcome = (record: EvidenceRecord, index: number, candidate: EventUnit): boolean => {
+    if (candidate.eventUnitId === unit.eventUnitId) return true
+    const { ordinal, weaponRelated, targetRelated, participantWeapon, participantTarget } = relation(record, candidate)
+    if (ordinal !== undefined) {
+      return ordinal === launchOrdinal && weaponRelated && participantWeapon && participantTarget
+    }
+    if (nextLaunchIndex !== undefined && index >= nextLaunchIndex) return false
+    return weaponRelated && targetRelated && participantWeapon && participantTarget
+  }
+  const unitScopes = linkedUnits.map(candidate => {
+    const factual = recordsForUnit(candidate)
+    return {
+      candidate,
+      factual,
+      correlated: factual.filter(({ record, index }) => correlated(record, index, candidate)),
+    }
+  })
+  const outcomeAnchors = unitScopes.filter(scope => scope.factual.some(({ record, index }) => (
+    statesUnresolvedOutcome(record.claim)
+    || statesConfirmedDestruction(record.claim)
+    || statesConfirmedInterception(record.claim)
+  ) && anchorsOutcome(record, index, scope.candidate)))
+  const includedIds = new Set<string>([start.evidenceId])
+  for (const scope of unitScopes) {
+    for (const { record } of scope.correlated) includedIds.add(record.evidenceId)
+  }
+  if (outcomeAnchors.length === 1) {
+    for (const { record } of outcomeAnchors[0]!.factual) includedIds.add(record.evidenceId)
+  }
+  return {
+    records: evidence.records.filter(record => includedIds.has(record.evidenceId)),
+    ambiguous: outcomeAnchors.length > 1,
+  }
 }
 
-function outcome(records: readonly EvidenceRecord[], launch: EvidenceRecord): {
+function outcome(records: readonly EvidenceRecord[], launch: EvidenceRecord, ambiguousScope: boolean): {
   assertedOutcome: EngagementIntent['assertedOutcome']
   evidenceRefs: string[]
+  ambiguous: boolean
 } {
+  const evidenceRefs = records.filter(record => record.evidenceId !== launch.evidenceId).map(record => record.evidenceId)
+  if (ambiguousScope) return { assertedOutcome: 'unconfirmed', evidenceRefs, ambiguous: true }
   const unresolved = records.filter(record => statesUnresolvedOutcome(record.claim))
-  if (unresolved.length > 0) return { assertedOutcome: 'unconfirmed', evidenceRefs: unresolved.map(record => record.evidenceId) }
+  if (unresolved.length > 0) return { assertedOutcome: 'unconfirmed', evidenceRefs, ambiguous: false }
   const destroyed = records.filter(record => statesConfirmedDestruction(record.claim))
-  if (destroyed.length > 0) return { assertedOutcome: 'destroyed', evidenceRefs: destroyed.map(record => record.evidenceId) }
   const intercepted = records.filter(record => statesConfirmedInterception(record.claim))
-  if (intercepted.length > 0) return { assertedOutcome: 'intercepted', evidenceRefs: intercepted.map(record => record.evidenceId) }
+  if (destroyed.length > 0 && intercepted.length > 0) {
+    return { assertedOutcome: 'unconfirmed', evidenceRefs, ambiguous: true }
+  }
+  if (destroyed.length > 0) return { assertedOutcome: 'destroyed', evidenceRefs, ambiguous: false }
+  if (intercepted.length > 0) return { assertedOutcome: 'intercepted', evidenceRefs, ambiguous: false }
   const assertedOutcome = /\bintercept(?:s|ed|ing)?\b|\u62e6\u622a/iu.test(launch.claim) ? 'interception' : 'unconfirmed'
-  return { assertedOutcome, evidenceRefs: [] }
+  return { assertedOutcome, evidenceRefs, ambiguous: false }
 }
 
 function intentId(eventUnitId: string, weaponGroupRef: string): string {
@@ -122,6 +204,15 @@ function participantDiagnostic(unit: EventUnit, launcherCount: number, weaponCou
   )
 }
 
+function outcomeDiagnostic(unit: EventUnit): CompilationDiagnostic {
+  return diagnostic(
+    'ENGAGEMENT_OUTCOME_AMBIGUOUS',
+    `Engagement ${unit.eventUnitId} has competing eligible outcome evidence; the result remains unconfirmed.`,
+    'warning',
+    { eventUnitId: unit.eventUnitId },
+  )
+}
+
 export function planEngagementIntents(input: PlanEngagementIntentsInput): EngagementIntentPlanningResult {
   const intents: EngagementIntent[] = []
   const diagnostics: CompilationDiagnostic[] = []
@@ -132,6 +223,9 @@ export function planEngagementIntents(input: PlanEngagementIntentsInput): Engage
     const launch = unit === undefined ? undefined : launchRecord(group, unit, input.evidence)
     return launch === undefined ? [] : [launch.evidenceId]
   }))
+  const launchOrdinals = new Map(input.evidence.records
+    .filter(record => weaponLaunchEvidenceIds.has(record.evidenceId))
+    .map((record, index) => [record.evidenceId, index + 1]))
 
   for (const unit of input.eventPlan.eventUnits) {
     const resolvedWeapons = weaponGroups
@@ -151,7 +245,18 @@ export function planEngagementIntents(input: PlanEngagementIntentsInput): Engage
       continue
     }
     const weapon = resolvedWeapons[0]!.weapon
-    const scopedOutcome = outcome(outcomeScope(launch, input.evidence, input.eventPlan, unit, weaponLaunchEvidenceIds), launch)
+    const scopedRecords = outcomeScope(
+      launch,
+      input.evidence,
+      input.eventPlan,
+      unit,
+      weapon,
+      targetGroups[0]!,
+      launchOrdinals.get(launch.evidenceId) ?? 1,
+      weaponLaunchEvidenceIds,
+    )
+    const scopedOutcome = outcome(scopedRecords.records, launch, scopedRecords.ambiguous)
+    if (scopedOutcome.ambiguous) diagnostics.push(outcomeDiagnostic(unit))
     intents.push({
       engagementIntentId: intentId(unit.eventUnitId, weapon.groupId),
       eventUnitId: unit.eventUnitId,

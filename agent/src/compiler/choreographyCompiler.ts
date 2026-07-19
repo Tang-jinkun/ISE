@@ -169,14 +169,24 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       lastSceneBeatRef: referencedBeats.at(-1)!.sceneBeatId,
     }
   })
-  const fighterMissileRelationSegments = weaponEngagements.map(engagement => ({
+  const fighterMissileRelationSegments = weaponEngagements.map(engagement => {
+    const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === engagement.sceneBeatRef)
+    const narrationBeat = sceneBeat?.subtitleId
+      ? narrationPlan.beats.find(beat => beat.subtitleId === sceneBeat.subtitleId)
+      : undefined
+    if (!narrationBeat) fail('NARRATION_SCENE_BEAT_UNBOUND', engagement.sceneBeatRef)
+    const beatEvidence = new Set(narrationBeat.evidenceRefs)
+    const evidenceRefs = engagement.evidenceRefs.filter(evidenceRef => beatEvidence.has(evidenceRef))
+    if (evidenceRefs.length === 0) fail('CHOREOGRAPHY_RELATION_EVIDENCE_UNBOUND', engagement.engagementId)
+    return {
       segmentId: `data-link:fighter-missile:${engagement.launcherRef}:${engagement.weaponRef}`,
       sceneBeatRef: engagement.sceneBeatRef,
       sourceRef: engagement.launcherRef,
       targetRef: engagement.weaponRef,
       linkKind: 'fighter-missile' as const,
-      evidenceRefs: [...engagement.evidenceRefs],
-    }))
+      evidenceRefs,
+    }
+  })
   const awacsRelationCandidates = sceneBlueprint.sceneBeats.flatMap(sceneBeat => {
       const supportText = [
         sceneBeat.purpose,
