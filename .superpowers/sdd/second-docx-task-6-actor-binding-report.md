@@ -2,7 +2,7 @@
 
 ## Scope
 
-Persistent semantic actors now bind to a SceneBeat when their grounded evidence intersects the EventUnit evidence and the participant wording shares a term unique to that semantic actor among planned persistent groups, in addition to the existing participant-alias match. Each participant selects its own positive highest unique-term score, allowing multiple grounded actors in one EventUnit while excluding lower-scoring generic matches. Event-scoped weapon and engagement-chain binding is unchanged.
+Persistent semantic actors now bind to a SceneBeat when their grounded evidence intersects the EventUnit evidence and the participant wording shares a term unique to that semantic actor among planned persistent groups, in addition to the existing participant-alias match. Each participant selects one uniquely best positive candidate using generic token salience; model codes containing digits, all-caps acronyms, and longer informative terms outrank ordinary qualifiers. Ambiguous ties do not evidence-bind either candidate. Event-scoped weapon and engagement-chain binding is unchanged.
 
 ## Root Cause
 
@@ -106,6 +106,35 @@ npx tsx --test test/cross-document-start-end-flow.test.ts
 ```
 
 The offline rebuild of session `f023640d-2a17-4d67-945f-e6965f40f9b7` was repeated with the per-participant selection: 11 actors, 11 generated routes, `model:awacs-generic-e3a`, `destroyed,unconfirmed`, and 1 resolved plus 1 unresolved interaction.
+
+## Equal-Score Follow-up
+
+The per-participant count score still tied an abbreviated `Blue E-3A` participant to `Boeing E-3A` through `3A` and to the same-evidence relay through `Blue`.
+
+RED:
+
+```powershell
+npx tsx --test --test-name-pattern="binds evidence-matched persistent actors per discriminative participant term" test/scene-blueprint-planner.test.ts
+```
+
+Before salience scoring, the abbreviated beat incorrectly bound the relay:
+
+```text
+Expected values to be strictly equal:
+true !== false
+```
+
+GREEN:
+
+```powershell
+npx tsx --test --test-name-pattern="binds evidence-matched persistent actors per discriminative participant term|generic planning chains split weapon outcomes" test/scene-blueprint-planner.test.ts
+# 2 pass, 0 fail
+
+npx tsx --test test/cross-document-start-end-flow.test.ts
+# 1 pass, 0 fail
+```
+
+The final offline rebuild repeated the required acceptance values: 11 actors, 11 generated routes, `model:awacs-generic-e3a`, `destroyed,unconfirmed`, and 1 resolved plus 1 unresolved interaction.
 
 ## Files
 

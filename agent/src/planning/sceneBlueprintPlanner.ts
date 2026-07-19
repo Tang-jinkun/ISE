@@ -13,25 +13,40 @@ export interface BuildSceneBlueprintInput { eventPlan: EventPlan; narrativePlan:
 
 function normalized(value: string): string { return value.normalize('NFKC').replace(/[\s\-_]+/g, '').toLocaleLowerCase('en-US') }
 function includesAlias(value: string, aliases: readonly string[]): boolean { const text = normalized(value); return aliases.some(alias => text.includes(normalized(alias))) }
-function identityTerms(value: string): string[] { return value.normalize('NFKC').match(/[\p{L}\p{N}]+/gu)?.map(term => term.toLocaleLowerCase('en-US')).filter(term => term.length > 1) ?? [] }
+function identityTermWeights(values: readonly string[]): Map<string, number> {
+  const weights = new Map<string, number>()
+  for (const value of values) for (const rawTerm of value.normalize('NFKC').match(/[\p{L}\p{N}]+/gu) ?? []) {
+    const term = rawTerm.toLocaleLowerCase('en-US')
+    if (term.length <= 1) continue
+    const salience = /\d/u.test(rawTerm) ? 4
+      : /^[A-Z]{2,}$/u.test(rawTerm) ? 3
+        : rawTerm.length >= 6 ? 2 : 1
+    weights.set(term, Math.max(weights.get(term) ?? 0, salience))
+  }
+  return weights
+}
 function evidenceBoundPersistentGroupIds(unit: EventUnit, groups: readonly ActorGroupIntent[]): Set<string> {
   const persistent = groups.filter(group => group.lifecycle === 'scene-persistent')
   const termCounts = new Map<string, number>()
-  for (const group of persistent) for (const term of new Set(group.participantAliases.flatMap(identityTerms))) {
+  for (const group of persistent) for (const term of identityTermWeights(group.participantAliases).keys()) {
     termCounts.set(term, (termCounts.get(term) ?? 0) + 1)
   }
   const candidates = persistent
     .filter(group => unit.evidenceRefs.some(evidenceRef => group.evidenceRefs.includes(evidenceRef)))
   const selected = new Set<string>()
   for (const participant of unit.participants) {
-    const participantTerms = new Set(identityTerms(participant))
-    const scored = candidates.map(group => ({
-      groupId: group.groupId,
-      score: [...new Set(group.participantAliases.flatMap(identityTerms))]
-        .filter(term => participantTerms.has(term) && termCounts.get(term) === 1).length,
-    }))
+    const participantTerms = identityTermWeights([participant])
+    const scored = candidates.map(group => {
+      const groupTerms = identityTermWeights(group.participantAliases)
+      const score = [...groupTerms].reduce((total, [term, groupWeight]) =>
+        participantTerms.has(term) && termCounts.get(term) === 1
+          ? total + Math.max(groupWeight, participantTerms.get(term)!)
+          : total, 0)
+      return { groupId: group.groupId, score }
+    })
     const bestScore = Math.max(0, ...scored.map(candidate => candidate.score))
-    for (const candidate of scored) if (candidate.score === bestScore && bestScore > 0) selected.add(candidate.groupId)
+    const winners = scored.filter(candidate => candidate.score === bestScore && bestScore > 0)
+    if (winners.length === 1) selected.add(winners[0]!.groupId)
   }
   return selected
 }

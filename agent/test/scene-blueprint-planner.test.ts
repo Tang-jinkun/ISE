@@ -646,6 +646,18 @@ test('binds evidence-matched persistent actors per discriminative participant te
       narrativePurpose: 'Show the grounded early-warning patrol.',
       importance: 'high',
     },
+    {
+      eventUnitId: 'event:abbreviated-awacs',
+      title: 'Abbreviated early-warning patrol',
+      worldStateChange: 'Blue E-3A patrols the documented route.',
+      participants: ['Blue E-3A'],
+      locationRefs: ['AWACS patrol route'],
+      evidenceRefs: ['ev-shared-awacs-route'],
+      inferenceRefs: [],
+      uncertainties: [],
+      narrativePurpose: 'Keep the abbreviated grounded early-warning actor specific.',
+      importance: 'medium',
+    },
   )
   fixture.evidence.records.push(
     {
@@ -660,12 +672,21 @@ test('binds evidence-matched persistent actors per discriminative participant te
       subtitleId: 'subtitle:evidence-bound-awacs', eventUnitId: 'event:evidence-bound-awacs',
       text: 'Blue E-3A Sentry AWACS and Blue KC-135 patrol the documented route.', evidenceRefs: ['ev-shared-awacs-route'], importance: 'high',
     },
+    {
+      subtitleId: 'subtitle:abbreviated-awacs', eventUnitId: 'event:abbreviated-awacs',
+      text: 'Blue E-3A patrols the documented route.', evidenceRefs: ['ev-shared-awacs-route'], importance: 'medium',
+    },
   )
   fixture.narrativePlan.sceneRequirements.push(
     {
       requirementId: 'requirement:evidence-bound-awacs', eventUnitId: 'event:evidence-bound-awacs',
       focusEntities: ['Blue E-3A Sentry AWACS', 'Blue KC-135'], spatialRelations: [], stateChanges: [], motionRequirements: ['follow documented route'],
       attentionRequirements: ['show grounded patrols'], requiredFacts: ['Grounded early-warning and tanker patrols'], forbiddenClaims: [], preferredTemplate: 'deployment',
+    },
+    {
+      requirementId: 'requirement:abbreviated-awacs', eventUnitId: 'event:abbreviated-awacs',
+      focusEntities: ['Blue E-3A'], spatialRelations: [], stateChanges: [], motionRequirements: ['follow documented route'],
+      attentionRequirements: ['show abbreviated early-warning patrol'], requiredFacts: ['Grounded abbreviated early-warning patrol'], forbiddenClaims: [], preferredTemplate: 'deployment',
     },
   )
   fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
@@ -675,10 +696,13 @@ test('binds evidence-matched persistent actors per discriminative participant te
   const tanker = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Boeing KC-135')!
   const unrelated = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Blue Royal Air relay aircraft')!
   const beat = blueprint.sceneBeats.find(item => item.eventUnitId === 'event:evidence-bound-awacs')!
+  const abbreviatedBeat = blueprint.sceneBeats.find(item => item.eventUnitId === 'event:abbreviated-awacs')!
 
   assert.ok(beat.actorRefs.includes(awacs.groupId))
   assert.ok(beat.actorRefs.includes(tanker.groupId))
   assert.equal(beat.actorRefs.includes(unrelated.groupId), false)
+  assert.ok(abbreviatedBeat.actorRefs.includes(awacs.groupId))
+  assert.equal(abbreviatedBeat.actorRefs.includes(unrelated.groupId), false)
 })
 
 test('creates an event-scoped generic missile actor from grounded launch facts when participants omit the weapon', () => {
