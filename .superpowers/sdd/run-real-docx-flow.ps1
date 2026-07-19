@@ -668,7 +668,9 @@ function Assert-FinalDomainInvariants {
     if ($markerCommands.Count -eq 0 -and $followCommands.Count -eq 0) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic scenes require at least one grounded marker or moving actor.'
     }
-    $markerActorIds = @($markerCommands | ForEach-Object { Get-PropertyValue $_ 'targetId' })
+    $markerActorIds = @($markerCommands | Where-Object {
+      Test-OrdinalContains $actorIds (Get-PropertyValue $_ 'targetId')
+    } | ForEach-Object { Get-PropertyValue $_ 'targetId' })
     if (-not (Test-OrdinalSetEqual $markerActorIds $staticActorIds)) {
       Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generic static actor bindings must correspond exactly to RuntimePlan marker.show targets.'
     }

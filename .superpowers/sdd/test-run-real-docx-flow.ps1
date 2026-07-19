@@ -379,6 +379,10 @@ $destroyedStateCommand = [pscustomobject]@{
 }
 $genericGeneratedSelection.Compiled.data.runtimePlan.commands += $destroyedStateCommand
 $genericGeneratedSelection.Compiled.data.sceneProjectConfig.tracks[1].items += $destroyedStateCommand
+$genericGeneratedSelection.Compiled.data.runtimePlan.commands += [pscustomobject]@{
+  commandId = 'narrative-marker'; eventUnitId = 'event-1'; targetId = 'marker:narrative-summary'; type = 'marker.show'; startMs = 900; durationMs = 2100
+  params = [pscustomobject]@{ coordinates = @(2.5, 53.5); label = 'Narrative summary'; color = '#4d7cff' }
+}
 Assert-FinalDomainInvariants $genericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
 
 $script:GenericAcceptanceFailures = [System.Collections.Generic.List[string]]::new()
