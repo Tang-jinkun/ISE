@@ -366,30 +366,58 @@ Add-Member -InputObject $genericGeneratedSelection.Compiled.data.sceneProjectCon
 Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan.entities[0] -NotePropertyName modelAssetId -NotePropertyValue 'model:awacs-generic-e3a' -Force
 Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan.entities[1] -NotePropertyName modelAssetId -NotePropertyValue 'model:pl15e' -Force
 Add-Member -InputObject $genericGeneratedSelection.ChoreographyPlan.data -NotePropertyName weaponEngagements -NotePropertyValue @(
-  [pscustomobject]@{ outcome = 'destroyed'; targetRef = 'actor:b'; evidenceRefs = @('evidence:destroyed') }
+  [pscustomobject]@{ engagementId = 'engagement:destroyed'; outcome = 'destroyed'; targetRef = 'actor:b'; evidenceRefs = @('evidence:destroyed') },
+  [pscustomobject]@{ engagementId = 'engagement:unconfirmed'; outcome = 'unconfirmed'; targetRef = 'actor:a'; evidenceRefs = @('evidence:unconfirmed') }
 ) -Force
 Add-Member -InputObject $genericGeneratedSelection.Compiled.data.runtimePlan -NotePropertyName interactions -NotePropertyValue @(
-  [pscustomobject]@{ interactionId = 'interaction:destroyed'; status = 'resolved'; targetRef = 'actor:b' },
-  [pscustomobject]@{ interactionId = 'interaction:unconfirmed'; status = 'unresolved'; targetRef = 'actor:a' }
+  [pscustomobject]@{ interactionId = 'interaction:destroyed'; engagementId = 'engagement:destroyed'; status = 'resolved' },
+  [pscustomobject]@{ interactionId = 'interaction:unconfirmed'; engagementId = 'engagement:unconfirmed'; status = 'unresolved' }
 ) -Force
 Assert-FinalDomainInvariants $genericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
 
-$genericResolvedMutationRejected = $false
-try {
+function Assert-GenericResolvedInteractionRejected {
+  param([scriptblock]$Mutate, [string]$Label)
   $invalidGenericGeneratedSelection = (ConvertTo-JsonText $genericGeneratedSelection) | ConvertFrom-Json
-  $invalidGenericGeneratedSelection.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
-    outcome = 'unconfirmed'; targetRef = 'actor:b'; evidenceRefs = @('evidence:unconfirmed')
+  & $Mutate $invalidGenericGeneratedSelection
+  $rejected = $false
+  try {
+    Assert-FinalDomainInvariants $invalidGenericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
+  } catch {
+    $rejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:'
   }
-  $invalidGenericGeneratedSelection.Compiled.data.runtimePlan.interactions += [pscustomobject]@{
-    interactionId = 'interaction:duplicate-destroyed'; status = 'resolved'; targetRef = 'actor:b'
+  if (-not $rejected) { throw "Expected $Label to be rejected." }
+}
+Assert-GenericResolvedInteractionRejected {
+  param($value)
+  $value.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
+    engagementId = 'engagement:interception'; outcome = 'interception'; targetRef = 'actor:a'; evidenceRefs = @('evidence:interception')
   }
-  Assert-FinalDomainInvariants $invalidGenericGeneratedSelection -AllowGenericScene -RequireGeneratedScenario
-} catch {
-  $genericResolvedMutationRejected = $_.Exception.Message -match '^REAL_DEMO_FINAL_DOMAIN_INVALID:'
-}
-if (-not $genericResolvedMutationRejected) {
-  throw 'Expected a second resolved interaction without a second destroyed engagement to be rejected.'
-}
+  $value.Compiled.data.runtimePlan.interactions += [pscustomobject]@{
+    interactionId = 'interaction:duplicate-destroyed'; engagementId = 'engagement:destroyed'; status = 'resolved'
+  }
+} 'duplicate resolved interaction engagementId'
+Assert-GenericResolvedInteractionRejected {
+  param($value)
+  $value.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
+    engagementId = 'engagement:interception'; outcome = 'interception'; targetRef = 'actor:a'; evidenceRefs = @('evidence:interception')
+  }
+  $value.Compiled.data.runtimePlan.interactions += [pscustomobject]@{
+    interactionId = 'interaction:unknown'; engagementId = 'engagement:unknown'; status = 'resolved'
+  }
+} 'unknown resolved interaction engagementId'
+Assert-GenericResolvedInteractionRejected {
+  param($value)
+  $value.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
+    engagementId = 'engagement:interception'; outcome = 'interception'; targetRef = 'actor:a'; evidenceRefs = @('evidence:interception')
+  }
+  $value.Compiled.data.runtimePlan.interactions[1].status = 'resolved'
+} 'resolved interaction for an unconfirmed engagement'
+Assert-GenericResolvedInteractionRejected {
+  param($value)
+  $value.ChoreographyPlan.data.weaponEngagements += [pscustomobject]@{
+    engagementId = 'engagement:interception'; outcome = 'interception'; targetRef = 'actor:a'; evidenceRefs = @('evidence:interception')
+  }
+} 'missing resolved interaction for a confirmed engagement'
 
 $wrongActorCountRejected = $false
 try { Assert-FinalDomainInvariants $selection 3 }
