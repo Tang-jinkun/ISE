@@ -1254,7 +1254,23 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     ...finalCommands.map(item => [item.commandId, item.evidenceRefs] as const),
     ...scheduled.informationCards.map(item => [item.cardId, item.evidenceRefs] as const),
   ]
-  const diagnostics = [...assetRegistry.diagnostics, ...resolvedScenePlan.diagnostics]
+  const referencedAssetIds = new Set([
+    ...entities.flatMap(entity => [entity.modelAssetId, entity.defaultTrajectoryAssetId]),
+    ...resolvedScenePlan.generatedTrajectoryAssets.map(asset => asset.assetId),
+    ...finalCommands.flatMap(command => {
+      switch (command.type) {
+        case 'image.show':
+        case 'video.play':
+        case 'geojson.show': return [command.params.assetId]
+        case 'model.spawn': return [command.params.modelAssetId]
+        case 'model.follow_path': return [command.params.trajectoryAssetId]
+        default: return []
+      }
+    }),
+  ].filter((assetId): assetId is string => assetId !== undefined))
+  const relevantRegistryDiagnostics = assetRegistry.diagnostics.filter(item =>
+    [...referencedAssetIds].some(assetId => item.message.includes(assetId)))
+  const diagnostics = [...relevantRegistryDiagnostics, ...resolvedScenePlan.diagnostics]
     .sort((left, right) => `${left.code}:${left.message}`.localeCompare(`${right.code}:${right.message}`))
   const plan = canonicalRuntimePlanSchema.parse({
     schemaVersion: 'canonical-runtime-plan/v1',

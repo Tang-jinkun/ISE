@@ -183,5 +183,8 @@ test('a second real DOCX compiles deterministic generated routes and grounded in
   const trackTypes = sceneProject.tracks.map(track => track.type)
   assert.ok(['subtitle', 'image', 'video', 'model', 'camera', 'data-link'].every(type => trackTypes.includes(type)),
     `Missing required track type from: ${trackTypes.join(', ')}`)
-  assert.equal(JSON.stringify(sceneProject).match(/india|pakistan|Adampur|Minhas/iu), null)
+  const serializedSceneProject = JSON.stringify(sceneProject)
+  const forbiddenLegacyMatch = serializedSceneProject.match(/india|pakistan|Adampur|Minhas/iu)
+  assert.equal(forbiddenLegacyMatch, null, forbiddenLegacyMatch === null ? undefined
+    : serializedSceneProject.slice(Math.max(0, forbiddenLegacyMatch.index! - 120), forbiddenLegacyMatch.index! + 120))
 })

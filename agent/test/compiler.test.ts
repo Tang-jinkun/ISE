@@ -1854,6 +1854,21 @@ test('canonical runtime duration expands beyond narration for required interacti
   assert.ok(plan.totalDurationMs > fixture.input.narrativePlan.targetDurationMs)
 })
 
+test('final compiler omits registry diagnostics for assets outside the compiled scene', () => {
+  const fixture = finalInputForEngagementFixture()
+  fixture.input.assetRegistry = {
+    ...fixture.input.assetRegistry,
+    diagnostics: [{
+      code: 'ASSET_ALIAS_CONFLICT', severity: 'warning', recoverable: true,
+      message: 'Alias unrelated-route maps to trajectory:unrelated-one, trajectory:unrelated-two',
+    }],
+  }
+
+  const plan = compileFinalScene(fixture.input)
+
+  assert.equal(plan.diagnostics.some(item => item.message.includes('trajectory:unrelated-one')), false)
+})
+
 test('planner and scheduler keep exact subtitle duration parity across importance and Han boundaries', () => {
   const source = input()
   source.narrativePlan.sourceEventPlan.fingerprint = fingerprint(source.eventPlan)
