@@ -91,7 +91,7 @@ export function createCompilerTools(options: CompilerToolOptions = {}): AgentToo
       if (requested.capabilityManifestVersion !== capabilityManifest.version) throw new Error('CapabilityManifest version mismatch')
       const narrationPlan = buildNarrationPlan({ eventPlan, narrativePlan })
       const sceneBlueprint = buildSceneBlueprint({ eventPlan, narrativePlan, narrationPlan, evidence })
-      const resolvedScenePlan = resolveSceneBlueprint({ blueprint: sceneBlueprint, assetRegistry })
+      const resolvedScenePlan = resolveSceneBlueprint({ blueprint: sceneBlueprint, assetRegistry, evidence })
       const choreographyPlan = compileChoreography({
         narrationPlan,
         sceneBlueprint,

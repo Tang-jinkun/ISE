@@ -9,6 +9,7 @@ import { buildNarrationPlan } from '../src/planning/narrationPlanner.ts'
 import { planActorGroups } from '../src/planning/semanticActorPlanner.ts'
 import { buildSceneBlueprint } from '../src/planning/sceneBlueprintPlanner.ts'
 import { genericScenarioPack } from '../src/services/scenarioPackRegistry.ts'
+import { indoPakScenarioPack } from '../src/config/indoPakScenarioPack.ts'
 
 const pack: ScenarioPack = {
   schemaVersion: 'ise-scenario-pack/v1', packId: 'aurora-borealis/v1', version: '1', displayName: 'Aurora and Borealis',
@@ -137,6 +138,28 @@ test('keeps a target after a neutral named launch object as a persistent actor',
   assert.equal(groups.some(group => group.semanticEntityRef === 'Arrow' && group.lifecycle === 'scene-persistent'), false)
   assert.ok(groups.some(group => group.semanticEntityRef === 'Hawk aircraft' && group.lifecycle === 'scene-persistent'))
   assert.equal(groups.find(group => group.platformKind === 'weapon')?.semanticEntityRef, 'Arrow')
+})
+
+test('prefers counterattack semantics when an event also mentions an intercept route', () => {
+  const counterEvidence: EvidenceIR = {
+    schemaVersion: 'evidence-ir/v1', documentId: 'doc:indo-pak-counter', records: [{
+      evidenceId: 'ev-counter', sourceRef: 'docx:p1',
+      claim: '巴基斯坦JF-17发射第二枚PL-15E导弹，反击印度Rafale编队，沿拦截航线飞向目标。',
+      kind: 'explicit_fact', entities: ['巴基斯坦JF-17', 'PL-15E', '印度Rafale编队'], confidence: 1, ambiguities: [],
+    }],
+  }
+  const counterPlan: EventPlan = {
+    schemaVersion: 'event-plan/v1', planId: 'event-plan:indo-pak-counter', documentId: 'doc:indo-pak-counter', version: 1,
+    omittedEvidence: [], warnings: [], eventUnits: [{
+      eventUnitId: 'event:counter', title: '反击发射',
+      worldStateChange: '巴基斯坦JF-17发射第二枚PL-15E导弹，反击印度Rafale编队，沿拦截航线飞向目标。',
+      participants: ['巴基斯坦JF-17', 'PL-15E', '印度Rafale编队'], locationRefs: [], evidenceRefs: ['ev-counter'],
+      inferenceRefs: [], uncertainties: [], narrativePurpose: 'counterattack', importance: 'high',
+    }],
+  }
+  const weapon = planActorGroups({ eventPlan: counterPlan, evidence: counterEvidence, pack: indoPakScenarioPack })
+    .find(group => group.platformKind === 'weapon')
+  assert.equal(weapon?.behaviorProfile, 'weapon-launch/pakistan-counterattack/v1')
 })
 
 test('discovers an unclaimed rescue actor alongside a resolved pack fighter', () => {

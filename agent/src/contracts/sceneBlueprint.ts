@@ -78,7 +78,6 @@ export type ActorGroup = z.infer<typeof actorGroupSchema>
 export interface ActorGroupIntent extends ActorGroup {
   aliases: readonly string[]
   participantAliases: readonly string[]
-  evidenceRefs: readonly string[]
   platformKind: 'aircraft' | 'weapon' | 'sensor' | 'vehicle' | 'unknown'
   diagnostics: readonly CompilationDiagnostic[]
 }

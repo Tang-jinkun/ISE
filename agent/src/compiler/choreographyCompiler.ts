@@ -37,6 +37,21 @@ function equivalentEventId(left: string, right: string): boolean {
   return normalize(left) === normalize(right)
 }
 
+function statesUnresolvedOutcome(value: string): boolean {
+  return /\b(?:unresolved|unconfirmed|undetermined|result\s+(?:is|remains)\s+unknown|not\s+confirmed|no\s+(?:geometric\s+)?intersection)\b|\u672a\u51b3|\u672a\u5b9a|\u7ed3\u679c\u672a\u5b9a|\u672a\u786e\u8ba4|\u6ca1\u6709\u786e\u8ba4|\u672a\u5efa\u7acb\u51e0\u4f55\u4ea4\u6c47|\u65e0\u51e0\u4f55\u4ea4\u6c47/iu.test(value)
+}
+
+function statesConfirmedDestruction(value: string): boolean {
+  if (statesUnresolvedOutcome(value)) return false
+  if (/\b(?:not|never|must\s+not|do\s+not)\b.{0,32}\b(?:destroy|kill|hit)\b|\u4e0d\u5f97.{0,24}(?:\u51fb\u6bc1|\u6467\u6bc1|\u547d\u4e2d)|\u4e0d\u786e\u8ba4.{0,16}(?:\u51fb\u6bc1|\u6467\u6bc1|\u547d\u4e2d)/iu.test(value)) return false
+  return /\b(?:destroyed|confirmed\s+(?:kill|destruction)|hit\s+and\s+destroyed)\b|\u786e\u8ba4(?:\u51fb\u6bc1|\u6467\u6bc1)|\u88ab\u786e\u8ba4(?:\u51fb\u6bc1|\u6467\u6bc1)|\u547d\u4e2d\u5e76(?:\u51fb\u6bc1|\u6467\u6bc1)/iu.test(value)
+}
+
+function forbidsConfirmedDestruction(value: string): boolean {
+  return statesUnresolvedOutcome(value)
+    || /\bconfirmed\s+(?:destruction|outcome|target\s+destruction)\b|\u786e\u8ba4\u6218\u679c|\u786e\u8ba4(?:\u51fb\u6bc1|\u6467\u6bc1)/iu.test(value)
+}
+
 export function compileChoreography(rawInput: CompileChoreographyInput): ChoreographyPlan {
   const narrationPlan = narrationPlanSchema.parse(rawInput.narrationPlan)
   const sceneBlueprint = sceneBlueprintSchema.parse(rawInput.sceneBlueprint)
@@ -47,13 +62,12 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     || resolvedScenePlan.sourceBlueprintId !== sceneBlueprint.blueprintId
     || resolvedScenePlan.sourceBlueprintFingerprint !== fingerprint(sceneBlueprint)
   ) fail('CHOREOGRAPHY_SOURCE_MISMATCH', resolvedScenePlan.resolvedScenePlanId)
-  if (resolvedScenePlan.diagnostics.some(item => item.code === 'TRAJECTORY_SYNTHESIZED')) {
-    fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', 'Synthesized trajectories are forbidden')
-  }
-
-  const routeAssets = new Set(assetRegistry.assets
+  const routeAssets = new Set([
+    ...assetRegistry.assets
     .filter(asset => asset.kind === 'trajectory' && asset.availability === 'available')
-    .map(asset => asset.assetId))
+    .map(asset => asset.assetId),
+    ...resolvedScenePlan.generatedTrajectoryAssets.map(asset => asset.assetId),
+  ])
   const assignments = new Map(resolvedScenePlan.actorRouteAssignments.map(assignment => [
     assignment.actorInstanceRef,
     assignment,
@@ -67,7 +81,7 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
 
   const motionSegments = movingActors.map(actor => {
     const assignment = assignments.get(actor.actorInstanceId)
-    if (!assignment || assignment.sourceKind !== 'catalog' || !routeAssets.has(assignment.trajectoryAssetRef)) {
+    if (!assignment || !routeAssets.has(assignment.trajectoryAssetRef)) {
       fail('CHOREOGRAPHY_ROUTE_ASSIGNMENT_INVALID', actor.actorInstanceId)
     }
     const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.actorRefs.includes(actor.actorGroupRef))!
@@ -167,17 +181,48 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
         ? actorForScene(group => group.role === 'weapon-launch'
           && group.behaviorProfile === 'weapon-launch/india-first-strike/v1')
         : undefined)
-      const confirmedDestruction = sceneBeat.requiredFacts.some(fact =>
-        /\bdestroyed\b|\bdestroys\b|击毁|坠毁|命中并击毁/iu.test(fact))
-        && !sceneBeat.forbiddenClaims.some(claim =>
-          /confirmed\s+(?:outcome|destruction|destroyed|target\s+destruction)|确认(?:战果|毁伤|击毁|命中结果)/iu.test(claim))
-      const specification = profile === 'weapon-launch/india-first-strike/v1'
-        ? { launcherRef: fighter('india', 'su30'), targetRef: firstStrikeTarget, outcome: 'intercepted' }
-        : profile === 'weapon-launch/pakistan-intercept/v1'
-          ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: interceptedWeapon, outcome: 'interception' }
+      const defaultSpecification = profile === 'weapon-launch/india-first-strike/v1'
+        ? { launcherRef: fighter('india', 'su30'), targetRef: firstStrikeTarget, outcome: 'intercepted' as const }
+        : profile === 'weapon-launch/pakistan-intercept/v1' && interceptedWeapon
+          ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: interceptedWeapon, outcome: 'interception' as const }
           : profile === 'weapon-launch/pakistan-counterattack/v1'
-            ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: fighter('india', 'rafale'), outcome: confirmedDestruction ? 'destroyed' : 'unconfirmed' }
-            : undefined
+            ? { launcherRef: fighter('pakistan', 'jf17'), targetRef: fighter('india', 'rafale'), outcome: 'unconfirmed' as const }
+            : {
+              launcherRef: weaponGroup.side === 'india' ? fighter('india', 'su30') : fighter('pakistan', 'jf17'),
+              targetRef: weaponGroup.side === 'india' ? fighter('pakistan', 'jf17') : fighter('india', 'rafale'),
+              outcome: 'unconfirmed' as const,
+            }
+      const targetGroupRef = resolvedScenePlan.resolvedActors.find(actor =>
+        actor.actorInstanceId === defaultSpecification.targetRef)?.actorGroupRef
+      const launchBeatIndex = sceneBlueprint.sceneBeats.indexOf(sceneBeat)
+      const nextWeaponLaunchIndex = sceneBlueprint.sceneBeats.findIndex((beat, index) => index > launchBeatIndex
+        && beat.actorRefs.some(groupRef => {
+          const group = groups.get(groupRef)
+          return group?.role === 'weapon-launch'
+            && group.groupId !== weaponGroup.groupId
+            && equivalentEventId(group.lifecycle.replace(/^event-scoped:/u, ''), beat.eventUnitId)
+        }))
+      const outcomeWindow = sceneBlueprint.sceneBeats.slice(
+        launchBeatIndex,
+        nextWeaponLaunchIndex < 0 ? undefined : nextWeaponLaunchIndex,
+      )
+      const outcomeBeats = outcomeWindow.filter(beat =>
+        beat.actorRefs.includes(weaponGroup.groupId)
+        && (targetGroupRef === undefined || beat.actorRefs.includes(targetGroupRef)))
+      const requiredOutcomeFacts = outcomeBeats.flatMap(beat => beat.requiredFacts)
+      const forbiddenOutcomeClaims = outcomeBeats.flatMap(beat => beat.forbiddenClaims)
+      const confirmedDestruction = requiredOutcomeFacts.some(statesConfirmedDestruction)
+        && !forbiddenOutcomeClaims.some(forbidsConfirmedDestruction)
+      const explicitlyUnresolved = [
+        ...requiredOutcomeFacts,
+        ...forbiddenOutcomeClaims,
+      ].some(statesUnresolvedOutcome)
+      const specification = defaultSpecification.launcherRef && defaultSpecification.targetRef
+        ? {
+          ...defaultSpecification,
+          outcome: explicitlyUnresolved ? 'unconfirmed' as const : confirmedDestruction ? 'destroyed' as const : defaultSpecification.outcome,
+        }
+        : undefined
       if (!specification?.launcherRef || !specification.targetRef) return []
       return [{
         engagementId: `engagement:${sceneBeat.sceneBeatId}:${weaponRef}`,
@@ -201,6 +246,9 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
       continue
     }
     existing.evidenceRefs = [...new Set([...existing.evidenceRefs, ...engagement.evidenceRefs])]
+    if (engagement.outcome === 'destroyed' || (existing.outcome === 'unconfirmed' && engagement.outcome !== 'unconfirmed')) {
+      existing.outcome = engagement.outcome
+    }
   }
   const weaponEngagements = [...engagementByWeapon.values()]
   const engagementsBySceneBeat = new Map<string, typeof weaponEngagements>()

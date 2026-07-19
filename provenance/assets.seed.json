@@ -305,10 +305,10 @@
         "苏-30MKI",
         "苏-30MKI编队"
       ],
-      "fingerprint": "sha256:50e4ddcedda0819895460b2f6c18ec0de60a0bac52558bc8a706687c8e44a49f",
-      "sourceRelativePath": "印巴glb（修改6.0）/SU-30MKI.glb",
+      "fingerprint": "sha256:4eb33b8691568a8df23db440290531d79ba722a9263bde37e2dca2a6c4bf55f0",
+      "sourceRelativePath": "newGLB/su-30_mki.glb",
       "objectName": "demo-assets/model/su30mki.glb",
-      "size": 7787176,
+      "size": 27523272,
       "availability": "available",
       "criticality": "required",
       "fallbackAssetIds": [],

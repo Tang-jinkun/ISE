@@ -60,6 +60,7 @@ function mappingDiagnostics(
 }
 
 const GENERATED_ROUTE_DURATION_MS = 120_000
+const ROUTE_ENDPOINT_TOLERANCE_DEG = 0.05
 
 function routeExpressionForGroup(
   group: SceneBlueprint['actorGroups'][number],
@@ -69,6 +70,24 @@ function routeExpressionForGroup(
   return evidence.records.find(record =>
     group.evidenceRefs.includes(record.evidenceId) && record.routeExpression !== undefined,
   )?.routeExpression
+}
+
+function routeMatchesExpression(
+  resolution: ReturnType<typeof resolveActorAssets> | undefined,
+  expression: NonNullable<ReturnType<typeof routeExpressionForGroup>>,
+  registry: AssetRegistrySnapshot,
+): boolean {
+  if (!resolution || resolution.trajectoryAssetIds.length === 0) return false
+  return resolution.trajectoryAssetIds.every(routeId => {
+    const asset = registry.assets.find(candidate => candidate.assetId === routeId)
+    if (!asset || asset.kind !== 'trajectory' || !asset.trajectory.points || asset.trajectory.points.length < 2) return false
+    const first = asset.trajectory.points[0]!
+    const last = asset.trajectory.points.at(-1)!
+    return Math.abs(first.longitude - expression.start[0]) <= ROUTE_ENDPOINT_TOLERANCE_DEG
+      && Math.abs(first.latitude - expression.start[1]) <= ROUTE_ENDPOINT_TOLERANCE_DEG
+      && Math.abs(last.longitude - expression.end[0]) <= ROUTE_ENDPOINT_TOLERANCE_DEG
+      && Math.abs(last.latitude - expression.end[1]) <= ROUTE_ENDPOINT_TOLERANCE_DEG
+  })
 }
 
 function generatedAsset(trajectory: GeneratedTrajectory) {
@@ -125,7 +144,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   for (const group of activeGroups) {
     const resolution = baseResolutionByGroup.get(group.groupId)
     const expression = routeExpressionForGroup(group, input.evidence)
-    if (!resolution?.modelAssetId || resolution.trajectoryAssetIds.length > 0 || !expression) continue
+    if (!resolution?.modelAssetId || !expression || routeMatchesExpression(resolution, expression, assetRegistry)) continue
     const actors = expandedActors.filter(actor => actor.actorGroupRef === group.groupId)
     const routes = actors.map(actor => {
       const trajectory = synthesizeStartEndTrajectory({

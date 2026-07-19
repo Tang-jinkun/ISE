@@ -38,7 +38,7 @@
     },
     {
       "assetId": "model:su30mki",
-      "sourceRelativePath": "印巴glb（修改6.0）/SU-30MKI.glb",
+      "sourceRelativePath": "newGLB/su-30_mki.glb",
       "displayName": "Su-30MKI",
       "aliases": ["SU-30MKI", "苏-30MKI", "苏-30MKI编队"],
       "criticality": "required"

@@ -806,6 +806,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   // catalog route remains the shape source; this only supplies scene-specific
   // start/end anchors for the runtime transform.
   for (const engagement of choreographyPlan.weaponEngagements) {
+    if (engagement.outcome === 'unconfirmed') continue
     const launcherAssignment = assignments.get(engagement.launcherRef)
     const weaponAssignment = assignments.get(engagement.weaponRef)
     const targetAssignment = assignments.get(engagement.targetRef)
@@ -864,7 +865,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     const phaseShots = subtitleShots.filter(shot => shot.phase)
     const shotIntervals = new Map<string, readonly [number, number]>()
     const transitionDurationMs = capabilityManifest.minimumDurations['camera.transition']
-    const followMinimumMs = capabilityManifest.minimumDurations['camera.follow_group']
+    const followMinimumMs = Math.max(
+      capabilityManifest.minimumDurations['camera.follow_group'],
+      capabilityManifest.minimumDurations['model.follow_path'],
+    )
+    // Every phase needs enough room for the camera to settle and for the
+    // involved actors to remain in motion. The solver may extend the visual
+    // window beyond the subtitle end; subtitles stay on their narrative clock
+    // while the scene continues resolving the interaction.
     const intervalMinimumMs = transitionDurationMs + followMinimumMs
     const visualStartMs = Math.max(subtitle.startMs + SUBTITLE_VISUAL_LEAD_MS, cameraPresentationCursorMs)
     const intervalCount = phaseShots.length > 0 ? subtitleShots.length : 1
@@ -1086,20 +1094,26 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     intents: interactionIntents,
     directPoints: directInteractionPoints,
   })
+  const engagementById = new Map(choreographyPlan.weaponEngagements.map(engagement => [engagement.engagementId, engagement]))
   const interactions: RuntimeInteraction[] = interactionIntents.map(intent => {
     const result = interactionGeometry.get(intent.interactionId)
+    const engagement = engagementById.get(intent.interactionId.replace(/^interaction:/u, ''))
+    const sourceUnresolved = engagement?.outcome === 'unconfirmed'
+    const status = sourceUnresolved ? 'unresolved' : (result?.status ?? 'unresolved')
     return {
       interactionId: intent.interactionId,
       engagementId: intent.interactionId.replace(/^interaction:/u, ''),
       interactionTimeMs: intent.interactionTimeMs,
-      ...(result?.interactionPoint ? { interactionPoint: result.interactionPoint } : {}),
+      ...(status === 'resolved' && result?.interactionPoint ? { interactionPoint: result.interactionPoint } : {}),
       spatialToleranceM: 500,
       temporalToleranceMs: 250,
-      status: result?.status ?? 'unresolved',
-      ...(result?.propagatedFromInteractionId
+      status,
+      ...(status === 'resolved' && result?.propagatedFromInteractionId
         ? { propagatedFromInteractionId: result.propagatedFromInteractionId }
         : {}),
-      diagnostics: result?.reason ? [`INTERACTION_${result.reason.replaceAll('-', '_').toUpperCase()}`] : [],
+      diagnostics: sourceUnresolved
+        ? ['INTERACTION_SOURCE_UNRESOLVED']
+        : result?.reason ? [`INTERACTION_${result.reason.replaceAll('-', '_').toUpperCase()}`] : [],
     }
   })
 
@@ -1121,6 +1135,9 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     }
     const interactionId = `interaction:${engagement.engagementId}`
     const interactionResult = interactionGeometry.get(interactionId)
+    const interactionStatus = engagement.outcome === 'unconfirmed'
+      ? 'unresolved'
+      : (interactionResult?.status ?? weaponDraft.params.timing.status)
     const targetPoint = interactionResult?.interactionPoint
     const launcherAssignment = assignments.get(engagement.launcherRef)
     const launcherWindow = actorPlaybackWindows.get(engagement.launcherRef)
@@ -1129,10 +1146,13 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         launcherWindow.followStartMs, launcherWindow.followEndMs)
       : undefined
     const binding = weaponDraft.params.timing.spatialBinding
+    weaponDraft.params.timing = {
+      ...weaponDraft.params.timing,
+      status: interactionStatus,
+    }
     if (binding && targetPoint && launchPoint) {
       weaponDraft.params.timing = {
         ...weaponDraft.params.timing,
-        status: interactionResult?.status ?? weaponDraft.params.timing.status,
         spatialBinding: {
           ...binding,
           anchorLongitudeDeg: launchPoint.longitude,

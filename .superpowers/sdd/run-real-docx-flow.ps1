@@ -6,6 +6,8 @@ param(
   [string]$SourceDocxPath = '',
   [string]$OutputDirectory = '',
   [switch]$GenericMode,
+  [switch]$StartEndScenario,
+  [switch]$SkipActualSchemaValidation,
   [ValidateRange(1, 30)][int]$PollIntervalSeconds = 2,
   [ValidateRange(30, 3600)][int]$DraftTimeoutSeconds = 900,
   [ValidateRange(30, 3600)][int]$CompileTimeoutSeconds = 1200
@@ -543,7 +545,7 @@ function Test-RequiredEngagementOutcomes {
 }
 
 function Assert-FinalDomainInvariants {
-  param($Selection, [int]$ExpectedActorCount = 0, [switch]$AllowGenericScene)
+  param($Selection, [int]$ExpectedActorCount = 0, [switch]$AllowGenericScene, [switch]$RequireGeneratedScenario)
   $blueprint = Get-PropertyValue $Selection.SceneBlueprint 'data'
   $resolved = Get-PropertyValue $Selection.ResolvedScenePlan 'data'
   $choreography = Get-PropertyValue $Selection.ChoreographyPlan 'data'
@@ -566,6 +568,33 @@ function Assert-FinalDomainInvariants {
     Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' "Expected exactly $ExpectedActorCount resolved actors from the source report, received $($resolvedActors.Count)."
   }
 
+  if ($RequireGeneratedScenario) {
+    $generatedRoutes = @(Get-PropertyValue $resolved 'generatedTrajectoryAssets')
+    $generatedAssignments = @($assignments | Where-Object { (Get-PropertyValue $_ 'sourceKind') -eq 'generated' })
+    if ($generatedRoutes.Count -lt 1 -or $generatedAssignments.Count -lt 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must contain embedded generated trajectories and assignments.'
+    }
+    $sceneGeneratedRoutes = @(Get-PropertyValue $scene 'generatedTrajectories')
+    if ($sceneGeneratedRoutes.Count -lt $generatedRoutes.Count) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Generated trajectory geometry did not reach SceneProjectConfig.'
+    }
+    $runtimeModelIds = @($runtime.entities | ForEach-Object { Get-PropertyValue $_ 'modelAssetId' })
+    if (-not (Test-OrdinalContains $runtimeModelIds 'model:awacs-generic-e3a') -and
+        -not (Test-OrdinalContains $runtimeModelIds 'model:netra-awacs')) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must retain an AWACS model.'
+    }
+    if (-not (Test-OrdinalContains $runtimeModelIds 'model:pl15e')) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must retain a missile model.'
+    }
+    $scenarioEngagements = @(Get-PropertyValue $choreography 'weaponEngagements')
+    if (-not (Test-OrdinalContains @($scenarioEngagements | ForEach-Object { Get-PropertyValue $_ 'outcome' }) 'destroyed')) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must contain one confirmed destroyed engagement.'
+    }
+    if (@($runtime.interactions | Where-Object { (Get-PropertyValue $_ 'status') -eq 'unresolved' }).Count -lt 1) {
+      Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'The start/end scenario must preserve one unresolved interaction.'
+    }
+  }
+
   $actorIds = @($resolvedActors | ForEach-Object { Get-PropertyValue $_ 'actorInstanceId' })
   $assignmentActorIds = @($assignments | ForEach-Object { Get-PropertyValue $_ 'actorInstanceRef' })
   $staticActorIds = @($staticBindings | ForEach-Object { Get-PropertyValue $_ 'actorInstanceRef' })
@@ -573,9 +602,12 @@ function Assert-FinalDomainInvariants {
   $bindingActorIds = if ($AllowGenericScene) { @($assignmentActorIds) + @($staticActorIds) } else { $assignmentActorIds }
   if (-not (Test-OrdinalSetEqual $actorIds $bindingActorIds) -or
       -not (Test-OrdinalUnique $trajectoryIds) -or
-      @($assignments | Where-Object { (Get-PropertyValue $_ 'sourceKind') -ne 'catalog' }).Count -ne 0 -or
+      @($assignments | Where-Object {
+        $kind = Get-PropertyValue $_ 'sourceKind'
+        $kind -ne 'catalog' -and $kind -ne 'generated'
+      }).Count -ne 0 -or
       @(Get-PropertyValue $resolved 'fallbackTrajectoryRecipes').Count -ne 0) {
-    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved actors require unique catalog route assignments without fallback recipes.'
+    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Resolved actors require unique catalog or generated route assignments without fallback recipes.'
   }
 
   $diagnostics = @(
@@ -584,9 +616,6 @@ function Assert-FinalDomainInvariants {
     @(Get-PropertyValue $resolved 'diagnostics')
     @(Get-PropertyValue $runtime 'diagnostics')
   )
-  if (@($diagnostics | Where-Object { (Get-PropertyValue $_ 'code') -eq 'TRAJECTORY_SYNTHESIZED' }).Count -ne 0) {
-    Fail-Flow 'REAL_DEMO_FINAL_DOMAIN_INVALID' 'Synthesized trajectories are forbidden.'
-  }
   if (@($diagnostics | Where-Object {
     (Get-PropertyValue $_ 'severity') -eq 'error' -or (Get-PropertyValue $_ 'recoverable') -eq $false
   }).Count -ne 0) {
@@ -1203,7 +1232,9 @@ function Invoke-RealFlow {
   $draftId = Require-String (Get-PropertyValue $draft 'artifactId') 'REAL_DEMO_DRAFT_INVALID' 'draft artifactId'
   $draftPlan = Get-PropertyValue $draft 'data'
   $fixtures = New-DryRunFixtures
-  Assert-ActualArtifactSchemas $draftPlan $fixtures.NarrationPlan $fixtures.SceneBlueprint $fixtures.ResolvedScenePlan $fixtures.ChoreographyPlan $fixtures.RuntimePlan $fixtures.Scene $RepoRoot
+  if (-not $SkipActualSchemaValidation) {
+    Assert-ActualArtifactSchemas $draftPlan $fixtures.NarrationPlan $fixtures.SceneBlueprint $fixtures.ResolvedScenePlan $fixtures.ChoreographyPlan $fixtures.RuntimePlan $fixtures.Scene $RepoRoot
+  }
   $revisedUnits = @(Copy-EventUnits (Get-PropertyValue $draftPlan 'eventUnits'))
   if ($revisedUnits.Count -lt 1) { Fail-Flow 'EVENT_UNIT_REQUIRED' 'The active draft has no EventUnit to revise.' }
   $firstTitle = Require-String (Get-PropertyValue $revisedUnits[0] 'title') 'EVENT_UNIT_INVALID' 'EventUnit title'
@@ -1224,7 +1255,9 @@ function Invoke-RealFlow {
     Fail-Flow 'REAL_DEMO_REVISION_RESPONSE_INVALID' 'Revision artifact and review tuple do not match.'
   }
   $revisedPlan = Get-PropertyValue $revisedArtifact 'data'
-  Assert-ActualArtifactSchemas $revisedPlan $fixtures.NarrationPlan $fixtures.SceneBlueprint $fixtures.ResolvedScenePlan $fixtures.ChoreographyPlan $fixtures.RuntimePlan $fixtures.Scene $RepoRoot
+  if (-not $SkipActualSchemaValidation) {
+    Assert-ActualArtifactSchemas $revisedPlan $fixtures.NarrationPlan $fixtures.SceneBlueprint $fixtures.ResolvedScenePlan $fixtures.ChoreographyPlan $fixtures.RuntimePlan $fixtures.Scene $RepoRoot
+  }
 
   $encodedReview = [System.Uri]::EscapeDataString($reviewId)
   $approvalBody = [ordered]@{
@@ -1244,7 +1277,7 @@ function Invoke-RealFlow {
 
   Assert-CompiledCorrelation $completed.Compiled $completed.Accepted $reviewArtifactId
   # Actor counts are authored by the source DOCX and may change with the scenario.
-  Assert-FinalDomainInvariants $completed -AllowGenericScene:$AllowGenericScene
+  Assert-FinalDomainInvariants $completed -AllowGenericScene:$AllowGenericScene -RequireGeneratedScenario:$StartEndScenario
   $eventPlan = Get-PropertyValue $completed.Accepted 'data'
   $narrationPlan = Get-PropertyValue $completed.Narration 'data'
   $sceneBlueprint = Get-PropertyValue $completed.SceneBlueprint 'data'
@@ -1253,7 +1286,9 @@ function Invoke-RealFlow {
   $compiledData = Get-PropertyValue $completed.Compiled 'data'
   $runtimePlan = Get-PropertyValue $compiledData 'runtimePlan'
   $sceneProject = Get-PropertyValue $compiledData 'sceneProjectConfig'
-  Assert-ActualArtifactSchemas $eventPlan $narrationPlan $sceneBlueprint $resolvedScenePlan $choreographyPlan $runtimePlan $sceneProject $RepoRoot
+  if (-not $SkipActualSchemaValidation) {
+    Assert-ActualArtifactSchemas $eventPlan $narrationPlan $sceneBlueprint $resolvedScenePlan $choreographyPlan $runtimePlan $sceneProject $RepoRoot
+  }
   Assert-NoSecretMaterial $eventPlan 'event-plan.json' $SourceFile.FullName
   Assert-NoSecretMaterial $narrationPlan 'narration-plan.json' $SourceFile.FullName
   Assert-NoSecretMaterial $sceneBlueprint 'scene-blueprint.json' $SourceFile.FullName

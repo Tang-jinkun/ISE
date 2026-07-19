@@ -42,23 +42,29 @@ function completedLaunch(value: string): boolean {
 function inferredKind(value: string): ActorGroupIntent['platformKind'] { if (/\b(?:(?:pl|aim|r)-?\d+[a-z0-9-]*|missile|weapon|rocket|bomb)\b/iu.test(value)) return 'weapon'; if (/\b(?:sensor|radar|aew|awacs|sentinel)\b/iu.test(value)) return 'sensor'; if (/\b(?:truck|vehicle|rescue|transport)\b/iu.test(value)) return 'vehicle'; return 'aircraft' }
 function inferredRole(kind: ActorGroupIntent['platformKind'], value: string): string { if (kind === 'weapon') return 'weapon-launch'; if (kind === 'sensor') return 'sensor-support'; if (kind === 'vehicle') return /rescue|evacuat/iu.test(value) ? 'rescue-support' : 'vehicle-support'; return /formation|flight|squadron|deploy|aircraft|fighter/iu.test(value) ? 'fighter-formation' : 'aircraft-support' }
 function faction(value: string, pack: ScenarioPack): string { return pack.factions.find(candidate => contains(value, candidate.aliases))?.factionId ?? 'faction:unknown' }
-function location(record: EvidenceRecord, unit: EventUnit, pack: ScenarioPack): string { const found = pack.locationProfiles.find(profile => contains([text(record), ...unit.locationRefs].join('|'), profile.aliases)); return found?.locationId ?? unit.locationRefs[0] ?? record.locationExpression ?? 'location:unspecified' }
+function location(record: EvidenceRecord, unit: EventUnit, pack: ScenarioPack): string { const found = pack.locationProfiles.find(profile => contains([text(record), ...unit.locationRefs].join('|'), profile.aliases)); return found?.locationId ?? record.locationExpression ?? unit.locationRefs[0] ?? 'location:unspecified' }
 
-function genericGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: ScenarioPack): ActorGroupIntent[] {
-  const claimed = new Set(pack.actorProfiles.flatMap(profile => profile.aliases.map(normalize)))
+function genericGroups(
+  eventPlan: EventPlan,
+  evidence: EvidenceIR,
+  pack: ScenarioPack,
+  legacy: readonly ActorGroupIntent[],
+): ActorGroupIntent[] {
+  const claimed = new Set(legacy.flatMap(group => group.aliases.map(normalize)))
   const groups = new Map<string, ActorGroupIntent>()
   for (const unit of eventPlan.eventUnits) {
     const records = factual(evidence.records).filter(record => unit.evidenceRefs.includes(record.evidenceId))
     for (const record of records) for (const profile of pack.entityProfiles) {
       if (profile.platformKind === 'weapon' || claimed.has(normalize(profile.aliases[0] ?? ''))) continue
-      if (!contains(text(record), profile.aliases)) continue
+      if (!contains(text(record), profile.aliases) || record.routeExpression === undefined || directLaunchWeapon(record, unit) !== undefined) continue
+      const matchedRecords = records.filter(candidate => contains(text(candidate), profile.aliases))
       const source = `${record.claim}|${unit.worldStateChange}|${unit.participants.join('|')}`
       const side = faction(source, pack); const role = inferredRole(profile.platformKind, source); const locationRef = location(record, unit, pack)
       const id = `group:${slug(`${side}-${profile.entityId}-${locationRef === 'location:unspecified' ? '' : locationRef}`)}`
       if (groups.has(id)) continue
       groups.set(id, { groupId: id, semanticEntityRef: profile.aliases[0]!, side, locationRef, platformType: profile.entityId, role,
-        quantityDecision: resolveQuantity({ entityName: profile.aliases[0]!, entityAliases: profile.aliases, platformType: profile.platformKind, role: role === 'fighter-formation' ? 'formation' : role, evidence: evidenceScope(evidence, records), packRoleDefault: roleDefault(pack, role) }),
-        formationPattern: role === 'fighter-formation' ? 'formation' : 'single', leaderPolicy: role === 'fighter-formation' ? 'stable-first-member' : 'single-member', behaviorProfile: `${role}/v1`, lifecycle: 'scene-persistent', aliases: profile.aliases, participantAliases: profile.aliases, evidenceRefs: records.map(item => item.evidenceId), platformKind: profile.platformKind, diagnostics: [] })
+        quantityDecision: resolveQuantity({ entityName: profile.aliases[0]!, entityAliases: profile.aliases, platformType: profile.platformKind, role: role === 'fighter-formation' ? 'formation' : role, evidence: evidenceScope(evidence, matchedRecords), packRoleDefault: roleDefault(pack, role) }),
+        formationPattern: role === 'fighter-formation' ? 'formation' : 'single', leaderPolicy: role === 'fighter-formation' ? 'stable-first-member' : 'single-member', behaviorProfile: `${role}/v1`, lifecycle: 'scene-persistent', aliases: profile.aliases, participantAliases: profile.aliases, evidenceRefs: matchedRecords.map(item => item.evidenceId), platformKind: profile.platformKind, diagnostics: [] })
     }
   }
   return [...groups.values()]
@@ -87,6 +93,10 @@ function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scen
     ...pack.actorProfiles.flatMap(profile => profile.aliases),
     ...pack.entityProfiles.flatMap(profile => profile.aliases),
   ].map(normalize))
+  const knownEntity = (value: string): boolean => {
+    const candidate = normalize(value)
+    return [...knownAliases].some(alias => candidate.includes(alias) || alias.includes(candidate))
+  }
   for (const unit of eventPlan.eventUnits) {
     const records = factual(evidence.records).filter(record => unit.evidenceRefs.includes(record.evidenceId))
     for (const record of records) {
@@ -97,7 +107,7 @@ function discoveredGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scen
       const entities = record.entities.filter(entity => !locationTokens.has(normalize(entity)) && !factionTokens.has(normalize(entity)))
       const candidates = entities.length > 0 ? entities : unit.participants.filter(participant => contains(record.claim, [participant]))
       for (const entity of candidates) {
-        if (knownAliases.has(normalize(entity))) continue
+        if (knownEntity(entity)) continue
         const source = `${record.claim}|${unit.worldStateChange}|${unit.participants.join('|')}`
         const platformKind = inferredKind(entity)
         if (platformKind === 'weapon' || launchObject(entity, record, unit)) continue
@@ -126,7 +136,7 @@ function weaponGroups(eventPlan: EventPlan, evidence: EvidenceIR, pack: Scenario
     const profile = pack.entityProfiles.find(candidate => candidate.platformKind === 'weapon' && records.some(record => contains(text(record), candidate.aliases)))
     const semanticEntityRef = directWeapon ?? profile?.aliases[0] ?? records.flatMap(record => record.entities).find(entity => inferredKind(entity) === 'weapon') ?? 'missile'
     const side = weaponFaction(unit, records, pack)
-    return [{ groupId: `group:weapon-${slug(unit.eventUnitId)}`, semanticEntityRef, side, locationRef: unit.locationRefs[0] ?? records[0]?.locationExpression ?? 'location:unspecified', platformType: profile?.entityId ?? semanticEntityRef, role: 'weapon-launch', quantityDecision: resolveQuantity({ entityName: semanticEntityRef, entityAliases: profile?.aliases, platformType: 'weapon', role: 'launch', evidence: evidenceScope(evidence, records), packRoleDefault: roleDefault(pack, 'weapon-launch') }), formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: pack.weaponBehaviorProfiles.find(candidate => candidate.factionId === side && candidate.matchTerms.some(term => contains([unit.worldStateChange, ...records.map(text)].join('|'), [term])))?.behaviorProfile ?? pack.weaponBehaviorProfiles.find(candidate => candidate.factionId === side && candidate.matchTerms.length === 0)?.behaviorProfile ?? 'weapon-launch/v1', lifecycle: `event-scoped:${unit.eventUnitId}`, aliases: profile?.aliases ?? [semanticEntityRef], participantAliases: profile?.aliases ?? [semanticEntityRef], evidenceRefs: records.map(record => record.evidenceId), platformKind: 'weapon', diagnostics: [] } satisfies ActorGroupIntent]
+    return [{ groupId: `group:weapon-${slug(unit.eventUnitId)}`, semanticEntityRef, side, locationRef: unit.locationRefs[0] ?? records[0]?.locationExpression ?? 'location:unspecified', platformType: profile?.entityId ?? semanticEntityRef, role: 'weapon-launch', quantityDecision: resolveQuantity({ entityName: semanticEntityRef, entityAliases: profile?.aliases, platformType: 'weapon', role: 'launch', evidence: evidenceScope(evidence, records), packRoleDefault: roleDefault(pack, 'weapon-launch') }), formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: weaponBehaviorProfile(unit, records, pack, side), lifecycle: `event-scoped:${unit.eventUnitId}`, aliases: profile?.aliases ?? [semanticEntityRef], participantAliases: profile?.aliases ?? [semanticEntityRef], evidenceRefs: records.map(record => record.evidenceId), platformKind: 'weapon', diagnostics: [] } satisfies ActorGroupIntent]
   })
 }
 
@@ -148,8 +158,38 @@ function weaponFaction(unit: EventUnit, records: EvidenceRecord[], pack: Scenari
   return 'unknown'
 }
 
+function weaponBehaviorProfile(
+  unit: EventUnit,
+  records: EvidenceRecord[],
+  pack: ScenarioPack,
+  side: string,
+): string {
+  const source = [unit.title, unit.worldStateChange, ...unit.participants, ...unit.locationRefs, ...records.map(text)].join('|')
+  const candidates = pack.weaponBehaviorProfiles.filter(profile => profile.factionId === side)
+  const counterSignal = /\bcounterattack\b|\bretaliat(?:e|ion|ing)\b|反击|反制/iu.test(source)
+  const scored = candidates.map(profile => {
+    const matchedTerms = profile.matchTerms.filter(term => contains(source, [term]))
+    let score = matchedTerms.length
+    // Counterattack is a semantic action, not merely another occurrence of
+    // the word "intercept" in a route description. Give an explicit
+    // retaliation signal precedence when profiles overlap.
+    if (counterSignal && /counterattack|retaliat|反击|反制/iu.test(profile.behaviorProfile)) score += 4
+    return { profile, score, matchedTerms }
+  }).sort((left, right) =>
+    right.score - left.score
+    || right.matchedTerms.length - left.matchedTerms.length
+    || right.matchedTerms.join('').length - left.matchedTerms.join('').length
+    || left.profile.behaviorProfile.localeCompare(right.profile.behaviorProfile),
+  )
+  const selected = scored.find(item => item.score > 0)?.profile
+  return selected?.behaviorProfile
+    ?? candidates.find(profile => profile.matchTerms.length === 0)?.behaviorProfile
+    ?? 'weapon-launch/v1'
+}
+
 export function planActorGroups(input: { eventPlan: EventPlan; evidence: EvidenceIR; pack: ScenarioPack }): ActorGroupIntent[] {
-  const profileGroups = [...legacyGroups(input.eventPlan, input.evidence, input.pack), ...genericGroups(input.eventPlan, input.evidence, input.pack)]
+  const legacy = legacyGroups(input.eventPlan, input.evidence, input.pack)
+  const profileGroups = [...legacy, ...genericGroups(input.eventPlan, input.evidence, input.pack, legacy)]
   const occupied = new Set(profileGroups.map(actorKey))
   return [...profileGroups, ...discoveredGroups(input.eventPlan, input.evidence, input.pack, occupied), ...weaponGroups(input.eventPlan, input.evidence, input.pack)]
 }
