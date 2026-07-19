@@ -118,3 +118,41 @@ Session `6696577c-b530-4930-8197-5de738944cb4` was rebuilt offline from its acce
 - Red launch relation and `data_link.show` command evidence: `ev-0f565a213062813f` only.
 
 Coordinated blocker commit: pending.
+
+## Same-EventUnit Anchor Review Fix
+
+### Root Cause
+
+The coordinated correlation predicate treated every factual record owned by the launch EventUnit as correlated. A target-only destruction, including text such as "the first target," could therefore resolve the engagement even though it did not identify the event-scoped weapon.
+
+Only the launch record is now included unconditionally. Every other same-EventUnit fact must satisfy the same strong weapon/target anchor or explicit weapon-ordinal rule used across EventUnits. After one valid outcome anchor is established, other factual records in that anchored EventUnit may still contribute chain evidence.
+
+### RED/GREEN Evidence
+
+RED command:
+
+```powershell
+npx tsx --test --test-name-pattern="same-unit target-only ordinal" test/engagement-intent-planner.test.ts
+```
+
+Before the fix, the regression produced `destroyed`; the required result was `unconfirmed` with only the launch evidence retained.
+
+GREEN results:
+
+```powershell
+npx tsx --test --test-name-pattern="same-unit target-only ordinal" test/engagement-intent-planner.test.ts
+# 1 pass, 0 fail
+
+npx tsx --test test/engagement-intent-planner.test.ts
+# 17 pass, 0 fail
+
+npx tsx --test --test-name-pattern="generic planning chains split weapon outcomes" test/scene-blueprint-planner.test.ts
+# 1 pass, 0 fail
+
+npx tsx --test test/cross-document-start-end-flow.test.ts
+# 1 pass, 0 fail
+```
+
+The persisted session rebuilt offline through a schema-valid 21-track SceneProject with outcomes `destroyed`, `unconfirmed`. Blue and red engagement evidence remained the same complete three-record chains documented above.
+
+Same-EventUnit review-fix commit: pending.

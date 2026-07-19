@@ -129,7 +129,7 @@ function outcomeScope(
     participantTarget: candidate.participants.some(participant => matches(participant, target)),
   })
   const correlated = (record: EvidenceRecord, index: number, candidate: EventUnit): boolean => {
-    if (candidate.eventUnitId === unit.eventUnitId) return true
+    if (record.evidenceId === start.evidenceId) return true
     const { ordinal, weaponRelated, targetRelated, participantWeapon, participantTarget } = relation(record, candidate)
     if (ordinal !== undefined && ordinal !== launchOrdinal) return false
     if (ordinal !== undefined) return weaponRelated && participantWeapon
@@ -137,7 +137,7 @@ function outcomeScope(
     return weaponRelated && targetRelated && participantWeapon && participantTarget
   }
   const anchorsOutcome = (record: EvidenceRecord, index: number, candidate: EventUnit): boolean => {
-    if (candidate.eventUnitId === unit.eventUnitId) return true
+    if (record.evidenceId === start.evidenceId) return false
     const { ordinal, weaponRelated, targetRelated, participantWeapon, participantTarget } = relation(record, candidate)
     if (ordinal !== undefined) {
       return ordinal === launchOrdinal && weaponRelated && participantWeapon && participantTarget

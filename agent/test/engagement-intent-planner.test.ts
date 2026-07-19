@@ -56,8 +56,8 @@ function fixture(): {
       },
       {
         evidenceId: 'ev:outcome-1', sourceRef: 'docx:p5',
-        claim: 'The Red J-10 was destroyed.',
-        kind: 'explicit_fact', entities: ['Red J-10'], confidence: 1, ambiguities: [],
+        claim: 'The first PL-15E destroyed the targeted Red J-10.',
+        kind: 'explicit_fact', entities: ['PL-15E', 'Red J-10'], confidence: 1, ambiguities: [],
       },
       {
         evidenceId: 'ev:launch-2', sourceRef: 'docx:p6',
@@ -66,8 +66,8 @@ function fixture(): {
       },
       {
         evidenceId: 'ev:outcome-2', sourceRef: 'docx:p7',
-        claim: 'The result was unconfirmed; a report that Blue Rafale was destroyed was not verified.',
-        kind: 'explicit_fact', entities: ['Blue Rafale'], confidence: 1, ambiguities: [],
+        claim: 'The second PL-15E outcome was unconfirmed; a report that Blue Rafale was destroyed was not verified.',
+        kind: 'explicit_fact', entities: ['PL-15E', 'Blue Rafale'], confidence: 1, ambiguities: [],
       },
     ],
   }
@@ -267,6 +267,26 @@ test('does not correlate an unrelated later destruction to a weapon launch', () 
       evidenceRefs: ['ev:outcome-1'],
     },
   ]
+  input.evidence.records = [
+    input.evidence.records[0]!,
+    {
+      ...input.evidence.records[1]!,
+      claim: 'The first Red J-10 was destroyed in a runway accident unrelated to any missile.',
+      entities: ['Red J-10'],
+    },
+  ]
+  input.actorGroups = input.actorGroups.filter(group => group.groupId !== 'group:weapon-launch-2')
+
+  const planning = planEngagementIntents(input)
+
+  assert.equal(planning.intents[0]?.assertedOutcome, 'unconfirmed')
+  assert.deepEqual(planning.intents[0]?.evidenceRefs, ['ev:launch-1'])
+  assert.deepEqual(planning.diagnostics, [])
+})
+
+test('does not correlate same-unit target-only ordinal destruction to the launch', () => {
+  const input = fixture()
+  input.eventPlan.eventUnits = [input.eventPlan.eventUnits[0]!]
   input.evidence.records = [
     input.evidence.records[0]!,
     {
