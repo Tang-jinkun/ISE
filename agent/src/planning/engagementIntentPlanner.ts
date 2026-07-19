@@ -103,7 +103,7 @@ function outcomeScope(
   target: ActorGroupIntent,
   launchOrdinal: number,
   weaponLaunchEvidenceIds: ReadonlySet<string>,
-): { records: EvidenceRecord[]; ambiguous: boolean } {
+): { records: EvidenceRecord[]; ambiguous: boolean; outcomeEventUnitId?: string } {
   const startIndex = evidence.records.findIndex(record => record.evidenceId === start.evidenceId)
   if (startIndex < 0) return { records: [start], ambiguous: false }
   const eventUnitIndex = eventPlan.eventUnits.findIndex(candidate => candidate.eventUnitId === unit.eventUnitId)
@@ -168,6 +168,7 @@ function outcomeScope(
   return {
     records: evidence.records.filter(record => includedIds.has(record.evidenceId)),
     ambiguous: outcomeAnchors.length > 1,
+    ...(outcomeAnchors.length === 1 ? { outcomeEventUnitId: outcomeAnchors[0]!.candidate.eventUnitId } : {}),
   }
 }
 
@@ -260,6 +261,7 @@ export function planEngagementIntents(input: PlanEngagementIntentsInput): Engage
     intents.push({
       engagementIntentId: intentId(unit.eventUnitId, weapon.groupId),
       eventUnitId: unit.eventUnitId,
+      ...(scopedRecords.outcomeEventUnitId === undefined ? {} : { outcomeEventUnitId: scopedRecords.outcomeEventUnitId }),
       launcherGroupRef: launcherGroups[0]!.groupId,
       weaponGroupRef: weapon.groupId,
       targetGroupRef: targetGroups[0]!.groupId,

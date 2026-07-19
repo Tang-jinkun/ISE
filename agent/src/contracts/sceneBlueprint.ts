@@ -41,6 +41,7 @@ export const actorInstanceSchema = z.strictObject({
 export const engagementIntentSchema = z.strictObject({
   engagementIntentId: z.string().min(1),
   eventUnitId: z.string().min(1),
+  outcomeEventUnitId: z.string().min(1).optional(),
   launcherGroupRef: z.string().min(1),
   weaponGroupRef: z.string().min(1),
   targetGroupRef: z.string().min(1),

@@ -28,6 +28,7 @@ export const formationSegmentSchema = z.strictObject({
 export const weaponEngagementSchema = z.strictObject({
   engagementId: z.string().min(1),
   sceneBeatRef: z.string().min(1),
+  outcomeSceneBeatRef: z.string().min(1).optional(),
   launcherRef: z.string().min(1),
   weaponRef: z.string().min(1),
   targetRef: z.string().min(1),

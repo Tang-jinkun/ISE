@@ -223,9 +223,28 @@ test('a second real DOCX compiles deterministic generated routes and grounded in
   const commandEvidenceByEvent = new Map(fighterMissileCommands.map(command => [command.eventUnitId, command.evidenceRefs]))
   assert.deepEqual(commandEvidenceByEvent.get('event:north-sea-first-launch'), [firstLaunch.evidenceId])
   assert.deepEqual(commandEvidenceByEvent.get('event:north-sea-second-launch'), [secondLaunch.evidenceId])
-  assert.equal(runtimePlan.interactions.filter(item => item.status === 'resolved').length, 1)
-  assert.equal(runtimePlan.interactions.filter(item => item.status === 'unresolved').length, 1)
-  assert.equal(runtimePlan.commands.filter(item => item.type === 'model.set_state' && item.params.state === 'destroyed').length, 1)
+  const [firstEngagement, secondEngagement] = choreographyPlan.weaponEngagements
+  const firstInteraction = runtimePlan.interactions.find(item => item.engagementId === firstEngagement!.engagementId)!
+  const secondInteraction = runtimePlan.interactions.find(item => item.engagementId === secondEngagement!.engagementId)!
+  assert.equal(firstInteraction.status, 'resolved')
+  assert.equal(secondInteraction.status, 'unresolved')
+  const firstOutcomeSubtitle = runtimePlan.subtitles.find(item => item.eventUnitId === 'event:north-sea-first-outcome')!
+  const firstOutcomeVisualStartMs = firstOutcomeSubtitle.startMs + 800
+  const impactVideo = runtimePlan.commands.find(command => command.type === 'video.play'
+    && command.commandId.includes(`:${firstEngagement!.weaponRef}:terminal:`))!
+  const destroyedState = runtimePlan.commands.find(command => command.type === 'model.set_state'
+    && command.targetId === firstEngagement!.targetRef && command.params.state === 'destroyed')!
+  const outcomeHides = runtimePlan.commands.filter(command => command.type === 'model.hide'
+    && (command.targetId === firstEngagement!.weaponRef || command.targetId === firstEngagement!.targetRef))
+  assert.ok(firstInteraction.interactionTimeMs >= firstOutcomeVisualStartMs,
+    `Interaction ${firstInteraction.interactionTimeMs} precedes outcome visual start ${firstOutcomeVisualStartMs}`)
+  assert.ok(impactVideo.startMs >= firstOutcomeVisualStartMs,
+    `Impact video ${impactVideo.startMs} precedes outcome visual start ${firstOutcomeVisualStartMs}`)
+  assert.ok(destroyedState.startMs >= firstOutcomeVisualStartMs,
+    `Destroyed state ${destroyedState.startMs} precedes outcome visual start ${firstOutcomeVisualStartMs}`)
+  assert.equal(outcomeHides.length, 2)
+  assert.ok(outcomeHides.every(command => command.startMs >= firstOutcomeVisualStartMs),
+    `Outcome hide precedes outcome visual start ${firstOutcomeVisualStartMs}`)
   const trackTypes = sceneProject.tracks.map(track => track.type)
   assert.ok(['subtitle', 'image', 'video', 'model', 'camera', 'data-link'].every(type => trackTypes.includes(type)),
     `Missing required track type from: ${trackTypes.join(', ')}`)

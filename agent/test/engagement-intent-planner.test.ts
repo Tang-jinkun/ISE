@@ -331,6 +331,7 @@ test('keeps competing confirmed outcomes unresolved and emits a scoped ambiguity
   const planning = planEngagementIntents(input)
 
   assert.equal(planning.intents[0]?.assertedOutcome, 'unconfirmed')
+  assert.equal(planning.intents[0]?.outcomeEventUnitId, undefined)
   assert.deepEqual(planning.intents[0]?.evidenceRefs, [
     'ev:launch-1',
     'ev:outcome-1',
@@ -379,6 +380,7 @@ test('preserves correlated chain facts that do not state the outcome', () => {
   const planning = planEngagementIntents(input)
 
   assert.equal(planning.intents[0]?.assertedOutcome, 'destroyed')
+  assert.equal(planning.intents[0]?.outcomeEventUnitId, 'event:first-outcome')
   assert.deepEqual(planning.intents[0]?.evidenceRefs, [
     'ev:launch-1',
     'ev:terminal-guidance',

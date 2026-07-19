@@ -120,9 +120,13 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
     if (!launcher || !target || weapons.length === 0) return []
     const sceneBeat = sceneBlueprint.sceneBeats.find(beat => beat.eventUnitId === intent.eventUnitId)
     if (!sceneBeat) return []
+    const outcomeSceneBeat = intent.outcomeEventUnitId === undefined
+      ? undefined
+      : sceneBlueprint.sceneBeats.find(beat => beat.eventUnitId === intent.outcomeEventUnitId)
     return weapons.map(weapon => ({
       engagementId: `engagement:${sceneBeat.sceneBeatId}:${weapon.actorInstanceId}`,
       sceneBeatRef: sceneBeat.sceneBeatId,
+      ...(outcomeSceneBeat === undefined ? {} : { outcomeSceneBeatRef: outcomeSceneBeat.sceneBeatId }),
       launcherRef: launcher.actorInstanceId,
       weaponRef: weapon.actorInstanceId,
       targetRef: target.actorInstanceId,
@@ -148,9 +152,13 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
   const weaponEngagements = [...engagementByWeapon.values()]
   const engagementsBySceneBeat = new Map<string, typeof weaponEngagements>()
   for (const engagement of weaponEngagements) {
-    const entries = engagementsBySceneBeat.get(engagement.sceneBeatRef) ?? []
-    entries.push(engagement)
-    engagementsBySceneBeat.set(engagement.sceneBeatRef, entries)
+    const sceneBeatRefs = new Set([engagement.sceneBeatRef, engagement.outcomeSceneBeatRef]
+      .filter((ref): ref is string => ref !== undefined))
+    for (const sceneBeatRef of sceneBeatRefs) {
+      const entries = engagementsBySceneBeat.get(sceneBeatRef) ?? []
+      entries.push(engagement)
+      engagementsBySceneBeat.set(sceneBeatRef, entries)
+    }
   }
   const actorLifecycles = resolvedScenePlan.resolvedActors.map(actor => {
     const referencedBeats = sceneBlueprint.sceneBeats.filter(beat => {
@@ -247,14 +255,21 @@ export function compileChoreography(rawInput: CompileChoreographyInput): Choreog
         transition: 'easeInOut',
         visibilityRequirements: subjectRefs,
       }, ...engagements.flatMap(engagement => {
-      const phases = [
+      const allPhases = [
         { phase: 'launch' as const, subjectRefs: [engagement.launcherRef, engagement.weaponRef], movement: 'track-launcher-to-weapon' },
         { phase: 'midcourse' as const, subjectRefs: [engagement.weaponRef, engagement.targetRef], movement: 'track-weapon-to-target' },
         { phase: 'terminal' as const, subjectRefs: [engagement.weaponRef, engagement.targetRef], movement: 'track-terminal-weapon-to-target' },
         { phase: 'aftermath' as const, subjectRefs: [engagement.targetRef], movement: 'hold-target-outcome' },
       ]
+      const splitOutcome = engagement.outcomeSceneBeatRef !== undefined
+        && engagement.outcomeSceneBeatRef !== engagement.sceneBeatRef
+      const phases = !splitOutcome
+        ? allPhases
+        : sceneBeat.sceneBeatId === engagement.sceneBeatRef
+          ? allPhases.slice(0, 2)
+          : allPhases.slice(2)
       const supportedPhases = weaponsResolvedByLaterEngagement.has(engagement.weaponRef)
-        ? phases.slice(0, 2)
+        ? phases.filter(({ phase }) => phase === 'launch' || phase === 'midcourse')
         : phases
       return supportedPhases.map(({ phase, subjectRefs, movement }) => ({
         shotId: `shot:${sceneBeat.sceneBeatId}:${engagement.weaponRef}:${phase}`,

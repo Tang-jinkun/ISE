@@ -1593,6 +1593,34 @@ test('compiles grounded missile engagements with establishing and supported phas
   }
 })
 
+test('splits engagement phases across launch and outcome subtitles with establishing shots for both', () => {
+  const fixture = multiEngagementChoreographyFixture()
+  const launchBeat = fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-counterattack')!
+  const outcomeBeat = fixture.sceneBlueprint.sceneBeats.find(beat => beat.sceneBeatId === 'scene-beat-summary')!
+  const sceneBlueprint = {
+    ...fixture.sceneBlueprint,
+    engagementIntents: fixture.sceneBlueprint.engagementIntents.map(intent => intent.eventUnitId === launchBeat.eventUnitId
+      ? { ...intent, outcomeEventUnitId: outcomeBeat.eventUnitId }
+      : intent),
+  }
+  const resolvedScenePlan = resolveSceneBlueprint({ blueprint: sceneBlueprint, assetRegistry: fixture.assetRegistry })
+  const choreography = compileChoreography({
+    narrationPlan: fixture.narrationPlan,
+    sceneBlueprint,
+    resolvedScenePlan,
+    assetRegistry: fixture.assetRegistry,
+  })
+  const engagement = choreography.weaponEngagements.find(item => item.sceneBeatRef === launchBeat.sceneBeatId)!
+  const launchShots = choreography.shotPlan.filter(shot => shot.subtitleId === launchBeat.subtitleId)
+  const outcomeShots = choreography.shotPlan.filter(shot => shot.subtitleId === outcomeBeat.subtitleId)
+
+  assert.equal(engagement.outcomeSceneBeatRef, outcomeBeat.sceneBeatId)
+  assert.deepEqual(launchShots.map(shot => shot.phase), [undefined, 'launch', 'midcourse'])
+  assert.deepEqual(outcomeShots.map(shot => shot.phase), [undefined, 'terminal', 'aftermath'])
+  assert.equal(launchShots[0]?.intent, 'engagement:establishing')
+  assert.equal(outcomeShots[0]?.intent, 'engagement:establishing')
+})
+
 test('compiles the real cross-beat engagement shape from explicit intents', () => {
   const fixture = realCrossBeatEngagementFixture()
   const actorRef = (groupRef: string) => fixture.input.resolvedScenePlan.resolvedActors
