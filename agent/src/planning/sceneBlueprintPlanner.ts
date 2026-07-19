@@ -13,6 +13,11 @@ export interface BuildSceneBlueprintInput { eventPlan: EventPlan; narrativePlan:
 
 function normalized(value: string): string { return value.normalize('NFKC').replace(/[\s\-_]+/g, '').toLocaleLowerCase('en-US') }
 function includesAlias(value: string, aliases: readonly string[]): boolean { const text = normalized(value); return aliases.some(alias => text.includes(normalized(alias))) }
+function identityTerms(value: string): string[] { return value.normalize('NFKC').match(/[\p{L}\p{N}]+/gu)?.map(term => term.toLocaleLowerCase('en-US')).filter(term => term.length > 1) ?? [] }
+function sharesIdentityTerm(unit: EventUnit, group: ActorGroupIntent): boolean {
+  const participantTerms = new Set(unit.participants.flatMap(identityTerms))
+  return group.participantAliases.flatMap(identityTerms).some(term => participantTerms.has(term))
+}
 function slug(value: string): string { const ascii = value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); return ascii || fingerprint(value).slice(7, 19) }
 function actorRefsForUnit(unit: EventUnit, groups: ActorGroupIntent[], engagements: readonly EngagementIntent[]): string[] {
   const chainedWeapons = new Set(engagements
@@ -20,7 +25,10 @@ function actorRefsForUnit(unit: EventUnit, groups: ActorGroupIntent[], engagemen
     .map(engagement => engagement.weaponGroupRef))
   return groups.filter(group => group.lifecycle.startsWith('event-scoped:')
     ? group.lifecycle === `event-scoped:${unit.eventUnitId}` || chainedWeapons.has(group.groupId)
-    : unit.participants.some(participant => includesAlias(participant, group.participantAliases)))
+    : unit.participants.some(participant => includesAlias(participant, group.participantAliases))
+      || (group.lifecycle === 'scene-persistent'
+        && unit.evidenceRefs.some(evidenceRef => group.evidenceRefs.includes(evidenceRef))
+        && sharesIdentityTerm(unit, group)))
     .map(group => group.groupId)
 }
 function fidelity(actorRefs: string[], groups: ActorGroup[]): 'evidence' | 'deterministic' | 'default' | 'user' { const sources = actorRefs.map(ref => groups.find(group => group.groupId === ref)?.quantityDecision.source); return sources.includes('user') ? 'user' : sources.includes('default') ? 'default' : sources.length > 0 ? 'evidence' : 'deterministic' }

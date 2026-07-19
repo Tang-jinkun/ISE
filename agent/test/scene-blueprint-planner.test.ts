@@ -631,6 +631,81 @@ test('does not create or bind either side for an unqualified generic AWACS fact'
   )
 })
 
+test('binds persistent actors by shared grounded evidence without pulling unrelated actor evidence', () => {
+  const fixture = planningFixture()
+  fixture.eventPlan.eventUnits.push(
+    {
+      eventUnitId: 'event:evidence-bound-awacs',
+      title: 'Early-warning patrol',
+      worldStateChange: 'Blue E-3A Sentry AWACS patrols the documented route.',
+      participants: ['Blue E-3A Sentry AWACS'],
+      locationRefs: ['AWACS patrol route'],
+      evidenceRefs: ['ev-shared-awacs-route'],
+      inferenceRefs: [],
+      uncertainties: [],
+      narrativePurpose: 'Show the grounded early-warning patrol.',
+      importance: 'high',
+    },
+    {
+      eventUnitId: 'event:unrelated-patrol',
+      title: 'Unrelated patrol',
+      worldStateChange: 'An unrelated relay aircraft patrols its documented route.',
+      participants: ['Unrelated relay aircraft'],
+      locationRefs: ['relay patrol route'],
+      evidenceRefs: ['ev-unrelated-relay-route'],
+      inferenceRefs: [],
+      uncertainties: [],
+      narrativePurpose: 'Keep the unrelated patrol separate.',
+      importance: 'low',
+    },
+  )
+  fixture.evidence.records.push(
+    {
+      evidenceId: 'ev-shared-awacs-route', sourceRef: 'docx:p8',
+      claim: 'One Boeing E-3A Sentry AWACS patrols the AWACS patrol route.',
+      kind: 'explicit_fact', entities: ['Boeing E-3A Sentry AWACS'],
+      locationExpression: 'AWACS patrol route', routeExpression: 'patrol route', confidence: 1, ambiguities: [],
+    },
+    {
+      evidenceId: 'ev-unrelated-relay-route', sourceRef: 'docx:p9',
+      claim: 'One unrelated relay aircraft patrols the relay patrol route.',
+      kind: 'explicit_fact', entities: ['Unrelated relay aircraft'],
+      locationExpression: 'relay patrol route', routeExpression: 'relay route', confidence: 1, ambiguities: [],
+    },
+  )
+  fixture.narrativePlan.subtitles.push(
+    {
+      subtitleId: 'subtitle:evidence-bound-awacs', eventUnitId: 'event:evidence-bound-awacs',
+      text: 'Blue E-3A Sentry AWACS patrols the documented route.', evidenceRefs: ['ev-shared-awacs-route'], importance: 'high',
+    },
+    {
+      subtitleId: 'subtitle:unrelated-patrol', eventUnitId: 'event:unrelated-patrol',
+      text: 'An unrelated relay aircraft patrols its documented route.', evidenceRefs: ['ev-unrelated-relay-route'], importance: 'low',
+    },
+  )
+  fixture.narrativePlan.sceneRequirements.push(
+    {
+      requirementId: 'requirement:evidence-bound-awacs', eventUnitId: 'event:evidence-bound-awacs',
+      focusEntities: ['Blue E-3A Sentry AWACS'], spatialRelations: [], stateChanges: [], motionRequirements: ['follow documented route'],
+      attentionRequirements: ['show early-warning patrol'], requiredFacts: ['Grounded early-warning patrol'], forbiddenClaims: [], preferredTemplate: 'deployment',
+    },
+    {
+      requirementId: 'requirement:unrelated-patrol', eventUnitId: 'event:unrelated-patrol',
+      focusEntities: ['Unrelated relay aircraft'], spatialRelations: [], stateChanges: [], motionRequirements: ['follow documented route'],
+      attentionRequirements: ['show unrelated patrol'], requiredFacts: ['Grounded unrelated patrol'], forbiddenClaims: [], preferredTemplate: 'deployment',
+    },
+  )
+  fixture.narrativePlan.sourceEventPlan.fingerprint = fingerprint(fixture.eventPlan)
+
+  const blueprint = buildSceneBlueprint({ ...fixture, narrationPlan: buildNarrationPlan(fixture) })
+  const awacs = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Boeing E-3A Sentry AWACS')!
+  const unrelated = blueprint.actorGroups.find(group => group.semanticEntityRef === 'Unrelated relay aircraft')!
+  const beat = blueprint.sceneBeats.find(item => item.eventUnitId === 'event:evidence-bound-awacs')!
+
+  assert.ok(beat.actorRefs.includes(awacs.groupId))
+  assert.equal(beat.actorRefs.includes(unrelated.groupId), false)
+})
+
 test('creates an event-scoped generic missile actor from grounded launch facts when participants omit the weapon', () => {
   const fixture = planningFixtureWithParticipants({
     'event:launch': ['巴方JF-17编队'],
