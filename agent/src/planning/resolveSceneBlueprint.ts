@@ -2,6 +2,7 @@ import {
   assetRegistrySnapshotSchema,
   type AssetRegistrySnapshot,
 } from '../contracts/assetRegistry.ts'
+import type { EvidenceIR } from '../contracts/evidence.ts'
 import {
   resolvedScenePlanSchema,
   type ResolvedScenePlan,
@@ -17,12 +18,14 @@ import { resolveFormationBundles } from '../services/formationBundleResolver.ts'
 import { CompilationError, diagnostic, type CompilationDiagnostic } from '../services/runtimeDiagnostics.ts'
 import { buildTrajectoryCatalog } from '../services/trajectoryCatalog.ts'
 import { legacyCompatibilityPackForBlueprint, scenarioPackForLineage } from '../services/scenarioPackRegistry.ts'
-import { formationBundleSchema, scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
+import { actorRouteAssignmentSchema, formationBundleSchema, scenarioTrajectoryMappingSchema } from '../contracts/trajectoryCatalog.ts'
 import { resolveActorAssets } from '../services/actorAssetResolver.ts'
+import { generatedTrajectoryBounds, synthesizeStartEndTrajectory, type GeneratedTrajectory } from '../services/startEndTrajectorySynthesizer.ts'
 
 export interface ResolveSceneBlueprintInput {
   blueprint: SceneBlueprint
   assetRegistry: AssetRegistrySnapshot
+  evidence?: EvidenceIR
 }
 
 function compareText(left: string, right: string): number {
@@ -56,6 +59,40 @@ function mappingDiagnostics(
   })
 }
 
+const GENERATED_ROUTE_DURATION_MS = 120_000
+
+function routeExpressionForGroup(
+  group: SceneBlueprint['actorGroups'][number],
+  evidence: EvidenceIR | undefined,
+) {
+  if (!evidence || group.evidenceRefs.length === 0) return undefined
+  return evidence.records.find(record =>
+    group.evidenceRefs.includes(record.evidenceId) && record.routeExpression !== undefined,
+  )?.routeExpression
+}
+
+function generatedAsset(trajectory: GeneratedTrajectory) {
+  const bounds = generatedTrajectoryBounds(trajectory)
+  return {
+    assetId: trajectory.assetId,
+    sourceKind: trajectory.sourceKind,
+    generationMethod: trajectory.generationMethod,
+    sourceRefs: trajectory.sourceRefs,
+    pathStyle: trajectory.pathStyle,
+    ...(trajectory.targetActorId ? { targetActorId: trajectory.targetActorId } : {}),
+    trajectory: {
+      format: 'ise-trajectory/v1' as const,
+      timeUnit: 'ms' as const,
+      coordinateOrder: 'lng-lat-alt' as const,
+      startTimeMs: trajectory.points[0]!.timeMs,
+      endTimeMs: trajectory.points.at(-1)!.timeMs,
+      monotonic: true as const,
+      bounds,
+      points: trajectory.points,
+    },
+  }
+}
+
 export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): ResolvedScenePlan {
   const blueprint = sceneBlueprintSchema.parse(input.blueprint)
   const assetRegistry = assetRegistrySnapshotSchema.parse(input.assetRegistry)
@@ -81,12 +118,63 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
   const allAssetResolutions = blueprint.actorGroups.map(group =>
     resolveActorAssets(group, scenarioPack, assetRegistry))
   const assetResolutions = allAssetResolutions.filter(resolution => activeGroupIds.has(resolution.actorGroupId))
-  const resolutionByGroup = new Map(assetResolutions.map(resolution => [resolution.actorGroupId, resolution]))
+  const baseResolutionByGroup = new Map(assetResolutions.map(resolution => [resolution.actorGroupId, resolution]))
+  const generatedTrajectoryAssets = [] as ReturnType<typeof generatedAsset>[]
+  const generatedRoutesByGroup = new Map<string, Array<`trajectory:${string}`>>()
+  const generatedGroupIds = new Set<string>()
+  for (const group of activeGroups) {
+    const resolution = baseResolutionByGroup.get(group.groupId)
+    const expression = routeExpressionForGroup(group, input.evidence)
+    if (!resolution?.modelAssetId || resolution.trajectoryAssetIds.length > 0 || !expression) continue
+    const actors = expandedActors.filter(actor => actor.actorGroupRef === group.groupId)
+    const routes = actors.map(actor => {
+      const trajectory = synthesizeStartEndTrajectory({
+        actorId: actor.actorInstanceId,
+        start: { coordinates: expression.start },
+        end: { coordinates: expression.end },
+        source: 'document',
+        sourceRefs: group.evidenceRefs,
+        pathStyle: expression.pathStyle,
+        startMs: 0,
+        endMs: GENERATED_ROUTE_DURATION_MS,
+      })
+      generatedTrajectoryAssets.push(generatedAsset(trajectory))
+      return trajectory.assetId
+    })
+    if (routes.length > 0) {
+      generatedGroupIds.add(group.groupId)
+      generatedRoutesByGroup.set(group.groupId, routes)
+    }
+  }
+  const effectiveResolutions = assetResolutions.map(resolution => {
+    const generatedRoutes = generatedRoutesByGroup.get(resolution.actorGroupId)
+    return generatedRoutes === undefined
+      ? resolution
+      : { ...resolution, trajectoryAssetIds: generatedRoutes, status: 'compatible' as const }
+  })
+  const resolutionByGroup = new Map(effectiveResolutions.map(resolution => [resolution.actorGroupId, resolution]))
   const scenarioBundles = new Map(mapping.bundles.map(bundle => [bundle.bundleId, bundle]))
   const movingGroups = activeGroups.filter(group =>
     (resolutionByGroup.get(group.groupId)?.trajectoryAssetIds.length ?? 0) > 0)
-  const resolvedFormationBundles = (scenarioPack.packId === 'generic/v1'
-    ? movingGroups.map(group => {
+  const catalogMovingGroups = movingGroups.filter(group => !generatedGroupIds.has(group.groupId))
+  const generatedFormationBundles = movingGroups.filter(group => generatedGroupIds.has(group.groupId)).map(group => {
+    const resolution = resolutionByGroup.get(group.groupId)!
+    return formationBundleSchema.parse({
+      bundleId: `generated:${group.groupId}`,
+      actorGroupRef: group.groupId,
+      ...(resolution.modelAssetId ? { modelAssetRef: resolution.modelAssetId } : {}),
+      routeAssetRefs: resolution.trajectoryAssetIds,
+      recommendedActorCount: resolution.trajectoryAssetIds.length,
+      role: group.role,
+      side: group.side,
+      semanticTags: [group.semanticEntityRef],
+      scenarioBindings: [scenarioPack.packId],
+      mappingAuthority: 'evidence',
+      diagnostics: [],
+    })
+  })
+  const catalogFormationBundles = (scenarioPack.packId === 'generic/v1'
+    ? catalogMovingGroups.map(group => {
       const resolution = resolutionByGroup.get(group.groupId)!
       return formationBundleSchema.parse({
         bundleId: `catalog:${group.groupId}`,
@@ -102,16 +190,37 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
         diagnostics: [],
       })
     })
-    : resolveFormationBundles(movingGroups, catalog, mapping))
+    : resolveFormationBundles(catalogMovingGroups, catalog, mapping))
     .map(bundle => ({
       ...bundle,
       ...(bundle.modelAssetRef ? {} : {
         modelAssetRef: scenarioBundles.get(bundle.bundleId)?.modelAssetRef,
       }),
     }))
+  const resolvedFormationBundles = [...catalogFormationBundles, ...generatedFormationBundles]
   const movingActors = expandedActors.filter(actor =>
     (resolutionByGroup.get(actor.actorGroupRef)?.trajectoryAssetIds.length ?? 0) > 0)
-  const actorRouteAssignments = assignActorRoutes(movingActors, resolvedFormationBundles)
+  const catalogActors = movingActors.filter(actor => !generatedGroupIds.has(actor.actorGroupRef))
+  const generatedActors = movingActors.filter(actor => generatedGroupIds.has(actor.actorGroupRef))
+  const generatedBundleByGroup = new Map(generatedFormationBundles.map(bundle => [bundle.actorGroupRef, bundle]))
+  const generatedAssignment = generatedActors.map(actor => {
+    const bundle = generatedBundleByGroup.get(actor.actorGroupRef)
+    const routeAssetRef = bundle?.routeAssetRefs[actor.ordinal]
+    if (!bundle || !routeAssetRef) throw new CompilationError([diagnostic('TRAJECTORY_BUNDLE_CAPACITY_EXCEEDED', `${actor.actorGroupRef} has no generated route for ${actor.actorInstanceId}`)])
+    return actorRouteAssignmentSchema.parse({
+      actorInstanceRef: actor.actorInstanceId,
+      formationBundleRef: bundle.bundleId,
+      trajectoryAssetRef: routeAssetRef,
+      segmentId: `segment:${actor.actorInstanceId}:continuous-1`,
+      resamplePolicy: 'preserve-source-samples',
+      timeMapping: { mode: 'fit-window', startMs: 0, durationMs: GENERATED_ROUTE_DURATION_MS },
+      spatialPathMode: 'preserve',
+      sourceKind: 'generated',
+      matchReason: 'Grounded document start/end route synthesized deterministically',
+      lineage: [`generated:${bundle.scenarioBindings[0]}`, ...bundle.diagnostics],
+    })
+  })
+  const actorRouteAssignments = [...assignActorRoutes(catalogActors, catalogFormationBundles), ...generatedAssignment]
   const staticActorBindings = expandedActors.flatMap(actor => {
     const resolution = resolutionByGroup.get(actor.actorGroupRef)
     if (resolution?.status !== 'static-fallback' || !resolution.staticPosition) return []
@@ -139,6 +248,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     ...resolvedFormationBundles.flatMap(bundle => bundle.routeAssetRefs),
     ...resolvedFormationBundles.flatMap(bundle => scenarioBundles.get(bundle.bundleId)?.modelAssetRef ?? []),
     ...actorRouteAssignments.map(assignment => assignment.trajectoryAssetRef),
+    ...generatedTrajectoryAssets.map(asset => asset.assetId),
     ...staticActorBindings.flatMap(binding => binding.modelAssetRef ? [binding.modelAssetRef] : []),
   ])
   const resolvedBehaviors = sortedUnique([
@@ -167,6 +277,7 @@ export function resolveSceneBlueprint(input: ResolveSceneBlueprintInput): Resolv
     resolvedFormationBundles,
     actorRouteAssignments,
     staticActorBindings,
+    generatedTrajectoryAssets,
     fallbackTrajectoryRecipes: [],
     resolvedBehaviors,
     resolvedMedia,

@@ -9,7 +9,7 @@ const hash = `sha256:${'a'.repeat(64)}`
 
 function actor(overrides: Partial<ActorGroup> = {}): ActorGroup {
   return {
-    groupId: 'group:blue-fighters', semanticEntityRef: 'Blue Falcon', side: 'blue',
+    groupId: 'group:blue-fighters', semanticEntityRef: 'Blue Falcon', evidenceRefs: [], side: 'blue',
     locationRef: 'location:north-base', platformType: 'fighter', role: 'fighter-formation',
     quantityDecision: { value: 1, constraint: 'unknown', source: 'default', evidenceRefs: [], defaultPolicyId: 'single/v1', reason: 'fixture' },
     formationPattern: 'single', leaderPolicy: 'single-member', behaviorProfile: 'fighter-formation/v1', lifecycle: 'scene-persistent',
@@ -54,6 +54,17 @@ test('resolves one compatible model and route from explicit asset metadata', () 
   assert.equal(result.status, 'compatible')
   assert.equal(result.modelAssetId, 'model:generic-fighter')
   assert.deepEqual(result.trajectoryAssetIds, ['trajectory:generic-fighter'])
+})
+
+test('resolves an exact registry model alias before generic aircraft ambiguity', () => {
+  const result = resolveActorAssets(actor({ semanticEntityRef: 'Rafale', locationRef: 'coordinates:70,30' }), genericPack, registry([
+    model('model:rafale', 'Rafale', ['Rafale']),
+    model('model:su30mki', 'Su-30MKI'),
+  ]))
+
+  assert.equal(result.status, 'static-fallback')
+  assert.equal(result.modelAssetId, 'model:rafale')
+  assert.equal(result.diagnostics[0]?.code, 'ACTOR_TRAJECTORY_STATIC_FALLBACK')
 })
 
 test('does not treat the registry only route as compatible when its semantic metadata is unrelated', () => {

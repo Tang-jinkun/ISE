@@ -71,7 +71,7 @@ export const formationBundleSchema = z.strictObject({
   diagnostics: z.array(z.string().min(1)),
 })
 
-export const routeSourceKindSchema = z.enum(['attachment', 'catalog', 'user', 'illustrative'])
+export const routeSourceKindSchema = z.enum(['attachment', 'catalog', 'generated', 'user', 'illustrative'])
 
 export const actorRouteAssignmentSchema = z.strictObject({
   actorInstanceRef: z.string().min(1),

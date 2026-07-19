@@ -68,6 +68,15 @@ function compatibleModel(actor: ActorGroup, registry: AssetRegistrySnapshot) {
   return candidates.length === 1 ? candidates[0] : candidates.length === 0 ? undefined : null
 }
 
+function exactModel(actor: ActorGroup, registry: AssetRegistrySnapshot) {
+  const requested = new Set([actor.semanticEntityRef, actor.platformType].map(comparable))
+  const candidates = available(registry, 'model').filter(entry => {
+    const names = [entry.assetId, entry.displayName, ...entry.aliases].map(comparable)
+    return names.some(name => requested.has(name))
+  })
+  return candidates.length === 1 ? candidates[0] : candidates.length === 0 ? undefined : null
+}
+
 function compatibleRoutes(actor: ActorGroup, registry: AssetRegistrySnapshot): Array<`trajectory:${string}`> {
   const actorTags = [
     actor.semanticEntityRef,
@@ -108,7 +117,8 @@ export function resolveActorAssets(
     }
   }
 
-  const model = compatibleModel(actor, registry)
+  const exact = exactModel(actor, registry)
+  const model = exact === null ? null : exact ?? compatibleModel(actor, registry)
   if (model === null) return position ? {
     actorGroupId: actor.groupId, trajectoryAssetIds: [], mediaAssetIds: [], status: 'static-fallback', staticPosition: position,
     diagnostics: [diagnostic('ACTOR_MODEL_AMBIGUOUS', `${actor.groupId}: multiple compatible models; using grounded marker only`, 'warning')],
