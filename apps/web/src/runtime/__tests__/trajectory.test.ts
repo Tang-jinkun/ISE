@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedAssetAccess } from '@ise/runtime-contracts';
 import { prepareTrajectory, sampleTrajectory } from '../trajectory';
+import { createSceneAssetResolver } from '../../hooks/useSceneRuntime';
+import { RUNTIME_MAIN_CONFIG } from '..';
 
 const metadata = {
   format: 'ise-trajectory/v1' as const,
@@ -106,4 +108,18 @@ describe('sampleTrajectory', () => {
     expect(Math.abs(sample.longitude)).toBeCloseTo(180, 6);
     expect(sample.headingDeg).toBeCloseTo(89.826, 3);
   });
+});
+
+it('resolves an embedded generated trajectory without catalog access', async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  const config = { ...RUNTIME_MAIN_CONFIG, generatedTrajectories: [{
+    assetId: 'trajectory:generated-test', generationMethod: 'document-endpoints-v1', sourceRefs: ['evidence:test'],
+    trajectory: { ...metadata, bounds: [[76, 30], [78, 30]] as [[number, number], [number, number]], points: document.points },
+  }] };
+  const resolver = createSceneAssetResolver(config);
+  const access = await resolver.resolve('trajectory:generated-test');
+  expect(access.trajectory).toMatchObject(metadata);
+  expect(fetchMock).not.toHaveBeenCalled();
+  resolver.revoke();
 });

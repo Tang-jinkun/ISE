@@ -221,6 +221,7 @@ export class BaseRuntimeAdapter {
         ...(source.defaultTrajectoryAssetId ? { defaultTrajectoryAssetId: source.defaultTrajectoryAssetId } : {}),
         initialState: source.initialState,
       })),
+      generatedTrajectories: plan.generatedTrajectories,
       tracks,
       interactions: plan.interactions,
       diagnostics: plan.diagnostics,

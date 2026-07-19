@@ -60,6 +60,27 @@ async function resolveCatalogAsset(assetId: string, signal?: AbortSignal) {
   return resolvedAssetAccessSchema.parse(body.data);
 }
 
+export function createSceneAssetResolver(config: SceneProjectConfig) {
+  const generated = new Map(config.generatedTrajectories.map(item => [item.assetId, item]));
+  const urls = new Set<string>();
+  return {
+    async resolve(assetId: string, signal?: AbortSignal) {
+      const embedded = generated.get(assetId);
+      if (!embedded) return resolveCatalogAsset(assetId, signal);
+      const url = URL.createObjectURL(new Blob([
+        JSON.stringify({ schemaVersion: 'ise-trajectory/v1', points: embedded.trajectory.points }),
+      ], { type: 'application/vnd.ise.trajectory+json' }));
+      urls.add(url);
+      return resolvedAssetAccessSchema.parse({
+        assetId: embedded.assetId, url, fingerprint: `sha256:${'0'.repeat(64)}`, size: 0,
+        expiresAt: '2099-01-01T00:00:00.000Z', mediaType: 'application/vnd.ise.trajectory+json',
+        trajectory: (({ points: _points, ...metadata }) => metadata)(embedded.trajectory),
+      });
+    },
+    revoke() { urls.forEach(url => URL.revokeObjectURL(url)); urls.clear(); },
+  };
+}
+
 function queueLatestSeek(lifecycle: RuntimeLifecycle, timeMs: number) {
   const generation = ++lifecycle.seekGeneration;
   lifecycle.seekQueue = lifecycle.seekQueue
@@ -112,10 +133,11 @@ export function useSceneRuntime({
     }
 
     const parsedConfig = sceneProjectConfigSchema.parse(config);
+    const assetResolver = createSceneAssetResolver(parsedConfig);
     const nextRuntime = runtimeFactory({
       map,
       overlayRoot,
-      resolveAsset: resolveCatalogAsset,
+      resolveAsset: assetResolver.resolve,
     });
     const lifecycle: RuntimeLifecycle = {
       runtime: nextRuntime,
@@ -160,6 +182,7 @@ export function useSceneRuntime({
       lifecycle.seekGeneration += 1;
       if (lifecycleRef.current === lifecycle) lifecycleRef.current = null;
       nextRuntime.dispose();
+      assetResolver.revoke();
     };
   }, [config, map, overlayRoot, runtimeFactory]);
 

@@ -31,6 +31,11 @@ export const sceneEntitySchema = z.strictObject({
   initialState: state
 });
 export type SceneEntity = z.infer<typeof sceneEntitySchema>;
+const generatedTrajectorySchema = z.strictObject({
+  assetId: assetId.regex(/^trajectory:/), generationMethod: z.literal('document-endpoints-v1'), sourceRefs: z.array(nonEmptyId).min(1),
+  trajectory: z.strictObject({ format: z.literal('ise-trajectory/v1'), timeUnit: z.literal('ms'), coordinateOrder: z.literal('lng-lat-alt'), startTimeMs: milliseconds, endTimeMs: milliseconds, monotonic: z.literal(true), bounds: z.tuple([coordinates, coordinates]), points: z.array(z.strictObject({ timeMs: milliseconds, longitude, latitude, altitudeM: z.number().finite() })).min(2) }),
+});
+export type GeneratedTrajectory = z.infer<typeof generatedTrajectorySchema>;
 
 export const overlayLayoutSchema = z.strictObject({
   xPct: z.number().finite().min(0).max(100),
@@ -233,6 +238,7 @@ const baseSceneProjectConfigSchema = z.strictObject({
   runtimePlanArtifactId: nonEmptyId,
   totalDurationMs: milliseconds,
   entities: z.array(sceneEntitySchema),
+  generatedTrajectories: z.array(generatedTrajectorySchema).default([]),
   tracks: z.array(sceneTrackSchema),
   interactions: z.array(sceneInteractionSchema).default([]),
   diagnostics: z.array(diagnosticSchema)

@@ -483,7 +483,14 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
   const sceneBlueprint = sceneBlueprintSchema.parse(rawInput.sceneBlueprint)
   const resolvedScenePlan = resolvedScenePlanSchema.parse(rawInput.resolvedScenePlan)
   const choreographyPlan = choreographyPlanSchema.parse(rawInput.choreographyPlan)
-  const assetRegistry = assetRegistrySnapshotSchema.parse(rawInput.assetRegistry)
+  const assetRegistry = assetRegistrySnapshotSchema.parse({
+    ...rawInput.assetRegistry,
+    assets: [...rawInput.assetRegistry.assets, ...resolvedScenePlan.generatedTrajectoryAssets.map(generated => ({
+      assetId: generated.assetId, kind: 'trajectory' as const, displayName: generated.assetId, aliases: [], fingerprint: fingerprint(generated), size: 0,
+      mediaType: 'application/vnd.ise.trajectory+json' as const, availability: 'available' as const, criticality: 'required' as const,
+      fallbackAssetIds: [], allowFallback: false, trajectory: generated.trajectory,
+    }))],
+  })
   if (
     narrativePlan.sourceEventPlan.artifactId !== rawInput.eventPlanArtifactId
     || narrativePlan.sourceEventPlan.planId !== eventPlan.planId
@@ -526,7 +533,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
         initialState: 'normal' as const,
       }
     }
-    if (!group || !formation || !assignment || assignment.sourceKind !== 'catalog') {
+    if (!group || !formation || !assignment || (assignment.sourceKind !== 'catalog' && assignment.sourceKind !== 'generated')) {
       fail('CHOREOGRAPHY_ACTOR_BINDING_INVALID', actor.actorInstanceId)
     }
     if (motions.get(actor.actorInstanceId)?.routeAssignmentRef !== assignment.segmentId) {
@@ -1246,6 +1253,7 @@ export function compileScene(rawInput: CompilerInput): CanonicalRuntimePlan {
     subtitles: [...scheduled.subtitles].sort((left, right) => left.subtitleId.localeCompare(right.subtitleId)),
     commands: [...finalCommands].sort((left, right) => left.commandId.localeCompare(right.commandId)),
     informationCards: [...scheduled.informationCards].sort((left, right) => left.cardId.localeCompare(right.cardId)),
+    generatedTrajectories: resolvedScenePlan.generatedTrajectoryAssets.map(({ assetId, generationMethod, sourceRefs, trajectory }) => ({ assetId, generationMethod, sourceRefs, trajectory })),
     interactions: interactions.sort((left, right) => left.interactionId.localeCompare(right.interactionId)),
     lineage: outputIds.map(([outputId, evidenceRefs]) => ({ outputId, sourceArtifactIds, evidenceRefs }))
       .sort((left, right) => left.outputId.localeCompare(right.outputId)),

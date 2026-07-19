@@ -34,6 +34,19 @@ export const informationCardSchema = z.strictObject({
 })
 export type InformationCard = z.infer<typeof informationCardSchema>
 
+export const generatedTrajectorySchema = z.strictObject({
+  assetId: z.string().regex(/^trajectory:[a-z0-9][a-z0-9._-]*$/),
+  generationMethod: z.literal('document-endpoints-v1'),
+  sourceRefs: z.array(z.string().min(1)).min(1),
+  trajectory: z.strictObject({
+    format: z.literal('ise-trajectory/v1'), timeUnit: z.literal('ms'), coordinateOrder: z.literal('lng-lat-alt'),
+    startTimeMs: z.number().int().nonnegative(), endTimeMs: z.number().int().nonnegative(), monotonic: z.literal(true),
+    bounds: z.tuple([z.tuple([z.number().finite(), z.number().finite()]), z.tuple([z.number().finite(), z.number().finite()])]),
+    points: z.array(z.strictObject({ timeMs: z.number().int().nonnegative(), longitude: z.number().finite(), latitude: z.number().finite(), altitudeM: z.number().finite() })).min(2),
+  }),
+})
+export type GeneratedTrajectory = z.infer<typeof generatedTrajectorySchema>
+
 export const lineageSchema = z.strictObject({
   outputId: z.string().min(1),
   sourceArtifactIds: z.array(z.string().min(1)).min(1),
@@ -178,6 +191,7 @@ export const canonicalRuntimePlanSchema = z.strictObject({
   subtitles: z.array(scheduledSubtitleSchema),
   commands: z.array(runtimeCommandSchema),
   informationCards: z.array(informationCardSchema),
+  generatedTrajectories: z.array(generatedTrajectorySchema).default([]),
   interactions: z.array(runtimeInteractionSchema).default([]),
   lineage: z.array(lineageSchema),
   diagnostics: z.array(compilationDiagnosticSchema),
